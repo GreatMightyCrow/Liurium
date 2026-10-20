@@ -12,4 +12,4 @@ Tauri 2, Rust, React, TypeScript, SQLite.
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+GPL-3.0-only. See [LICENSE](LICENSE).
