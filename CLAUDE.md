@@ -9,6 +9,7 @@ Priorities: data ownership, reliability and recoverability, security and transpa
 - **No AI attribution anywhere.** Never add `Co-Authored-By` trailers, "Generated with Claude Code" lines, or similar to commits, PRs, or files.
 - **No generic AI-template design.** See `Vault/Architecture/Design System.md`. No gradients, glass, glow, emoji icons, default component-library look.
 - **English only** for docs, code, comments, commits, and UI text.
+- **Work on `dev`.** All commits go to the `dev` branch. Never commit directly to `main`; `main` changes only by merging `dev` with the owner's explicit approval. No per-ticket branches unless the owner asks. Push only with the owner's approval.
 - **Documentation and memory live in `Vault/`** (Obsidian vault). Do not create a `docs/` folder. `Vault/` is git-ignored and must never be committed or pushed; public root docs must not link into it. Root keeps only README, CLAUDE.md, LICENSE, SECURITY, CONTRIBUTING, CHANGELOG.
 
 ## Memory
