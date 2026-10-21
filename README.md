@@ -10,6 +10,10 @@ Pre-alpha. There is no usable application yet; the project foundation is being s
 
 Tauri 2, Rust, React, TypeScript, SQLite.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately as described in [SECURITY.md](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
