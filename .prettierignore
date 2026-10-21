@@ -1,0 +1,3 @@
+# Prettier also skips everything in .gitignore.
+pnpm-lock.yaml
+Liurium_Brand_Assets/
