@@ -1,0 +1,5 @@
+# Same Rust version locally and in CI. Update deliberately, then fix new lints.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
