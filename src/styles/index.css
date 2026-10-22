@@ -4,6 +4,12 @@
  */
 @layer reset, tokens, base, components, utilities;
 
+/* Bundled fonts (OFL-1.1). Never load fonts from the network: CSP allows font-src 'self' only. */
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght.css";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
+@import "@fontsource-variable/atkinson-hyperlegible-mono/wght.css";
+@import "@fontsource-variable/atkinson-hyperlegible-mono/wght-italic.css";
+
 @import "./reset.css";
 @import "./tokens.css";
 @import "./base.css";

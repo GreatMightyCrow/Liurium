@@ -11,3 +11,4 @@ All notable changes to this project are documented in this file. The format is b
 - Lint, format, typecheck, and test tooling, run together with `pnpm check`.
 - Continuous integration on Windows.
 - Design tokens and CSS foundation: dark color palette, spacing, radius, shadow, and motion scales, with tests for color contrast and for raw values outside the tokens.
+- Bundled fonts Atkinson Hyperlegible Next (interface) and Atkinson Hyperlegible Mono (code), and a type scale.

@@ -58,12 +58,22 @@
     --duration-slow: 240ms;
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
-    /* Typography. System fonts until M1-002 bundles the real ones. */
-    --font-ui: system-ui, "Segoe UI", sans-serif;
-    --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    /* Typography. Bundled fonts first (index.css), system fonts as fallback. */
+    --font-ui: "Atkinson Hyperlegible Next Variable", system-ui, sans-serif;
+    --font-mono:
+      "Atkinson Hyperlegible Mono Variable", ui-monospace, Consolas, monospace;
+
+    /* Type scale: dense UI sizes around a 14px base, few steps */
+    --font-size-xs: 12px;
+    --font-size-sm: 13px;
     --font-size-base: 14px;
+    --font-size-md: 16px;
+    --font-size-lg: 20px;
+    --font-size-xl: 24px;
+
     --font-weight-regular: 400;
     --font-weight-semibold: 600;
+    --line-height-tight: 1.25;
     --line-height-base: 1.5;
   }
 
