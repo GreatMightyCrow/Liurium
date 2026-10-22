@@ -1,0 +1,77 @@
+/*
+ * Design tokens. The only file allowed to contain raw colors and lengths
+ * (ADR-0006). Names and reasons are documented in the vault's Design System note.
+ */
+@layer tokens {
+  :root {
+    /* Color: surfaces */
+    --color-canvas: #111116;
+    --color-surface: #1b1a22;
+    --color-surface-elevated: #23212c;
+
+    /* Color: lines. Decorative dividers, and controls that need 3:1 (WCAG 1.4.11). */
+    --color-border: #302c3a;
+    --color-border-control: #726b88;
+
+    /* Color: text */
+    --color-text: #f2f0f8;
+    --color-text-secondary: #a6a0b6;
+
+    /* Color: accent. Text on accent backgrounds uses --color-on-accent. */
+    --color-accent: #a28aff;
+    --color-accent-hover: #b6a4ff;
+    --color-accent-muted: #302a43;
+    --color-on-accent: #111116;
+
+    /* Color: status */
+    --color-success: #76c7a0;
+    --color-warning: #e9bb76;
+    --color-danger: #e58c9a;
+
+    /* Spacing, 4px grid */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+
+    /* Radius: small and restrained */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    /* Lines and focus */
+    --border-width: 1px;
+    --focus-ring-width: 2px;
+    --focus-ring-offset: 2px;
+
+    /* Shadow: only for layers that float above the window content */
+    --shadow-popover: 0 4px 12px rgb(0 0 0 / 0.35);
+    --shadow-dialog: 0 12px 32px rgb(0 0 0 / 0.45);
+
+    /* Motion */
+    --duration-fast: 100ms;
+    --duration-normal: 160ms;
+    --duration-slow: 240ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+    /* Typography. System fonts until M1-002 bundles the real ones. */
+    --font-ui: system-ui, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --font-size-base: 14px;
+    --font-weight-regular: 400;
+    --font-weight-semibold: 600;
+    --line-height-base: 1.5;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-fast: 0ms;
+      --duration-normal: 0ms;
+      --duration-slow: 0ms;
+    }
+  }
+}

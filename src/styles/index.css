@@ -1,0 +1,9 @@
+/*
+ * Layer order decides precedence (ADR-0006). A layer ranks where it first
+ * appears, so this statement must come first: main.tsx imports this file first.
+ */
+@layer reset, tokens, base, components, utilities;
+
+@import "./reset.css";
+@import "./tokens.css";
+@import "./base.css";

@@ -10,3 +10,4 @@ All notable changes to this project are documented in this file. The format is b
 - Security baseline: no Tauri permissions, strict Content Security Policy, frozen JavaScript prototypes, developer tools only in debug builds.
 - Lint, format, typecheck, and test tooling, run together with `pnpm check`.
 - Continuous integration on Windows.
+- Design tokens and CSS foundation: dark color palette, spacing, radius, shadow, and motion scales, with tests for color contrast and for raw values outside the tokens.

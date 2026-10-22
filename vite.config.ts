@@ -33,5 +33,8 @@ export default defineConfig(() => ({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
+    // Vitest blanks all CSS by default, including `?raw` imports. The style
+    // tests read stylesheets as raw text, so let only those requests through.
+    css: { include: [/\.css\?raw$/] },
   },
 }));

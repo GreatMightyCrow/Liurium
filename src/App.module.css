@@ -1,0 +1,18 @@
+@layer components {
+  .main {
+    display: grid;
+    place-content: center;
+    gap: var(--space-1);
+    height: 100%;
+    padding: var(--space-6);
+    text-align: center;
+  }
+
+  .title {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .status {
+    color: var(--color-text-secondary);
+  }
+}

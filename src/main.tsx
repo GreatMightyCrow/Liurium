@@ -1,3 +1,5 @@
+// First import: it declares the cascade layer order before any component styles load.
+import "./styles/index.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
