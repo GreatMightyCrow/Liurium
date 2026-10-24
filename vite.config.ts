@@ -36,5 +36,9 @@ export default defineConfig(() => ({
     // Vitest blanks all CSS by default, including `?raw` imports. The style
     // tests read stylesheets as raw text, so let only those requests through.
     css: { include: [/\.css\?raw$/] },
+    // The module cache keys a test file by its own content, so an
+    // `import.meta.glob` keeps returning the files that existed when it was
+    // cached. New stylesheets would then escape the raw-value check.
+    fsModuleCache: false,
   },
 }));

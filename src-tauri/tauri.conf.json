@@ -13,8 +13,14 @@
     "windows": [
       {
         "title": "Liurium",
-        "width": 800,
-        "height": 600
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 520,
+        "center": true,
+        "preventOverflow": true,
+        "theme": "Dark",
+        "backgroundColor": "#111116"
       }
     ],
     "security": {

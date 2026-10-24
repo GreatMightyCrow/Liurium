@@ -38,6 +38,10 @@
     --space-7: 48px;
     --space-8: 64px;
 
+    /* Layout: fixed sizes of the app shell */
+    --size-sidebar: 240px;
+    --size-statusbar: 24px;
+
     /* Radius: small and restrained */
     --radius-sm: 4px;
     --radius-md: 6px;

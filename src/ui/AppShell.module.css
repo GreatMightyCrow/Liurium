@@ -1,0 +1,38 @@
+@layer components {
+  .shell {
+    display: grid;
+    grid-template-areas:
+      "sidebar main"
+      "status status";
+    grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) var(--size-statusbar);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    grid-area: sidebar;
+    overflow: auto;
+    border-right: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .main {
+    grid-area: main;
+    overflow: auto;
+  }
+
+  .statusBar {
+    grid-area: status;
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    padding-inline: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+  }
+}

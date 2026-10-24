@@ -1,11 +1,9 @@
 @layer components {
-  .main {
+  .placeholder {
     display: grid;
     place-content: center;
-    gap: var(--space-1);
     height: 100%;
     padding: var(--space-6);
-    text-align: center;
   }
 
   .title {
@@ -14,8 +12,7 @@
     line-height: var(--line-height-tight);
   }
 
-  .status {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
+  .release {
+    margin-inline-start: auto;
   }
 }
