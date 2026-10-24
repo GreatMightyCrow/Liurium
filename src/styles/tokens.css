@@ -41,6 +41,10 @@
     /* Layout: fixed sizes of the app shell */
     --size-sidebar: 240px;
     --size-statusbar: 24px;
+    --size-header: 48px;
+    --size-icon-sm: 16px;
+    --size-icon-md: 20px;
+    --size-text-measure: 60ch;
 
     /* Radius: small and restrained */
     --radius-sm: 4px;

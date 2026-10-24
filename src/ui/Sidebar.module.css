@@ -1,0 +1,60 @@
+@layer components {
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding-bottom: var(--space-3);
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: var(--size-header);
+    padding-inline: var(--space-4);
+  }
+
+  .title {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .list {
+    display: grid;
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+  }
+
+  .end {
+    margin-top: auto;
+    padding-top: var(--space-3);
+  }
+
+  .link {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+  }
+
+  .link:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  /* The current page: accent bar, background, and text weight, not color alone. */
+  .link[aria-current="page"] {
+    box-shadow: inset var(--focus-ring-width) 0 0 var(--color-accent);
+    background: var(--color-accent-muted);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .icon {
+    flex: none;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+  }
+}

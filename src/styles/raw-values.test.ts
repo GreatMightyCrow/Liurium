@@ -13,7 +13,7 @@ const stylesheets = import.meta.glob<string>(
 const rawValuePatterns: [string, RegExp][] = [
   ["hex color", /#[0-9a-f]{3,8}\b/i],
   ["color function", /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i],
-  ["length", /(?<![\w-])\d*\.?\d+(?:px|rem|em|pt)\b/i],
+  ["length", /(?<![\w-])\d*\.?\d+(?:px|rem|em|pt|ch|ex|vh|vw|vmin|vmax)\b/i],
   ["duration", /(?<![\w-])\d*\.?\d+m?s\b/i],
 ];
 

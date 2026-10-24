@@ -1,0 +1,15 @@
+@layer components {
+  .header {
+    display: flex;
+    align-items: center;
+    height: var(--size-header);
+    padding-inline: var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+}

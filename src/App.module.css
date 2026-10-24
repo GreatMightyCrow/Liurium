@@ -1,17 +1,4 @@
 @layer components {
-  .placeholder {
-    display: grid;
-    place-content: center;
-    height: 100%;
-    padding: var(--space-6);
-  }
-
-  .title {
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    line-height: var(--line-height-tight);
-  }
-
   .release {
     margin-inline-start: auto;
   }
