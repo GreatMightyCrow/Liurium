@@ -42,6 +42,8 @@
     --size-sidebar: 240px;
     --size-statusbar: 24px;
     --size-header: 48px;
+    --size-titlebar: 32px;
+    --size-window-button: 46px;
     --size-icon-sm: 16px;
     --size-icon-md: 20px;
     --size-text-measure: 60ch;

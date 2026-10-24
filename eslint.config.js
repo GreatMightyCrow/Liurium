@@ -21,4 +21,22 @@ export default defineConfig([
       },
     },
   },
+  {
+    // Architecture Overview: only the IPC client talks to Tauri.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/lib/ipc/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@tauri-apps/api", "@tauri-apps/api/*"],
+              message: "Only src/lib/ipc may import the Tauri API.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);

@@ -1,7 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 import { areas } from "./app/areas";
+
+// No Tauri runtime in tests; the custom frames ask it whether the window is maximized.
+vi.mock("./lib/ipc/window", () => ({
+  minimizeWindow: vi.fn(() => Promise.resolve()),
+  toggleMaximizeWindow: vi.fn(() => Promise.resolve()),
+  closeWindow: vi.fn(() => Promise.resolve()),
+  isWindowMaximized: vi.fn(() => Promise.resolve(false)),
+}));
 
 // Routes live in the URL fragment; start every test without one.
 beforeEach(() => {
@@ -56,6 +64,18 @@ test("choosing the current page again adds no history entry", () => {
   fireEvent.click(sidebarLink("Projects"));
   expect(window.history.length).toBe(entries);
   expect(currentPageTitle()).toBe("Projects");
+});
+
+test("the frame style from the window URL decides about the window buttons", async () => {
+  window.history.replaceState(null, "", "/?frame=hidden");
+  render(<App />);
+  expect(await screen.findByRole("button", { name: "Close" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Minimize" })).toBeDefined();
+});
+
+test("the native frame has no window buttons of its own", () => {
+  render(<App />);
+  expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
 });
 
 test("an unknown path leads to the dashboard", () => {

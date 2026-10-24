@@ -1,29 +1,29 @@
 @layer components {
   .shell {
     display: grid;
-    grid-template-areas:
-      "sidebar main"
-      "status status";
-    grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
+    grid-template-columns: var(--size-sidebar) minmax(0, 1fr) auto;
     grid-template-rows: minmax(0, 1fr) var(--size-statusbar);
     height: 100%;
     overflow: hidden;
   }
 
   .sidebar {
-    grid-area: sidebar;
+    grid-row: 1;
+    grid-column: 1;
     overflow: auto;
     border-right: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
   }
 
   .main {
-    grid-area: main;
+    grid-row: 1;
+    grid-column: 2 / -1;
     overflow: auto;
   }
 
   .statusBar {
-    grid-area: status;
+    grid-row: 2;
+    grid-column: 1 / -1;
     display: flex;
     gap: var(--space-3);
     align-items: center;
@@ -35,4 +35,56 @@
     line-height: var(--line-height-tight);
     white-space: nowrap;
   }
+
+  /* Window buttons sit on top of the first row, right edge. */
+  .windowControls {
+    z-index: 1;
+    grid-row: 1;
+    grid-column: 3;
+    align-self: start;
+    height: var(--size-header);
+  }
+
+  /* Liurium frame: own title row above everything; Windows treats it as the title bar. */
+  .liuriumFrame {
+    grid-template-rows: var(--size-titlebar) minmax(0, 1fr) var(
+        --size-statusbar
+      );
+  }
+
+  .liuriumFrame .sidebar,
+  .liuriumFrame .main {
+    grid-row: 2;
+  }
+
+  .liuriumFrame .statusBar {
+    grid-row: 3;
+  }
+
+  .liuriumFrame .windowControls {
+    height: var(--size-titlebar);
+  }
+
+  .titleBar {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    padding-inline: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    user-select: none;
+    app-region: drag;
+  }
+
+  .appIcon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  /* Hidden frame: Sidebar.module.css and PageHeader.module.css turn their headers
+     into the drag area via [data-frame="hidden"]. */
 }

@@ -1,0 +1,37 @@
+@layer components {
+  .controls {
+    display: flex;
+    height: 100%;
+    /* Clicks must reach the buttons, not the drag area around them. */
+    app-region: no-drag;
+  }
+
+  .button {
+    display: grid;
+    place-items: center;
+    width: var(--size-window-button);
+    height: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  .button:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  .close:hover {
+    background: var(--color-danger);
+    color: var(--color-on-accent);
+  }
+
+  .button:focus-visible {
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+}

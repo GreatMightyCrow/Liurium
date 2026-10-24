@@ -7,6 +7,13 @@
     border-bottom: var(--border-width) solid var(--color-border);
   }
 
+  /* Hidden frame (ADR-0013): the header is the drag area and leaves room for the
+     window buttons. `app-region` ignores CSS variables, hence the shell's attribute. */
+  :global([data-frame="hidden"]) .header {
+    padding-inline-end: calc(var(--size-window-button) * 3);
+    app-region: drag;
+  }
+
   .title {
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);

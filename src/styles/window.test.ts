@@ -12,10 +12,10 @@ test("window background matches --color-canvas", () => {
   expect(mainWindow.backgroundColor.toLowerCase()).toBe(canvas?.toLowerCase());
 });
 
-// Native frame style (ADR-0013): the Windows title bar follows the dark UI.
-test("native title bar uses the dark theme", () => {
-  // `decorations` defaults to true when the key is absent.
-  const frame: { decorations?: boolean; theme: string } = mainWindow;
-  expect(frame.decorations ?? true).toBe(true);
-  expect(frame.theme).toBe("Dark");
+// Frame styles (ADR-0013): Rust creates the window and decides the decorations, so
+// Tauri must not create it from the config on its own.
+test("the main window is created by Rust, with the dark theme for the native frame", () => {
+  expect(mainWindow.label).toBe("main");
+  expect(mainWindow.create).toBe(false);
+  expect(mainWindow.theme).toBe("Dark");
 });
