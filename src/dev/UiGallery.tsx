@@ -1,20 +1,31 @@
-import { Copy, Pencil, Pin, Trash2 } from "lucide-react";
+import { Copy, FileText, Pencil, Pin, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Dialog, DialogClose } from "../ui/Dialog";
 import { IconButton } from "../ui/IconButton";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
+import { useNotify } from "../ui/Notifications";
 import { PageHeader } from "../ui/PageHeader";
+import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { TextField } from "../ui/TextField";
 import styles from "./UiGallery.module.css";
 
 const nothing = () => undefined;
 
+// Throws while rendering, so the page error boundary can be checked in a release build.
+function BrokenOnPurpose(): never {
+  throw new Error("Deliberate render error from the UI gallery.");
+}
+
 // Every primitive in its states, for design review and release-build checks.
 // Only routed in dev or with VITE_UI_GALLERY=1 (see AppRoutes).
 export default function UiGallery() {
+  const notify = useNotify();
+  const [broken, setBroken] = useState(false);
   return (
     <>
+      {broken && <BrokenOnPurpose />}
       <PageHeader title="UI gallery" />
       <div className={styles.gallery}>
         <Card title="Buttons">
@@ -97,6 +108,80 @@ export default function UiGallery() {
                 Delete
               </MenuItem>
             </Menu>
+          </div>
+        </Card>
+
+        <Card title="Loading, empty, and error states">
+          <LoadingState label="Loading notes…" />
+          <EmptyState
+            icon={FileText}
+            title="No notes yet"
+            description="Notes you create in this project appear here."
+            action={<Button variant="primary">Create note</Button>}
+          />
+          <ErrorState
+            title="Could not open the project"
+            description="The folder was moved or deleted. Choose it again, or remove the project from the list."
+            action={<Button>Choose folder…</Button>}
+          />
+        </Card>
+
+        <Card title="Notifications">
+          <div className={styles.row}>
+            <Button
+              data-testid="gallery-notify-info"
+              onClick={() => {
+                notify({
+                  tone: "info",
+                  title: "Rebuilding the search index",
+                  description: "Results may be incomplete for a moment.",
+                });
+              }}
+            >
+              Show info
+            </Button>
+            <Button
+              data-testid="gallery-notify-success"
+              onClick={() => {
+                notify({
+                  tone: "success",
+                  title: "Note saved",
+                  description: "Meeting notes.md",
+                });
+              }}
+            >
+              Show success
+            </Button>
+            <Button
+              data-testid="gallery-notify-error"
+              onClick={() => {
+                notify({
+                  tone: "error",
+                  title: "Could not save the note",
+                  description:
+                    "The file is read-only. Your text is still in the editor.",
+                });
+              }}
+            >
+              Show error
+            </Button>
+          </div>
+        </Card>
+
+        <Card title="Page error">
+          <p className={styles.note}>
+            Breaks this page on purpose. Any sidebar link brings the app back.
+          </p>
+          <div className={styles.row}>
+            <Button
+              variant="danger"
+              data-testid="gallery-break-page"
+              onClick={() => {
+                setBroken(true);
+              }}
+            >
+              Break this page
+            </Button>
           </div>
         </Card>
       </div>

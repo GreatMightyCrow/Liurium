@@ -1,7 +1,0 @@
-@layer components {
-  .summary {
-    max-width: var(--size-text-measure);
-    padding: var(--space-5);
-    color: var(--color-text-secondary);
-  }
-}

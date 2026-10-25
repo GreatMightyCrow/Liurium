@@ -7,6 +7,7 @@ import { areas } from "./app/areas";
 import { frameStyleFrom } from "./app/frameStyle";
 import { useWindowControls } from "./app/useWindowControls";
 import { AppShell } from "./ui/AppShell";
+import { NotificationProvider } from "./ui/Notifications";
 import { Sidebar } from "./ui/Sidebar";
 import { TooltipProvider } from "./ui/Tooltip";
 import { WindowControls } from "./ui/WindowControls";
@@ -20,19 +21,25 @@ function App() {
     // Base UI must not insert <style> elements; our CSP blocks them (ADR-0012).
     <CSPProvider disableStyleElements>
       <TooltipProvider>
-        <Router hook={useHashLocation}>
-          <AppShell
-            frame={frame}
-            title="Liurium"
-            windowControls={frame === "native" ? null : <FrameButtons />}
-            sidebar={
-              <Sidebar title="Liurium" items={mainAreas} endItems={endAreas} />
-            }
-            statusBar={<span className={styles.release}>Pre-alpha</span>}
-          >
-            <AppRoutes />
-          </AppShell>
-        </Router>
+        <NotificationProvider>
+          <Router hook={useHashLocation}>
+            <AppShell
+              frame={frame}
+              title="Liurium"
+              windowControls={frame === "native" ? null : <FrameButtons />}
+              sidebar={
+                <Sidebar
+                  title="Liurium"
+                  items={mainAreas}
+                  endItems={endAreas}
+                />
+              }
+              statusBar={<span className={styles.release}>Pre-alpha</span>}
+            >
+              <AppRoutes />
+            </AppShell>
+          </Router>
+        </NotificationProvider>
       </TooltipProvider>
     </CSPProvider>
   );

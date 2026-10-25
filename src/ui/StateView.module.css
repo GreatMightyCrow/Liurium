@@ -1,0 +1,52 @@
+@layer components {
+  /* Sits where the page content would start, aligned with the page header. */
+  .state {
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
+    max-width: var(--size-text-measure);
+    padding: var(--space-5);
+  }
+
+  .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    color: var(--color-text-secondary);
+  }
+
+  .title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  .description {
+    color: var(--color-text-secondary);
+  }
+
+  .action {
+    margin-top: var(--space-2);
+  }
+
+  /* The icon carries the color; the title and text say what happened. */
+  .danger .icon {
+    color: var(--color-danger);
+  }
+
+  .loading {
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: start;
+    color: var(--color-text-secondary);
+  }
+
+  .spinner {
+    animation: spin var(--duration-spin) linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+}

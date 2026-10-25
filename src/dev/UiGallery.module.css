@@ -17,4 +17,8 @@
     display: grid;
     gap: var(--space-4);
   }
+
+  .note {
+    color: var(--color-text-secondary);
+  }
 }

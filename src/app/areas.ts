@@ -26,7 +26,7 @@ export const areas: readonly Area[] = [
     label: "Dashboard",
     icon: LayoutDashboard,
     summary:
-      "Not built yet. This page will show widgets for your projects, tasks, and recent notes.",
+      "This page will show widgets for your projects, tasks, and recent notes.",
     placement: "main",
   },
   {
@@ -34,37 +34,35 @@ export const areas: readonly Area[] = [
     label: "Projects",
     icon: Folder,
     summary:
-      "Not built yet. This page will list your projects and let you create and open them.",
+      "This page will list your projects and let you create and open them.",
     placement: "main",
   },
   {
     path: "/notes",
     label: "Notes",
     icon: FileText,
-    summary:
-      "Not built yet. This page will show the Markdown notes of the open project.",
+    summary: "This page will show the Markdown notes of the open project.",
     placement: "main",
   },
   {
     path: "/tasks",
     label: "Tasks",
     icon: ListChecks,
-    summary:
-      "Not built yet. This page will show the Kanban board of the open project.",
+    summary: "This page will show the Kanban board of the open project.",
     placement: "main",
   },
   {
     path: "/search",
     label: "Search",
     icon: Search,
-    summary: "Not built yet. This page will search across projects and notes.",
+    summary: "This page will search across projects and notes.",
     placement: "main",
   },
   {
     path: "/settings",
     label: "Settings",
     icon: Settings,
-    summary: "Not built yet. This page will hold the application settings.",
+    summary: "This page will hold the application settings.",
     placement: "end",
   },
 ];

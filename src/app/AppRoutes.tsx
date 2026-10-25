@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
-import { Redirect, Route, Switch } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
 import { areas } from "./areas";
+import { PageErrorBoundary } from "./PageErrorBoundary";
 import { PlaceholderPage } from "./PlaceholderPage";
 
 // The UI gallery is for review and checks, not for users: dev server, or a build
@@ -11,23 +12,31 @@ const UiGallery =
     : null;
 
 export function AppRoutes() {
+  const [location] = useLocation();
   return (
-    <Switch>
-      {areas.map((area) => (
-        <Route key={area.path} path={area.path}>
-          <PlaceholderPage title={area.label} summary={area.summary} />
+    // A page that fails to render shows an error state; going to another page clears it.
+    <PageErrorBoundary resetKey={location}>
+      <Switch>
+        {areas.map((area) => (
+          <Route key={area.path} path={area.path}>
+            <PlaceholderPage
+              title={area.label}
+              icon={area.icon}
+              summary={area.summary}
+            />
+          </Route>
+        ))}
+        {UiGallery !== null && (
+          <Route path="/dev/ui">
+            <Suspense fallback={null}>
+              <UiGallery />
+            </Suspense>
+          </Route>
+        )}
+        <Route>
+          <Redirect to="/" replace />
         </Route>
-      ))}
-      {UiGallery !== null && (
-        <Route path="/dev/ui">
-          <Suspense fallback={null}>
-            <UiGallery />
-          </Suspense>
-        </Route>
-      )}
-      <Route>
-        <Redirect to="/" replace />
-      </Route>
-    </Switch>
+      </Switch>
+    </PageErrorBoundary>
   );
 }

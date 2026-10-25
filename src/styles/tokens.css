@@ -56,11 +56,14 @@
     --size-control-md: 32px;
     --size-dialog: 440px;
     --size-menu-min: 160px;
+    --size-toast: 360px;
     --opacity-disabled: 0.5;
 
-    /* Layers: floating elements above the shell (its window buttons sit at 1) */
+    /* Layers: floating elements above the shell (its window buttons sit at 1).
+       Notifications stay visible above an open dialog: they often report its result. */
     --layer-popover: 10;
     --layer-dialog: 20;
+    --layer-toast: 30;
 
     /* Radius: small and restrained */
     --radius-sm: 4px;
@@ -80,6 +83,7 @@
     --duration-fast: 100ms;
     --duration-normal: 160ms;
     --duration-slow: 240ms;
+    --duration-spin: 1000ms;
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
     /* Typography. Bundled fonts first (index.css), system fonts as fallback. */
@@ -106,6 +110,8 @@
       --duration-fast: 0ms;
       --duration-normal: 0ms;
       --duration-slow: 0ms;
+      /* A zero-length spin never runs: the spinner stands still, its text still says "loading". */
+      --duration-spin: 0ms;
     }
   }
 }
