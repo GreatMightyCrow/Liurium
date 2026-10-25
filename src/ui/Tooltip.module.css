@@ -1,0 +1,33 @@
+@layer components {
+  .positioner {
+    z-index: var(--layer-popover);
+  }
+
+  .tooltip {
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-popover);
+    color: var(--color-text);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+  }
+
+  /* Gap to the trigger, on whichever side the tooltip ends up. */
+  .tooltip[data-side="top"] {
+    margin-bottom: var(--space-1);
+  }
+
+  .tooltip[data-side="bottom"] {
+    margin-top: var(--space-1);
+  }
+
+  .tooltip[data-side="left"] {
+    margin-right: var(--space-1);
+  }
+
+  .tooltip[data-side="right"] {
+    margin-left: var(--space-1);
+  }
+}

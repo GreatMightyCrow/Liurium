@@ -28,6 +28,9 @@
     --color-warning: #e9bb76;
     --color-danger: #e58c9a;
 
+    /* Color: dims the window behind a dialog */
+    --color-backdrop: rgb(17 17 22 / 0.7);
+
     /* Spacing, 4px grid */
     --space-1: 4px;
     --space-2: 8px;
@@ -47,6 +50,17 @@
     --size-icon-sm: 16px;
     --size-icon-md: 20px;
     --size-text-measure: 60ch;
+
+    /* Controls: buttons and fields */
+    --size-control-sm: 28px;
+    --size-control-md: 32px;
+    --size-dialog: 440px;
+    --size-menu-min: 160px;
+    --opacity-disabled: 0.5;
+
+    /* Layers: floating elements above the shell (its window buttons sit at 1) */
+    --layer-popover: 10;
+    --layer-dialog: 20;
 
     /* Radius: small and restrained */
     --radius-sm: 4px;

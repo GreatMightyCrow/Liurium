@@ -1,0 +1,76 @@
+@layer components {
+  .button {
+    display: inline-flex;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: center;
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+  }
+
+  .md {
+    height: var(--size-control-md);
+    padding-inline: var(--space-3);
+  }
+
+  .sm {
+    height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+
+  .primary {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+
+  .primary:hover {
+    background: var(--color-accent-hover);
+  }
+
+  .secondary {
+    border-color: var(--color-border-control);
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  .secondary:hover {
+    border-color: var(--color-text-secondary);
+  }
+
+  .ghost {
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  .ghost:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  /* Outlined, so destructive actions do not shout until hovered. */
+  .danger {
+    border-color: var(--color-danger);
+    background: transparent;
+    color: var(--color-danger);
+  }
+
+  .danger:hover {
+    background: var(--color-danger);
+    color: var(--color-on-accent);
+  }
+
+  .button:disabled,
+  .button[data-disabled] {
+    opacity: var(--opacity-disabled);
+    pointer-events: none;
+  }
+}

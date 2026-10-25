@@ -1,0 +1,18 @@
+@layer components {
+  .iconButton {
+    padding: 0;
+  }
+
+  .md {
+    width: var(--size-control-md);
+  }
+
+  .sm {
+    width: var(--size-control-sm);
+  }
+
+  .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+}

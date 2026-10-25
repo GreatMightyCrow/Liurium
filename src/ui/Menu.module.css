@@ -1,0 +1,48 @@
+@layer components {
+  .positioner {
+    z-index: var(--layer-popover);
+  }
+
+  .menu {
+    display: grid;
+    min-width: var(--size-menu-min);
+    padding: var(--space-1);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-popover);
+  }
+
+  .menu[data-side="bottom"] {
+    margin-top: var(--space-1);
+  }
+
+  .menu[data-side="top"] {
+    margin-bottom: var(--space-1);
+  }
+
+  .item {
+    display: flex;
+    align-items: center;
+    height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    outline: none;
+  }
+
+  /* The highlighted item follows both mouse and arrow keys. */
+  .item[data-highlighted] {
+    background: var(--color-accent-muted);
+  }
+
+  .item[data-disabled] {
+    opacity: var(--opacity-disabled);
+  }
+
+  .separator {
+    height: var(--border-width);
+    margin: var(--space-1) 0;
+    background: var(--color-border);
+  }
+}
