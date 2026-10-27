@@ -57,6 +57,23 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  /* Contrast themes remove the bar and background; the theme's selection colors
+     replace them. Without forced-color-adjust the browser puts a Canvas-colored
+     backplate behind the text, which hides it on the selection color. */
+  @media (forced-colors: active) {
+    .link[aria-current="page"] {
+      forced-color-adjust: none;
+      box-shadow: none;
+      background: var(--color-forced-selected);
+      color: var(--color-forced-on-selected);
+    }
+
+    /* Same ring color the browser gives every other element in contrast themes. */
+    .link[aria-current="page"]:focus-visible {
+      outline-color: var(--color-forced-selected);
+    }
+  }
+
   .icon {
     flex: none;
     width: var(--size-icon-md);

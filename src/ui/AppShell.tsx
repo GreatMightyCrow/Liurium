@@ -36,8 +36,9 @@ export function AppShell({
       className={[styles.shell, frameClass[frame]].join(" ")}
       data-frame={frame}
     >
+      {/* Hidden from screen readers: Windows already announces the window title. */}
       {frame === "liurium" && (
-        <div className={styles.titleBar} data-testid="title-bar">
+        <div className={styles.titleBar} data-testid="title-bar" aria-hidden>
           <img
             className={styles.appIcon}
             src="/favicon.ico"

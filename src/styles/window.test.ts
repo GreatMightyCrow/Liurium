@@ -19,3 +19,9 @@ test("the main window is created by Rust, with the dark theme for the native fra
   expect(mainWindow.create).toBe(false);
   expect(mainWindow.theme).toBe("Dark");
 });
+
+// Ctrl + Plus / Minus / 0 enlarge the whole window content (M1-008). On Windows this is
+// WebView2's own zoom control and needs no Tauri permission.
+test("the main window can be zoomed from the keyboard", () => {
+  expect(mainWindow.zoomHotkeysEnabled).toBe(true);
+});

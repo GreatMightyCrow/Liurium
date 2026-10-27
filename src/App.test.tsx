@@ -50,6 +50,23 @@ test.each(areas.map((area) => [area.label]))(
   },
 );
 
+test("choosing a page moves focus to its heading", () => {
+  render(<App />);
+  fireEvent.click(sidebarLink("Notes"));
+  expect(document.activeElement).toBe(
+    screen.getByRole("heading", { level: 1, name: "Notes" }),
+  );
+  fireEvent.click(sidebarLink("Settings"));
+  expect(document.activeElement).toBe(
+    screen.getByRole("heading", { level: 1, name: "Settings" }),
+  );
+});
+
+test("starting the app leaves focus where it is", () => {
+  render(<App />);
+  expect(document.activeElement).toBe(document.body);
+});
+
 test("sidebar links are named by their label only, icons stay hidden", () => {
   render(<App />);
   for (const area of areas) {

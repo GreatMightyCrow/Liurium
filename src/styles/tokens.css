@@ -31,6 +31,11 @@
     /* Color: dims the window behind a dialog */
     --color-backdrop: rgb(17 17 22 / 0.7);
 
+    /* Color: Windows contrast themes (forced colors). System colors from the
+       user's theme, for states that are otherwise only a background or shadow. */
+    --color-forced-selected: Highlight;
+    --color-forced-on-selected: HighlightText;
+
     /* Spacing, 4px grid */
     --space-1: 4px;
     --space-2: 8px;

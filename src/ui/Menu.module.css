@@ -36,6 +36,16 @@
     background: var(--color-accent-muted);
   }
 
+  /* Contrast themes remove the background; the theme's selection colors replace
+     it. forced-color-adjust: see Sidebar.module.css. */
+  @media (forced-colors: active) {
+    .item[data-highlighted] {
+      forced-color-adjust: none;
+      background: var(--color-forced-selected);
+      color: var(--color-forced-on-selected);
+    }
+  }
+
   .item[data-disabled] {
     opacity: var(--opacity-disabled);
   }

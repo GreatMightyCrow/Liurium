@@ -19,4 +19,10 @@
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
   }
+
+  /* Focus here marks the reading position after a page change; the heading is
+     not a control, so no focus ring. The next Tab continues into the page. */
+  .title:focus-visible {
+    outline: none;
+  }
 }
