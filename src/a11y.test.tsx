@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import App from "./App";
 import { areas } from "./app/areas";
 import { axeViolations } from "./test/axe";
@@ -11,6 +11,12 @@ vi.mock("./lib/ipc/window", () => ({
   closeWindow: vi.fn(() => Promise.resolve()),
   isWindowMaximized: vi.fn(() => Promise.resolve(false)),
 }));
+
+// The gallery is a lazy chunk. On a cold CI runner its first import took longer
+// than findByRole waits; loading it once here keeps the tests about axe, not timing.
+beforeAll(async () => {
+  await import("./dev/UiGallery");
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
