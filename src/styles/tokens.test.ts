@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { themes } from "../app/theme";
+import { modes, themes } from "../app/theme";
 import tokensCss from "./tokens.css?raw";
 
-// Themes are an accent plus a base (ADR-0015). `:root` holds the default, orange on
-// warm; `:root[data-base="…"]` and `:root[data-accent="…"]` each replace one group.
+// Themes are an accent plus a base, in a dark or light mode (ADR-0015). `:root` holds
+// the default, orange on warm in dark; each block below replaces whole groups.
 const baseTokens = [
   "--color-canvas",
   "--color-surface",
@@ -13,27 +13,32 @@ const baseTokens = [
   "--color-text",
   "--color-text-secondary",
   "--color-on-accent",
+  "--color-on-danger",
 ];
 const accentTokens = [
   "--color-accent",
   "--color-accent-hover",
   "--color-accent-muted",
+  "--color-accent-text",
 ];
+const statusTokens = ["--color-success", "--color-warning", "--color-danger"];
 
 interface Block {
-  group: "accent" | "base" | undefined;
-  name: string | undefined;
+  /** The block's attribute selectors, for example `{ mode: "light", base: "cool" }`. */
+  attributes: Record<string, string>;
   body: string;
 }
 
 const blocks: Block[] = Array.from(
-  tokensCss.matchAll(
-    /:root(?:\[data-(accent|base)="([a-z]+)"\])?\s*\{([^}]*)\}/g,
-  ),
+  tokensCss.matchAll(/:root((?:\[data-[a-z]+="[a-z]+"\])*)\s*\{([^}]*)\}/g),
   (match) => ({
-    group: match[1] as Block["group"],
-    name: match[2],
-    body: match[3],
+    attributes: Object.fromEntries(
+      Array.from(match[1].matchAll(/\[data-([a-z]+)="([a-z]+)"\]/g), (m) => [
+        m[1],
+        m[2],
+      ]),
+    ),
+    body: match[2],
   }),
 );
 
@@ -46,31 +51,33 @@ function hexColors(body: string): Map<string, string> {
   );
 }
 
-function block(group: "accent" | "base", name: string): Block {
-  const found = blocks.find((b) => b.group === group && b.name === name);
+function block(attributes: Record<string, string>): Block {
+  const key = JSON.stringify(attributes);
+  const found = blocks.find((b) => JSON.stringify(b.attributes) === key);
   if (found === undefined) {
-    throw new Error(`tokens.css has no :root[data-${group}="${name}"] block`);
+    throw new Error(`tokens.css has no :root block for ${key}`);
   }
   return found;
 }
 
-const defaults = new Map(
-  blocks
-    .filter((b) => b.group === undefined)
-    .flatMap((b) => Array.from(hexColors(b.body))),
-);
-
-function resolve(accent: string, base: string): Map<string, string> {
-  const colors = new Map(defaults);
-  if (base !== "warm") {
-    for (const [name, value] of hexColors(block("base", base).body)) {
-      colors.set(name, value);
-    }
-  }
-  if (accent !== "orange") {
-    for (const [name, value] of hexColors(block("accent", accent).body)) {
-      colors.set(name, value);
-    }
+// Applies the matching blocks like the cascade does: more attributes win, and among
+// blocks with the same number of attributes the later one wins.
+function resolve(theme: Record<string, string>): Map<string, string> {
+  const matching = blocks
+    .filter((b) =>
+      Object.entries(b.attributes).every(
+        ([name, value]) => theme[name] === value,
+      ),
+    )
+    .map((b, order) => ({ b, order }))
+    .sort(
+      (x, y) =>
+        Object.keys(x.b.attributes).length -
+          Object.keys(y.b.attributes).length || x.order - y.order,
+    );
+  const colors = new Map<string, string>();
+  for (const { b } of matching) {
+    for (const [name, value] of hexColors(b.body)) colors.set(name, value);
   }
   return colors;
 }
@@ -102,42 +109,59 @@ const surfaces = [
 ];
 
 describe("theme blocks", () => {
-  test("the default defines both groups", () => {
-    for (const name of [...baseTokens, ...accentTokens]) {
+  test("the default defines every color group", () => {
+    const defaults = hexColors(block({}).body);
+    for (const name of [...baseTokens, ...accentTokens, ...statusTokens]) {
       expect(defaults.has(name), name).toBe(true);
     }
   });
 
-  // A block that sets only part of its group would mix with the default's values.
+  // A block that sets only part of its group would mix with another block's values.
   test.each([
-    ["base", "cool", baseTokens],
-    ["base", "graphite", baseTokens],
-    ["accent", "mint", accentTokens],
-  ] as const)("%s %s replaces exactly its group", (group, name, tokens) => {
-    expect([...hexColors(block(group, name).body).keys()].sort()).toEqual(
+    [{ base: "cool" }, baseTokens],
+    [{ base: "graphite" }, baseTokens],
+    [{ accent: "mint" }, accentTokens],
+    [{ mode: "light" }, [...baseTokens, ...accentTokens, ...statusTokens]],
+    [{ mode: "light", base: "cool" }, baseTokens],
+    [{ mode: "light", base: "graphite" }, baseTokens],
+    [{ mode: "light", accent: "mint" }, accentTokens],
+  ])("%o replaces exactly its groups", (attributes, tokens) => {
+    expect([...hexColors(block(attributes).body).keys()].sort()).toEqual(
       [...tokens].sort(),
     );
   });
 
   // The backdrop is not a hex value, so the contrast tests cannot see it.
-  test.each(["warm", "cool", "graphite"])(
-    "the %s backdrop is its canvas at 70 %%",
-    (base) => {
-      const body =
-        base === "warm"
-          ? blocks.find((b) => b.group === undefined)?.body
-          : block("base", base).body;
-      const canvas = hexColors(body ?? "").get("--color-canvas") ?? "";
-      const rgb = [1, 3, 5].map((start) =>
-        parseInt(canvas.slice(start, start + 2), 16),
+  test.each<Record<string, string>>([
+    {},
+    { base: "cool" },
+    { base: "graphite" },
+  ])("the dark backdrop of %o is its canvas at 70 %%", (attributes) => {
+    const body = block(attributes).body;
+    const canvas = hexColors(body).get("--color-canvas") ?? "";
+    const rgb = [1, 3, 5].map((start) =>
+      parseInt(canvas.slice(start, start + 2), 16),
+    );
+    expect(body).toContain(`--color-backdrop: rgb(${rgb.join(" ")} / 0.7);`);
+  });
+
+  // A white veil would hide where the dialog ends; light dims with black instead.
+  test("the light backdrop dims with black for every base", () => {
+    expect(block({ mode: "light" }).body).toContain(
+      "--color-backdrop: rgb(0 0 0 / 0.32);",
+    );
+    for (const base of ["cool", "graphite"]) {
+      expect(block({ mode: "light", base }).body).not.toContain(
+        "--color-backdrop",
       );
-      expect(body).toContain(`--color-backdrop: rgb(${rgb.join(" ")} / 0.7);`);
-    },
-  );
+    }
+  });
 });
 
-describe.each(themes)("token contrast %s on %s (WCAG AA)", (accent, base) => {
-  const colors = resolve(accent, base);
+describe.each(
+  modes.flatMap((mode) => themes.map(([accent, base]) => [mode, accent, base])),
+)("token contrast %s %s on %s (WCAG AA)", (mode, accent, base) => {
+  const colors = resolve({ mode, accent, base });
 
   function contrast(foreground: string, background: string): number {
     const [lighter, darker] = [foreground, background]
@@ -157,8 +181,7 @@ describe.each(themes)("token contrast %s on %s (WCAG AA)", (accent, base) => {
       [
         "--color-text",
         "--color-text-secondary",
-        "--color-accent",
-        "--color-accent-hover",
+        "--color-accent-text",
         "--color-success",
         "--color-warning",
         "--color-danger",
@@ -169,13 +192,15 @@ describe.each(themes)("token contrast %s on %s (WCAG AA)", (accent, base) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
 
-  test.each(
-    pairs(["--color-on-accent"], ["--color-accent", "--color-accent-hover"]),
-  )("text %s on %s reaches 4.5:1", (fg, bg) => {
+  test.each([
+    ["--color-on-accent", "--color-accent"],
+    ["--color-on-accent", "--color-accent-hover"],
+    ["--color-on-danger", "--color-danger"],
+  ])("text %s on %s reaches 4.5:1", (fg, bg) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
 
-  test.each(pairs(["--color-border-control", "--color-accent"], surfaces))(
+  test.each(pairs(["--color-border-control", "--color-accent-text"], surfaces))(
     "control indicator %s on %s reaches 3:1",
     (fg, bg) => {
       expect(contrast(fg, bg)).toBeGreaterThanOrEqual(3);

@@ -3,7 +3,7 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameStyle {
-    /// The Windows title bar, dark.
+    /// The Windows title bar, in the window's mode.
     Native,
     /// Liurium's own title row with title and window buttons.
     Liurium,

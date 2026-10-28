@@ -1,6 +1,11 @@
 @layer base {
+  /* Native parts (scrollbars, form defaults) follow the mode. */
   :root {
     color-scheme: dark;
+  }
+
+  :root[data-mode="light"] {
+    color-scheme: light;
   }
 
   html,
@@ -25,7 +30,7 @@
   }
 
   :focus-visible {
-    outline: var(--focus-ring-width) solid var(--color-accent);
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
     outline-offset: var(--focus-ring-offset);
   }
 

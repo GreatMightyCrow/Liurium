@@ -1,9 +1,10 @@
-/*
+﻿/*
  * Design tokens. The only file allowed to contain raw colors and lengths
  * (ADR-0006). Names and reasons are documented in the vault's Design System note.
  *
- * Themes (ADR-0015) are an accent plus a base. `:root` holds the default, orange on
- * warm; the `data-base` and `data-accent` blocks below each replace one whole group.
+ * Themes (ADR-0015) are an accent plus a base, in dark or light mode. `:root` holds
+ * the default, orange on warm in dark; the `data-base`, `data-accent`, and
+ * `data-mode` blocks below each replace whole groups.
  */
 @layer tokens {
   :root {
@@ -16,20 +17,23 @@
     --color-border: #35312d;
     --color-border-control: #7a726b;
 
-    /* Base: text. Text on accent backgrounds is the canvas color. */
+    /* Base: text. Text on accent and danger backgrounds is the canvas color in dark. */
     --color-text: #f4f1ed;
     --color-text-secondary: #ada59d;
     --color-on-accent: #131211;
+    --color-on-danger: #131211;
 
     /* Base: dims the window behind a dialog, the canvas at 70 % */
     --color-backdrop: rgb(19 18 17 / 0.7);
 
-    /* Accent: orange */
+    /* Accent: orange. accent-text is the accent where it is a line or text on a
+       surface (focus ring, current page); in dark it is the accent itself. */
     --color-accent: #ff8c42;
     --color-accent-hover: #ffa466;
     --color-accent-muted: #3a2416;
+    --color-accent-text: #ff8c42;
 
-    /* Color: status, the same in every theme */
+    /* Color: status, the same for every accent and base of a mode */
     --color-success: #a8d46f;
     --color-warning: #f0d35e;
     --color-danger: #f2889e;
@@ -123,6 +127,7 @@
     --color-text: #eef4f1;
     --color-text-secondary: #a0b0aa;
     --color-on-accent: #101413;
+    --color-on-danger: #101413;
     --color-backdrop: rgb(16 20 19 / 0.7);
   }
 
@@ -136,6 +141,7 @@
     --color-text: #f2f2f2;
     --color-text-secondary: #a6a6a6;
     --color-on-accent: #121212;
+    --color-on-danger: #121212;
     --color-backdrop: rgb(18 18 18 / 0.7);
   }
 
@@ -144,6 +150,68 @@
     --color-accent: #4fd1a1;
     --color-accent-hover: #7addb8;
     --color-accent-muted: #163029;
+    --color-accent-text: #4fd1a1;
+  }
+
+  /* Light mode: warm base, orange accent, status, and shadows. The buttons keep the
+     brand fill with dark text; accent-text is a darker tone that reads on white.
+     The blocks with two attributes below replace the base or accent in light. */
+  :root[data-mode="light"] {
+    --color-canvas: #ffffff;
+    --color-surface: #f6f3ef;
+    --color-surface-elevated: #ffffff;
+    --color-border: #e6e0d9;
+    --color-border-control: #8a8178;
+    --color-text: #1a1714;
+    --color-text-secondary: #625a52;
+    --color-on-accent: #1a1714;
+    --color-on-danger: #ffffff;
+
+    /* A white veil would hide where a dialog ends, so light dims with black. */
+    --color-backdrop: rgb(0 0 0 / 0.32);
+
+    --color-accent: #ff8c42;
+    --color-accent-hover: #f57a2c;
+    --color-accent-muted: #ffeadb;
+    --color-accent-text: #b8460a;
+
+    --color-success: #3d7314;
+    --color-warning: #7f6200;
+    --color-danger: #b0243f;
+
+    --shadow-popover: 0 4px 12px rgb(0 0 0 / 0.1);
+    --shadow-dialog: 0 12px 32px rgb(0 0 0 / 0.16);
+  }
+
+  :root[data-mode="light"][data-base="cool"] {
+    --color-canvas: #ffffff;
+    --color-surface: #f1f5f3;
+    --color-surface-elevated: #ffffff;
+    --color-border: #dde5e2;
+    --color-border-control: #7b8984;
+    --color-text: #16201d;
+    --color-text-secondary: #56655f;
+    --color-on-accent: #16201d;
+    --color-on-danger: #ffffff;
+  }
+
+  :root[data-mode="light"][data-base="graphite"] {
+    --color-canvas: #ffffff;
+    --color-surface: #f4f4f4;
+    --color-surface-elevated: #ffffff;
+    --color-border: #e2e2e2;
+    --color-border-control: #848484;
+    --color-text: #1c1c1c;
+    --color-text-secondary: #5f5f5f;
+    --color-on-accent: #1c1c1c;
+    --color-on-danger: #ffffff;
+  }
+
+  :root[data-mode="light"][data-accent="mint"] {
+    --color-accent: #4fd1a1;
+    --color-accent-hover: #3cbf8e;
+    --color-accent-muted: #dcf5ec;
+    --color-accent-text: #0b7553;
   }
 
   @media (prefers-reduced-motion: reduce) {

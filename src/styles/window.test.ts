@@ -7,7 +7,7 @@ const [mainWindow] = tauriConfig.app.windows;
 // Tauri paints the window before any CSS loads, so its background has to be a raw
 // value in tauri.conf.json. Keeping it equal to the canvas avoids a flash at startup.
 // This is the default theme's canvas (the first one in tokens.css); Rust sets the
-// background for the other themes (ADR-0015).
+// background for the other themes and for light mode (ADR-0015).
 test("window background matches the default --color-canvas", () => {
   const canvas = /--color-canvas:\s*(#[0-9a-f]{6});/i.exec(tokensCss)?.[1];
   expect(canvas).toBeDefined();
@@ -15,7 +15,8 @@ test("window background matches the default --color-canvas", () => {
 });
 
 // Frame styles (ADR-0013): Rust creates the window and decides the decorations, so
-// Tauri must not create it from the config on its own.
+// Tauri must not create it from the config on its own. Rust also replaces the theme
+// with the chosen mode; dark stays the fallback in the config.
 test("the main window is created by Rust, with the dark theme for the native frame", () => {
   expect(mainWindow.label).toBe("main");
   expect(mainWindow.create).toBe(false);

@@ -23,7 +23,7 @@
 
   .close:hover {
     background: var(--color-danger);
-    color: var(--color-on-accent);
+    color: var(--color-on-danger);
   }
 
   .button:focus-visible {

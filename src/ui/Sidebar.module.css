@@ -51,7 +51,7 @@
 
   /* The current page: accent bar, background, and text weight, not color alone. */
   .link[aria-current="page"] {
-    box-shadow: inset var(--focus-ring-width) 0 0 var(--color-accent);
+    box-shadow: inset var(--focus-ring-width) 0 0 var(--color-accent-text);
     background: var(--color-accent-muted);
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
