@@ -6,7 +6,9 @@ const [mainWindow] = tauriConfig.app.windows;
 
 // Tauri paints the window before any CSS loads, so its background has to be a raw
 // value in tauri.conf.json. Keeping it equal to the canvas avoids a flash at startup.
-test("window background matches --color-canvas", () => {
+// This is the default theme's canvas (the first one in tokens.css); Rust sets the
+// background for the other themes (ADR-0015).
+test("window background matches the default --color-canvas", () => {
   const canvas = /--color-canvas:\s*(#[0-9a-f]{6});/i.exec(tokensCss)?.[1];
   expect(canvas).toBeDefined();
   expect(mainWindow.backgroundColor.toLowerCase()).toBe(canvas?.toLowerCase());

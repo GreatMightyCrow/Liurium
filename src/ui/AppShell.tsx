@@ -6,6 +6,8 @@ interface AppShellProps {
   frame: FrameStyle;
   /** Shown in the title bar of the Liurium frame. */
   title: string;
+  /** App icon in the title bar; follows the theme like the window icon. */
+  icon: string;
   /** Minimize, maximize, close; only rendered for the custom frames. */
   windowControls: ReactNode;
   sidebar: ReactNode;
@@ -26,6 +28,7 @@ const frameClass: Record<FrameStyle, string | undefined> = {
 export function AppShell({
   frame,
   title,
+  icon,
   windowControls,
   sidebar,
   statusBar,
@@ -39,12 +42,7 @@ export function AppShell({
       {/* Hidden from screen readers: Windows already announces the window title. */}
       {frame === "liurium" && (
         <div className={styles.titleBar} data-testid="title-bar" aria-hidden>
-          <img
-            className={styles.appIcon}
-            src="/favicon.ico"
-            alt=""
-            draggable={false}
-          />
+          <img className={styles.appIcon} src={icon} alt="" draggable={false} />
           <span>{title}</span>
         </div>
       )}

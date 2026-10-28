@@ -1,9 +1,6 @@
 //! Window frame styles (ADR-0013). The style is fixed when the main window is
 //! created; the page learns it from the `frame` query parameter.
 
-use std::error::Error;
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameStyle {
     /// The Windows title bar, dark.
@@ -39,12 +36,12 @@ impl FrameStyle {
     }
 
     /// Only the native style keeps the Windows title bar and borders.
-    fn decorations(self) -> bool {
+    pub fn decorations(self) -> bool {
         self == Self::Native
     }
 
-    fn page(self) -> WebviewUrl {
-        WebviewUrl::App(format!("index.html?frame={}", self.name()).into())
+    pub fn query(self) -> String {
+        format!("frame={}", self.name())
     }
 }
 
@@ -53,20 +50,8 @@ fn style_from(value: Option<&str>) -> FrameStyle {
     value.and_then(FrameStyle::parse).unwrap_or(DEFAULT_STYLE)
 }
 
-/// Creates the main window from its entry in `tauri.conf.json` (`create: false`).
-pub fn create_main_window(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    let style = style_from(std::env::var(STYLE_VARIABLE).ok().as_deref());
-    let mut config = app
-        .config()
-        .app
-        .windows
-        .first()
-        .cloned()
-        .ok_or("tauri.conf.json defines no window")?;
-    config.decorations = style.decorations();
-    config.url = style.page();
-    WebviewWindowBuilder::from_config(app, &config)?.build()?;
-    Ok(())
+pub fn chosen() -> FrameStyle {
+    style_from(std::env::var(STYLE_VARIABLE).ok().as_deref())
 }
 
 #[cfg(test)]
@@ -95,15 +80,9 @@ mod tests {
     }
 
     #[test]
-    fn the_page_url_names_the_style() {
-        for style in [FrameStyle::Native, FrameStyle::Liurium, FrameStyle::Hidden] {
-            let WebviewUrl::App(path) = style.page() else {
-                panic!("{style:?} must load the bundled page");
-            };
-            assert_eq!(
-                path.to_str(),
-                Some(format!("index.html?frame={}", style.name()).as_str())
-            );
-        }
+    fn the_query_names_the_style() {
+        assert_eq!(FrameStyle::Native.query(), "frame=native");
+        assert_eq!(FrameStyle::Liurium.query(), "frame=liurium");
+        assert_eq!(FrameStyle::Hidden.query(), "frame=hidden");
     }
 }

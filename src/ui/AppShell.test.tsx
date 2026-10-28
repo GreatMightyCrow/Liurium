@@ -8,6 +8,7 @@ function renderShell(frame: FrameStyle) {
     <AppShell
       frame={frame}
       title="Liurium"
+      icon="/favicon-mint.ico"
       windowControls={<button type="button">Close</button>}
       sidebar={<p>Sidebar item</p>}
       statusBar={<p>Status text</p>}
@@ -40,6 +41,12 @@ test("Liurium frame adds a title bar with the window buttons", () => {
   renderShell("liurium");
   expect(screen.getByTestId("title-bar").textContent).toContain("Liurium");
   expect(screen.getByRole("button", { name: "Close" })).toBeDefined();
+});
+
+test("the title bar shows the given app icon", () => {
+  renderShell("liurium");
+  const icon = screen.getByTestId("title-bar").querySelector("img");
+  expect(icon?.getAttribute("src")).toBe("/favicon-mint.ico");
 });
 
 test("hidden frame shows the window buttons without a title bar", () => {

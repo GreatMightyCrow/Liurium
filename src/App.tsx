@@ -5,6 +5,7 @@ import styles from "./App.module.css";
 import { AppRoutes } from "./app/AppRoutes";
 import { areas } from "./app/areas";
 import { frameStyleFrom } from "./app/frameStyle";
+import { appIconFor, themeFrom } from "./app/theme";
 import { useWindowControls } from "./app/useWindowControls";
 import { AppShell } from "./ui/AppShell";
 import { NotificationProvider } from "./ui/Notifications";
@@ -26,6 +27,7 @@ function App() {
             <AppShell
               frame={frame}
               title="Liurium"
+              icon={appIconFor(themeFrom(window.location.search))}
               windowControls={frame === "native" ? null : <FrameButtons />}
               sidebar={
                 <Sidebar

@@ -1,35 +1,38 @@
 /*
  * Design tokens. The only file allowed to contain raw colors and lengths
  * (ADR-0006). Names and reasons are documented in the vault's Design System note.
+ *
+ * Themes (ADR-0015) are an accent plus a base. `:root` holds the default, orange on
+ * warm; the `data-base` and `data-accent` blocks below each replace one whole group.
  */
 @layer tokens {
   :root {
-    /* Color: surfaces */
-    --color-canvas: #111116;
-    --color-surface: #1b1a22;
-    --color-surface-elevated: #23212c;
+    /* Base: warm. Surfaces */
+    --color-canvas: #131211;
+    --color-surface: #1d1b19;
+    --color-surface-elevated: #262321;
 
-    /* Color: lines. Decorative dividers, and controls that need 3:1 (WCAG 1.4.11). */
-    --color-border: #302c3a;
-    --color-border-control: #726b88;
+    /* Base: lines. Decorative dividers, and controls that need 3:1 (WCAG 1.4.11). */
+    --color-border: #35312d;
+    --color-border-control: #7a726b;
 
-    /* Color: text */
-    --color-text: #f2f0f8;
-    --color-text-secondary: #a6a0b6;
+    /* Base: text. Text on accent backgrounds is the canvas color. */
+    --color-text: #f4f1ed;
+    --color-text-secondary: #ada59d;
+    --color-on-accent: #131211;
 
-    /* Color: accent. Text on accent backgrounds uses --color-on-accent. */
-    --color-accent: #a28aff;
-    --color-accent-hover: #b6a4ff;
-    --color-accent-muted: #302a43;
-    --color-on-accent: #111116;
+    /* Base: dims the window behind a dialog, the canvas at 70 % */
+    --color-backdrop: rgb(19 18 17 / 0.7);
 
-    /* Color: status */
-    --color-success: #76c7a0;
-    --color-warning: #e9bb76;
-    --color-danger: #e58c9a;
+    /* Accent: orange */
+    --color-accent: #ff8c42;
+    --color-accent-hover: #ffa466;
+    --color-accent-muted: #3a2416;
 
-    /* Color: dims the window behind a dialog */
-    --color-backdrop: rgb(17 17 22 / 0.7);
+    /* Color: status, the same in every theme */
+    --color-success: #a8d46f;
+    --color-warning: #f0d35e;
+    --color-danger: #f2889e;
 
     /* Color: Windows contrast themes (forced colors). System colors from the
        user's theme, for states that are otherwise only a background or shadow. */
@@ -108,6 +111,39 @@
     --font-weight-semibold: 600;
     --line-height-tight: 1.25;
     --line-height-base: 1.5;
+  }
+
+  /* Base: cool, a slightly green graphite for the mint accent */
+  :root[data-base="cool"] {
+    --color-canvas: #101413;
+    --color-surface: #19201e;
+    --color-surface-elevated: #222a27;
+    --color-border: #2f3835;
+    --color-border-control: #6f7e79;
+    --color-text: #eef4f1;
+    --color-text-secondary: #a0b0aa;
+    --color-on-accent: #101413;
+    --color-backdrop: rgb(16 20 19 / 0.7);
+  }
+
+  /* Base: graphite, neutral, for either accent */
+  :root[data-base="graphite"] {
+    --color-canvas: #121212;
+    --color-surface: #1c1c1c;
+    --color-surface-elevated: #252525;
+    --color-border: #333333;
+    --color-border-control: #737373;
+    --color-text: #f2f2f2;
+    --color-text-secondary: #a6a6a6;
+    --color-on-accent: #121212;
+    --color-backdrop: rgb(18 18 18 / 0.7);
+  }
+
+  /* Accent: mint */
+  :root[data-accent="mint"] {
+    --color-accent: #4fd1a1;
+    --color-accent-hover: #7addb8;
+    --color-accent-muted: #163029;
   }
 
   @media (prefers-reduced-motion: reduce) {
