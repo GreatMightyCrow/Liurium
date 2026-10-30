@@ -18,6 +18,7 @@
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "rust:test:admin": "cargo test --manifest-path src-tauri/Cargo.toml -- --ignored",
     "check:rust": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:test",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm check:rust"
   },

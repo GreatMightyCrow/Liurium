@@ -82,5 +82,10 @@ jobs:
       - name: Rust tests
         run: pnpm rust:test
 
+      # Tests marked #[ignore] need administrator rights (symbolic links), which
+      # the runner has and a normal developer account does not.
+      - name: Rust tests with administrator rights
+        run: pnpm rust:test:admin
+
       - name: Release build without installers
         run: pnpm tauri build --no-bundle
