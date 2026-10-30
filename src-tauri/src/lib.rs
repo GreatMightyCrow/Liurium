@@ -1,4 +1,5 @@
 mod frame;
+pub mod storage;
 mod theme;
 mod window;
 
