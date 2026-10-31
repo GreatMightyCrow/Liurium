@@ -221,9 +221,11 @@ fn the_added_project_opens_again_after_a_restart() {
             project: added.clone()
         }
     );
+    // The long path without `\\?\`: CI's temp folder is a short 8.3 name.
+    let long = std::fs::canonicalize(&fixture.root).expect("folder");
     assert_eq!(
         to_json(&added)["folder"],
-        json!(fixture.root.to_string_lossy())
+        json!(long.to_string_lossy().trim_start_matches(r"\\?\"))
     );
     assert_eq!(to_json(&added)["readOnly"], json!(false));
 }
