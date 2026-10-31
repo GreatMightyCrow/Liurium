@@ -1,9 +1,15 @@
-import { lazy, Suspense } from "react";
+import { type ComponentType, lazy, Suspense } from "react";
 import { Redirect, Route, Switch, useLocation } from "wouter";
 import { areas } from "./areas";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { PlaceholderPage } from "./PlaceholderPage";
+import { SettingsPage } from "./SettingsPage";
 import { useFocusPageHeading } from "./useFocusPageHeading";
+
+// Areas with a real page; the others show their placeholder.
+const pages: Partial<Record<string, ComponentType>> = {
+  "/settings": SettingsPage,
+};
 
 // The UI gallery is for review and checks, not for users: dev server, or a build
 // made with VITE_UI_GALLERY=1. Loaded lazily so normal builds leave it out.
@@ -19,15 +25,22 @@ export function AppRoutes() {
     // A page that fails to render shows an error state; going to another page clears it.
     <PageErrorBoundary resetKey={location}>
       <Switch>
-        {areas.map((area) => (
-          <Route key={area.path} path={area.path}>
-            <PlaceholderPage
-              title={area.label}
-              icon={area.icon}
-              summary={area.summary}
-            />
-          </Route>
-        ))}
+        {areas.map((area) => {
+          const Page = pages[area.path];
+          return (
+            <Route key={area.path} path={area.path}>
+              {Page === undefined ? (
+                <PlaceholderPage
+                  title={area.label}
+                  icon={area.icon}
+                  summary={area.summary}
+                />
+              ) : (
+                <Page />
+              )}
+            </Route>
+          );
+        })}
         {UiGallery !== null && (
           <Route path="/dev/ui">
             <Suspense fallback={null}>

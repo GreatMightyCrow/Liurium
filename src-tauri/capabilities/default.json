@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window. Add a permission only together with the feature that needs it and a documented reason (Security Model). Window buttons of the custom frame styles: M1-009.",
+  "description": "Main window. Add a permission only together with the feature that needs it and a documented reason (Security Model). Window buttons of the custom frame styles: M1-009. App commands: one allow-<command> each, M2-004.",
   "windows": ["main"],
   "permissions": [
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-is-maximized"
+    "core:window:allow-is-maximized",
+    "allow-app-info"
   ]
 }
