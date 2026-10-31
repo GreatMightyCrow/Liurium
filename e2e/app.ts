@@ -74,10 +74,13 @@ export const test = base.extend<{ app: Page }>({
         60_000,
       );
       const browser = await playwright.chromium.connectOverCDP(ENDPOINT);
-      const page = browser.contexts().at(0)?.pages().at(0);
-      if (page === undefined) {
-        throw new Error("the app has no page");
+      const context = browser.contexts().at(0);
+      if (context === undefined) {
+        throw new Error("the app has no browser context");
       }
+      // The port can open before WebView2 has created the page (seen on CI).
+      const page =
+        context.pages().at(0) ?? (await context.waitForEvent("page"));
       await use(page);
       // Close through the app's own button so storage shuts down cleanly.
       await page
