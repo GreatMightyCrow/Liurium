@@ -94,12 +94,21 @@ jobs:
       - name: End-to-end tests
         run: pnpm e2e
 
-      # What the app needs to start: the WebView2 runtime and a free debugging port.
+      # Temporary (M2-009): starts the app by hand and shows what runs after 20 s.
       - name: End-to-end diagnostics
         if: failure()
         run: |
-          $keys = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
-                  'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-          foreach ($key in $keys) { "WebView2 runtime ($key): $((Get-ItemProperty $key -ErrorAction SilentlyContinue).pv)" }
-          Get-Process liurium, msedgewebview2 -ErrorAction SilentlyContinue | Format-Table Id, Name, StartTime
-          Get-NetTCPConnection -LocalPort 9333 -ErrorAction SilentlyContinue | Format-Table State, OwningProcess
+          "Interactive: $([Environment]::UserInteractive), user: $(whoami)"
+          qwinsta
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+          $app = Start-Process src-tauri\target\release\liurium.exe -PassThru
+          Start-Sleep -Seconds 20
+          $app.Refresh()
+          "App exited: $($app.HasExited), window: '$($app.MainWindowTitle)' $($app.MainWindowHandle)"
+          $procs = Get-CimInstance Win32_Process -Filter "Name='liurium.exe' OR Name='msedgewebview2.exe'" | Where-Object { "$($_.CommandLine)" -match 'liurium' }
+          $procs | ForEach-Object { "$($_.ProcessId) parent $($_.ParentProcessId) session $($_.SessionId) $($_.Name) debug-port-arg: $("$($_.CommandLine)" -match 'remote-debugging-port') type: $(if ("$($_.CommandLine)" -match '--type=(\S+)') { $Matches[1] } else { 'main' })" }
+          Get-NetTCPConnection -State Listen | Where-Object { $_.OwningProcess -in $procs.ProcessId } | Format-Table LocalAddress, LocalPort, OwningProcess
+          foreach ($root in 'HKLM:\SOFTWARE\Policies\Microsoft', 'HKCU:\Software\Policies\Microsoft') {
+            Get-ChildItem $root -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Edge' } | ForEach-Object { "$($_.Name)"; $_.GetValueNames() | ForEach-Object { "  $_" } }
+          }
+          taskkill /pid $app.Id /T /F

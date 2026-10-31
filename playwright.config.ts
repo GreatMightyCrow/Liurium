@@ -7,5 +7,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
+  // Room for the fixture's 60 s wait on a slow first WebView2 start.
+  timeout: 90_000,
   reporter: "list",
 });
