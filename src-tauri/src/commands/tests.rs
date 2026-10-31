@@ -1,12 +1,16 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
+use super::projects::{CurrentProject, Workspace};
 use super::*;
+use crate::domain::projects::ProjectError;
 use crate::storage::db::Kind;
 use crate::storage::fs::{FsError, PathRule};
-use crate::test_support::{Snapshot, app_data, current, damage, liurium_database, temp_dir};
+use crate::test_support::{
+    Snapshot, app_data, current, damage, liurium_database, project, temp_dir,
+};
 
 fn to_json(value: &impl Serialize) -> Value {
     serde_json::to_value(value).expect("serializable")
@@ -43,6 +47,7 @@ fn database_errors_map_to_what_the_user_can_act_on() {
         ),
         (DbError::Locked, CommandError::Locked),
         (DbError::DiskFull, CommandError::DiskFull),
+        (DbError::ReadOnly, CommandError::ReadOnly),
         (
             DbError::Migration {
                 version: 2,
@@ -164,5 +169,91 @@ fn app_info_uses_camel_case_names() {
     assert_eq!(
         to_json(&info),
         json!({ "version": "0.1.0", "data": { "state": "recovered" } })
+    );
+}
+
+#[test]
+fn project_errors_map_to_what_the_user_can_act_on() {
+    let cases = [
+        (ProjectError::Fs(FsError::ReadOnly), CommandError::ReadOnly),
+        (ProjectError::Db(DbError::Locked), CommandError::Locked),
+        (ProjectError::Unsuitable, CommandError::UnsuitableFolder),
+        (ProjectError::Damaged, CommandError::Damaged),
+        (ProjectError::Unknown, CommandError::NotFound),
+        (ProjectError::OtherProject, CommandError::OtherProject),
+        (ProjectError::Duplicate, CommandError::DuplicateProject),
+    ];
+    for (error, expected) in cases {
+        let shown = format!("{error:?}");
+        assert_eq!(CommandError::from(error), expected, "{shown}");
+    }
+}
+
+fn workspace(app_dir: &Path) -> Workspace {
+    let startup = Startup::open(Some(app_dir));
+    Workspace::new(Some(app_dir.to_owned()), &startup.data)
+}
+
+#[test]
+fn a_first_start_has_no_current_project() {
+    let dir = temp_dir();
+
+    let current = workspace(&dir.path().join("app"))
+        .current()
+        .expect("current");
+
+    assert_eq!(to_json(&current), json!({ "state": "none" }));
+}
+
+#[test]
+fn the_added_project_opens_again_after_a_restart() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    let added = workspace(&app_dir).add(&fixture.root).expect("added");
+
+    let restarted = workspace(&app_dir).current().expect("current");
+
+    assert_eq!(added.id, fixture.id);
+    assert_eq!(
+        restarted,
+        CurrentProject::Open {
+            project: added.clone()
+        }
+    );
+    assert_eq!(
+        to_json(&added)["folder"],
+        json!(fixture.root.to_string_lossy())
+    );
+    assert_eq!(to_json(&added)["readOnly"], json!(false));
+}
+
+#[test]
+fn a_project_that_cannot_be_reopened_is_named_with_the_reason() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    workspace(&app_dir).add(&fixture.root).expect("added");
+    std::fs::remove_dir_all(&fixture.root).expect("folder gone");
+
+    let restarted = workspace(&app_dir).current().expect("current");
+
+    assert_eq!(
+        to_json(&restarted),
+        json!({ "state": "unavailable", "name": "Garden", "error": { "kind": "notFound" } })
+    );
+}
+
+#[test]
+fn without_app_data_project_commands_report_why() {
+    let failed = DataStatus::Failed {
+        error: CommandError::NewerVersion,
+    };
+    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed);
+
+    assert_eq!(workspace.current(), Err(CommandError::NewerVersion));
+    assert_eq!(
+        workspace.add(Path::new("unused")),
+        Err(CommandError::NewerVersion)
     );
 }

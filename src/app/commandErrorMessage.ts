@@ -16,7 +16,8 @@ const messages: {
   notFound: () => "The file or folder no longer exists.",
   alreadyExists: () => "A file or folder with this name already exists.",
   changed: () => "The file was changed outside Liurium. Nothing was saved.",
-  readOnly: () => "The file is read-only. Nothing was saved.",
+  readOnly: () =>
+    "This file or folder is write-protected. Nothing was changed.",
   locked: () => "Another program is using this data. Close it and try again.",
   diskFull: () => "The disk is full. Free some space and try again.",
   damaged: () =>
@@ -35,6 +36,12 @@ const messages: {
     "A folder was found where a file was expected, or the other way round.",
   tooLarge: ({ maxBytes }) =>
     `The file is larger than ${megabytes.format(maxBytes / 1_048_576)}.`,
+  unsuitableFolder: () =>
+    "Choose a folder of its own, not a whole drive or a folder inside .liurium or .git.",
+  otherProject: () =>
+    "The project's folder now holds a different project. Nothing was changed.",
+  duplicateProject: () =>
+    "Another folder already holds this project, so this one looks like a copy. Nothing was changed.",
   internal: () =>
     "Something went wrong inside Liurium. Try again, and restart Liurium if it keeps happening.",
 };

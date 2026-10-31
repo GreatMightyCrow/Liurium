@@ -21,6 +21,8 @@ pub use migrate::BACKUP_DIR;
 pub(crate) use migrate::Schema;
 
 pub const APP_DB: &str = "app.db";
+/// Inside a project's `.liurium` folder.
+pub const PROJECT_DB: &str = "project.db";
 
 /// How long to wait for another connection's lock before reporting `Locked`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);

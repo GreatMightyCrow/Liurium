@@ -1,19 +1,20 @@
 import { expect, test } from "./app";
 
 test("Settings shows what the Rust core reports", async ({ app }) => {
+  const page = await app.launch();
   await expect(
-    app.getByRole("heading", { level: 1, name: "Dashboard" }),
+    page.getByRole("heading", { level: 1, name: "Dashboard" }),
   ).toBeVisible();
 
-  await app
+  await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Settings" })
     .click();
 
   await expect(
-    app.getByRole("heading", { level: 1, name: "Settings" }),
+    page.getByRole("heading", { level: 1, name: "Settings" }),
   ).toBeFocused();
   // Both values come from the real app_info command.
-  const facts = app.locator("dd");
+  const facts = page.locator("dd");
   await expect(facts).toHaveText([/^\d+\.\d+\.\d+$/, "Ready"]);
 });

@@ -10,6 +10,7 @@ use std::{
 
 use ts_rs::{Config, TS};
 
+use super::projects::{CurrentProject, ProjectInfo};
 use super::{AppInfo, CommandError, DataStatus};
 
 fn output<T: TS + 'static>(config: &Config) -> (PathBuf, String) {
@@ -27,6 +28,8 @@ fn typescript_bindings_match_the_rust_types() {
         output::<AppInfo>(&config),
         output::<DataStatus>(&config),
         output::<CommandError>(&config),
+        output::<ProjectInfo>(&config),
+        output::<CurrentProject>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

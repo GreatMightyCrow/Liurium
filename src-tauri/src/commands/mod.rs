@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod bindings;
 mod error;
+pub mod projects;
 #[cfg(test)]
 mod tests;
 
@@ -14,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 pub use error::CommandError;
+pub use projects::Workspace;
 
 use crate::storage::db::{self, AppDb, DbError};
 

@@ -8,6 +8,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
-    "allow-app-info"
+    "allow-app-info",
+    "allow-current-project",
+    "allow-add-project"
   ]
 }

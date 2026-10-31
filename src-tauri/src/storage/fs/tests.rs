@@ -444,3 +444,23 @@ fn symlinks_out_of_the_project_are_refused() {
     assert!(matches!(folder, FsError::OutsideRoot), "{folder:?}");
     assert!(!f.outside.join("new.md").exists());
 }
+
+#[test]
+fn only_names_made_by_create_temp_count_as_temp_files() {
+    let dir = temp_dir();
+    let (temp, file) = create_temp(dir.path()).expect("temp file");
+    drop(file);
+    assert!(is_temp_name(temp.file_name().expect("name")));
+
+    for name in [
+        "notes.liurium-tmp",
+        ".draft.liurium-tmp",
+        ".1a-2b.liurium-tmp",
+        ".1a-2b-3c-4d.liurium-tmp",
+        ".1A-2b-3c.liurium-tmp",
+        ".1a--3c.liurium-tmp",
+        ".1a-2b-3c.liurium-tmp.md",
+    ] {
+        assert!(!is_temp_name(OsStr::new(name)), "{name}");
+    }
+}

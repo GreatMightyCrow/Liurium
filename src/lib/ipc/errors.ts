@@ -20,6 +20,9 @@ const kinds: Record<CommandError["kind"], true> = {
   brokenLink: true,
   wrongKind: true,
   tooLarge: true,
+  unsuitableFolder: true,
+  otherProject: true,
+  duplicateProject: true,
   internal: true,
 };
 const knownKinds = new Set<string>(Object.keys(kinds));

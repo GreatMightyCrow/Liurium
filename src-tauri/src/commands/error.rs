@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::domain::projects::ProjectError;
 use crate::storage::{db::DbError, fs::FsError};
 
 /// What a command reports to the page: a kind the UI can explain in plain words.
@@ -39,6 +40,12 @@ pub enum CommandError {
         #[cfg_attr(test, ts(type = "number"))]
         max_bytes: u64,
     },
+    /// A whole drive, or a folder inside `.liurium` or `.git`.
+    UnsuitableFolder,
+    /// The project's folder now holds a different project.
+    OtherProject,
+    /// Another folder holds the same project; it was copied.
+    DuplicateProject,
     /// Nothing the user can act on.
     Internal,
 }
@@ -52,6 +59,7 @@ impl From<DbError> for CommandError {
             DbError::NewerSchema { .. } => Self::NewerVersion,
             DbError::Locked => Self::Locked,
             DbError::DiskFull => Self::DiskFull,
+            DbError::ReadOnly => Self::ReadOnly,
             DbError::Migration { .. } => Self::UpgradeFailed,
             DbError::JournalMode { .. } | DbError::Io(_) | DbError::Sqlite(_) => Self::Internal,
         }
@@ -72,6 +80,20 @@ impl From<FsError> for CommandError {
             FsError::ReadOnly => Self::ReadOnly,
             FsError::TooLarge { max, .. } => Self::TooLarge { max_bytes: max },
             FsError::Io(_) => Self::Internal,
+        }
+    }
+}
+
+impl From<ProjectError> for CommandError {
+    fn from(error: ProjectError) -> Self {
+        match error {
+            ProjectError::Fs(error) => error.into(),
+            ProjectError::Db(error) => error.into(),
+            ProjectError::Unsuitable => Self::UnsuitableFolder,
+            ProjectError::Damaged => Self::Damaged,
+            ProjectError::Unknown => Self::NotFound,
+            ProjectError::OtherProject => Self::OtherProject,
+            ProjectError::Duplicate => Self::DuplicateProject,
         }
     }
 }

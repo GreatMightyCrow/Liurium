@@ -1,0 +1,69 @@
+use std::{error::Error, fmt};
+
+use crate::storage::{db::DbError, fs::FsError};
+
+/// Why a project could not be added or opened. The folder is left as it was; only
+/// what this call created is removed again.
+#[derive(Debug)]
+pub enum ProjectError {
+    Fs(FsError),
+    Db(DbError),
+    /// A whole drive, or a folder inside `.liurium` or `.git`.
+    Unsuitable,
+    /// `.liurium` has no valid project identity.
+    Damaged,
+    /// The registry knows no project with this id.
+    Unknown,
+    /// The registered folder now holds a different project.
+    OtherProject,
+    /// Another folder still holds this project: the folder was copied (ADR-0016).
+    Duplicate,
+}
+
+impl fmt::Display for ProjectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fs(error) => write!(f, "{error}"),
+            Self::Db(error) => write!(f, "{error}"),
+            Self::Unsuitable => write!(f, "the folder cannot hold a project"),
+            Self::Damaged => write!(f, "the project has no valid identity"),
+            Self::Unknown => write!(f, "no project with this id"),
+            Self::OtherProject => write!(f, "the folder holds another project"),
+            Self::Duplicate => write!(f, "another folder holds the same project"),
+        }
+    }
+}
+
+impl Error for ProjectError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Fs(error) => Some(error),
+            Self::Db(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<FsError> for ProjectError {
+    fn from(error: FsError) -> Self {
+        Self::Fs(error)
+    }
+}
+
+impl From<DbError> for ProjectError {
+    fn from(error: DbError) -> Self {
+        Self::Db(error)
+    }
+}
+
+impl From<rusqlite::Error> for ProjectError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Db(error.into())
+    }
+}
+
+impl From<std::io::Error> for ProjectError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Fs(error.into())
+    }
+}

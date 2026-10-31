@@ -21,6 +21,8 @@ pub enum DbError {
     Locked,
     /// The disk is full, or the database reached its size limit.
     DiskFull,
+    /// A write was needed, but the file or its folder is write-protected.
+    ReadOnly,
     /// SQLite kept another journal mode than the one this database needs.
     JournalMode {
         wanted: &'static str,
@@ -47,6 +49,7 @@ impl fmt::Display for DbError {
             ),
             Self::Locked => write!(f, "another program is using the database"),
             Self::DiskFull => write!(f, "the disk is full"),
+            Self::ReadOnly => write!(f, "the database is write-protected"),
             Self::JournalMode { wanted, got } => {
                 write!(f, "journal mode {got} instead of {wanted}")
             }
@@ -80,6 +83,7 @@ impl From<rusqlite::Error> for DbError {
             Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Self::Locked,
             Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => Self::Corrupt,
             Some(ErrorCode::DiskFull) => Self::DiskFull,
+            Some(ErrorCode::ReadOnly) => Self::ReadOnly,
             _ => Self::Sqlite(error),
         }
     }

@@ -1,0 +1,275 @@
+//! Adding and opening projects (ADR-0016, M2-005). A project is a folder with
+//! `.liurium/project.db`, which holds its identity; the registry in `app.db` remembers
+//! where each project was last seen. Liurium writes only `.liurium` into the folder.
+
+mod error;
+#[cfg(test)]
+mod tests;
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use rusqlite::{Connection, MAIN_DB, OptionalExtension, params};
+
+pub use error::ProjectError;
+
+use crate::storage::{
+    db::{self, DbError, Kind, OpenMode, PROJECT_DB},
+    fs::{self as storage_fs, LIURIUM_DIR, ProjectRoot},
+};
+
+/// Keeps Git from committing backups and SQLite's side files; `project.db` itself
+/// stays visible so Git users can commit their tasks (ADR-0016).
+const GITIGNORE: &str = "# Written by Liurium. project.db holds this project's identity and tasks.\n\
+backups/\n\
+*-journal\n\
+*-wal\n\
+*-shm\n";
+
+/// Display names come from `project.db`, which is untrusted input.
+const MAX_NAME_CHARS: usize = 200;
+
+/// An open project. Dropping it closes `project.db`.
+#[derive(Debug)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub root: ProjectRoot,
+    /// `project.db` or the folder is write-protected: nothing is written.
+    pub read_only: bool,
+    connection: Connection,
+}
+
+impl Project {
+    pub fn connection(&self) -> &Connection {
+        &self.connection
+    }
+}
+
+/// Adds the folder as a project and opens it. A folder with `.liurium/project.db` is
+/// an existing project and keeps its identity; otherwise `.liurium` is created.
+pub fn add(app: &Connection, folder: &Path) -> Result<Project, ProjectError> {
+    let root = ProjectRoot::open(folder)?;
+    if !root.suitable() {
+        return Err(ProjectError::Unsuitable);
+    }
+    let project = match root.liurium_dir()? {
+        Some(dir) if dir.join(PROJECT_DB).try_exists()? => load(root)?,
+        existing => create(root, existing)?,
+    };
+    register(app, &project)?;
+    opened(app, &project)?;
+    Ok(project)
+}
+
+/// Opens a registered project by its id.
+pub fn open(app: &Connection, id: &str) -> Result<Project, ProjectError> {
+    let path: String = app
+        .query_row("SELECT path FROM projects WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .optional()?
+        .ok_or(ProjectError::Unknown)?;
+    let project = load(ProjectRoot::open(Path::new(&path))?)?;
+    if project.id != id {
+        return Err(ProjectError::OtherProject);
+    }
+    opened(app, &project)?;
+    Ok(project)
+}
+
+/// The most recently opened project: its id and the name the registry shows.
+pub fn last_opened(app: &Connection) -> Result<Option<(String, String)>, DbError> {
+    Ok(app
+        .query_row(
+            "SELECT id, name FROM projects WHERE last_opened_at IS NOT NULL
+             ORDER BY last_opened_at DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
+fn load(root: ProjectRoot) -> Result<Project, ProjectError> {
+    let dir = root
+        .liurium_dir()?
+        .ok_or(ProjectError::Fs(storage_fs::FsError::NotFound))?;
+    let connection = db::open(&dir.join(PROJECT_DB), Kind::Project, OpenMode::Existing)?;
+    let id = meta(&connection, "id")?
+        .filter(|id| is_project_id(id))
+        .ok_or(ProjectError::Damaged)?;
+    let name = meta(&connection, "name")?
+        .map(|name| clean_name(&name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| default_name(&root));
+    let read_only = connection.is_readonly(MAIN_DB)?;
+    Ok(Project {
+        id,
+        name,
+        root,
+        read_only,
+        connection,
+    })
+}
+
+/// Creates `.liurium` (unless an empty one is there), `project.db` with a new
+/// identity, and `.gitignore`. If any step fails, what this call created is removed.
+fn create(root: ProjectRoot, existing: Option<PathBuf>) -> Result<Project, ProjectError> {
+    let mut created = Created::default();
+    let dir = match existing {
+        Some(dir) => dir,
+        None => {
+            let dir = root.create_liurium_dir()?;
+            created.dir = Some(dir.clone());
+            dir
+        }
+    };
+    let database = dir.join(PROJECT_DB);
+    created.files.push(database.clone());
+    let connection = db::open(&database, Kind::Project, OpenMode::CreateIfMissing)?;
+    let id = new_id(&connection)?;
+    let name = default_name(&root);
+    connection.execute(
+        "INSERT INTO meta (key, value) VALUES ('id', ?1), ('name', ?2)",
+        params![id, name],
+    )?;
+    let gitignore = dir.join(".gitignore");
+    if !gitignore.try_exists()? {
+        created.files.push(gitignore.clone());
+        storage_fs::create_file(&gitignore, GITIGNORE.as_bytes())?;
+    }
+    created.keep();
+    Ok(Project {
+        id,
+        name,
+        root,
+        read_only: false,
+        connection,
+    })
+}
+
+/// What `create` made so far; removed on drop unless kept. The connection to
+/// `project.db` is declared later in `create`, so it is closed before this runs.
+#[derive(Default)]
+struct Created {
+    dir: Option<PathBuf>,
+    files: Vec<PathBuf>,
+}
+
+impl Created {
+    fn keep(mut self) {
+        self.dir = None;
+        self.files.clear();
+    }
+}
+
+impl Drop for Created {
+    fn drop(&mut self) {
+        // Best effort, an error is already on its way. A folder made by this call holds
+        // only files made by this call; `remove_dir_all` does not follow links.
+        if let Some(dir) = &self.dir {
+            let _ = fs::remove_dir_all(dir);
+            return;
+        }
+        for file in &self.files {
+            let _ = fs::remove_file(file);
+            let mut journal = file.as_os_str().to_owned();
+            journal.push("-journal");
+            let _ = fs::remove_file(PathBuf::from(journal));
+        }
+    }
+}
+
+/// Records where the project is. A moved project (old folder gone) gets its new
+/// path; a project still present in another folder is a copy and is refused.
+fn register(app: &Connection, project: &Project) -> Result<(), ProjectError> {
+    let known: Option<String> = app
+        .query_row(
+            "SELECT path FROM projects WHERE id = ?1",
+            [&project.id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(old) = known {
+        let old = Path::new(&old);
+        let same = storage_fs::same_path(old, project.root.path()).unwrap_or(false);
+        if !same && old.join(LIURIUM_DIR).join(PROJECT_DB).try_exists()? {
+            return Err(ProjectError::Duplicate);
+        }
+    }
+    app.execute(
+        "INSERT INTO projects (id, path, name) VALUES (?1, ?2, ?3)
+         ON CONFLICT (id) DO UPDATE SET path = excluded.path, name = excluded.name",
+        params![project.id, project.root.display(), project.name],
+    )?;
+    Ok(())
+}
+
+/// After opening: remember the time and name, and remove temp files of interrupted
+/// writes, unless the project is read-only.
+fn opened(app: &Connection, project: &Project) -> Result<(), ProjectError> {
+    app.execute(
+        "UPDATE projects SET name = ?2,
+         last_opened_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+        params![project.id, project.name],
+    )?;
+    if !project.read_only {
+        project.root.remove_temp_files();
+    }
+    Ok(())
+}
+
+fn meta(connection: &Connection, key: &str) -> Result<Option<String>, ProjectError> {
+    Ok(connection
+        .query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()?)
+}
+
+fn default_name(root: &ProjectRoot) -> String {
+    root.name()
+        .map(|name| clean_name(&name))
+        .unwrap_or_default()
+}
+
+/// No control characters, at most `MAX_NAME_CHARS`, trimmed.
+fn clean_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_NAME_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+/// A random UUID v4 from SQLite's `randomblob`, so no extra crate is needed.
+fn new_id(connection: &Connection) -> Result<String, ProjectError> {
+    let bytes: Vec<u8> = connection.query_row("SELECT randomblob(16)", [], |row| row.get(0))?;
+    let mut bytes: [u8; 16] = bytes.try_into().map_err(|_| ProjectError::Damaged)?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+}
+
+/// A lowercase UUID v4, as `new_id` makes them. Ids from `project.db` are untrusted.
+pub fn is_project_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, &byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
+        && bytes[14] == b'4'
+        && matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
+}

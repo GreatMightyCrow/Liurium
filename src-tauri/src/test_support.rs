@@ -117,6 +117,30 @@ pub fn read_only(path: &Path) {
     fs::set_permissions(path, permissions).expect("read-only");
 }
 
+/// Denies everyone creating files and folders in `folder` (an ACL entry), like a
+/// share without write access. Dropping the guard removes the entry again.
+pub struct DeniedWrites(PathBuf);
+
+pub fn deny_writes(folder: &Path) -> DeniedWrites {
+    icacls(folder, &["/deny", "*S-1-1-0:(WD,AD)"]);
+    DeniedWrites(folder.to_owned())
+}
+
+impl Drop for DeniedWrites {
+    fn drop(&mut self) {
+        icacls(&self.0, &["/remove:d", "*S-1-1-0"]);
+    }
+}
+
+fn icacls(path: &Path, args: &[&str]) {
+    let output = Command::new("icacls")
+        .arg(path)
+        .args(args)
+        .output()
+        .expect("icacls");
+    assert!(output.status.success(), "{output:?}");
+}
+
 /// Junctions need no special rights, unlike symbolic links.
 pub fn junction(link: &Path, target: &Path) {
     let output = Command::new("cmd")

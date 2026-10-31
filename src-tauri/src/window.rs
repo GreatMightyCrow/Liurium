@@ -26,6 +26,11 @@ pub fn create_main_window(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     config.url = page(style, theme);
     let mut builder = WebviewWindowBuilder::from_config(app, &config)?
         .initialization_script(theme.start_script());
+    // The end-to-end build keeps WebView2's own data in the test's folder too.
+    #[cfg(feature = "e2e")]
+    if let Some(dir) = crate::e2e::data_dir() {
+        builder = builder.data_directory(dir.join("EBWebView"));
+    }
     if let Some(icon) = theme.window_icon() {
         builder = builder.icon(icon)?;
     }

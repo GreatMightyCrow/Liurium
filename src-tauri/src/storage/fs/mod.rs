@@ -22,8 +22,11 @@ use std::{
 pub use error::FsError;
 pub use path::{PathRule, RelPath};
 
+/// Liurium's own folder in every project (ADR-0016).
+pub const LIURIUM_DIR: &str = ".liurium";
+
 /// Written only by their own modules, never through generic paths.
-const PROTECTED: [&str; 2] = [".liurium", ".git"];
+const PROTECTED: [&str; 2] = [LIURIUM_DIR, ".git"];
 
 /// Ends the name of a temp file that an interrupted write left behind
 /// (cleaned up when a project opens, M2-005).
@@ -114,6 +117,82 @@ impl ProjectRoot {
     pub fn create_dir(&self, rel: &RelPath) -> Result<(), FsError> {
         fs::create_dir_all(self.writable(rel)?)?;
         Ok(())
+    }
+
+    /// The folder's own name, for a project's default display name.
+    pub fn name(&self) -> Option<String> {
+        self.path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    }
+
+    /// The path as Windows shows it, without the `\\?\` prefix.
+    pub fn display(&self) -> String {
+        let text = self.path.to_string_lossy();
+        if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{share}")
+        } else {
+            text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
+        }
+    }
+
+    /// Whether this folder can hold a project: not a whole drive or share (opening
+    /// would walk all of it), and not inside a `.liurium` or `.git` folder.
+    pub fn suitable(&self) -> bool {
+        let protected = self.path.components().any(|part| {
+            PROTECTED
+                .iter()
+                .any(|name| part.as_os_str().eq_ignore_ascii_case(name))
+        });
+        self.name().is_some() && !protected
+    }
+
+    /// `.liurium` in this folder, if present. A link there is refused: Liurium's own
+    /// data must not lead somewhere else.
+    pub fn liurium_dir(&self) -> Result<Option<PathBuf>, FsError> {
+        let path = self.path.join(LIURIUM_DIR);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => Ok(Some(path)),
+            Ok(_) => Err(FsError::WrongKind),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Creates `.liurium`; fails if anything already has that name.
+    pub fn create_liurium_dir(&self) -> Result<PathBuf, FsError> {
+        let path = self.path.join(LIURIUM_DIR);
+        fs::create_dir(&path).map_err(not_writable)?;
+        Ok(path)
+    }
+
+    /// Removes the temp files that interrupted writes left behind (`stage` names
+    /// them), and nothing else. Does not follow links and skips `.git`. Best effort:
+    /// a file that cannot be removed stays for the next time. Returns how many went.
+    pub fn remove_temp_files(&self) -> usize {
+        let mut removed = 0;
+        let mut folders = vec![self.path.clone()];
+        while let Some(folder) = folders.pop() {
+            let Ok(entries) = fs::read_dir(&folder) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                let name = entry.file_name();
+                if kind.is_symlink() {
+                    continue;
+                } else if kind.is_dir() {
+                    if !name.eq_ignore_ascii_case(".git") {
+                        folders.push(entry.path());
+                    }
+                } else if is_temp_name(&name) && fs::remove_file(entry.path()).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        removed
     }
 
     /// Where `rel` really is. Every existing part is canonicalized, which follows
@@ -264,10 +343,54 @@ fn unique_token() -> String {
     format!("{:x}-{count:x}-{nanos:x}", std::process::id())
 }
 
+/// Whether a file name is exactly what `create_temp` makes: `.` + `unique_token` +
+/// `TEMP_SUFFIX`. A user's file that merely ends the same way does not match.
+pub fn is_temp_name(name: &OsStr) -> bool {
+    let Some(token) = name
+        .to_str()
+        .and_then(|name| name.strip_prefix('.'))
+        .and_then(|name| name.strip_suffix(TEMP_SUFFIX))
+    else {
+        return false;
+    };
+    let parts: Vec<&str> = token.split('-').collect();
+    parts.len() == 3
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
 /// Takes the file so it is closed before the rename.
 fn fill(mut file: File, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+/// Creates a small file of Liurium's own (in `.liurium`); never replaces an existing
+/// one. A failed write removes the partial file again.
+pub fn create_file(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(not_writable)?;
+    fill(file, bytes).map_err(|error| {
+        let _ = fs::remove_file(path);
+        FsError::from(error)
+    })
+}
+
+/// Creating something in a folder the user may not write to says so, instead of a
+/// bare file error.
+fn not_writable(error: io::Error) -> FsError {
+    if error.kind() == io::ErrorKind::PermissionDenied {
+        FsError::ReadOnly
+    } else {
+        error.into()
+    }
 }
 
 /// Whether two existing absolute paths name the same file or folder.

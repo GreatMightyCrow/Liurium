@@ -18,6 +18,9 @@ const every: CommandError[] = [
   { kind: "brokenLink" },
   { kind: "wrongKind" },
   { kind: "tooLarge", maxBytes: 1_048_576 },
+  { kind: "unsuitableFolder" },
+  { kind: "otherProject" },
+  { kind: "duplicateProject" },
   { kind: "internal" },
 ];
 
