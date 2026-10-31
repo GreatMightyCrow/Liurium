@@ -1,10 +1,12 @@
-use std::{fs, io};
+use std::io;
 
+use rusqlite::Connection;
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 use super::*;
+use crate::storage::db::Kind;
 use crate::storage::fs::{FsError, PathRule};
+use crate::test_support::{Snapshot, app_data, current, damage, liurium_database, temp_dir};
 
 fn to_json(value: &impl Serialize) -> Value {
     serde_json::to_value(value).expect("serializable")
@@ -105,7 +107,7 @@ fn operating_system_details_never_cross_ipc() {
 
 #[test]
 fn a_new_app_folder_is_ready() {
-    let dir = TempDir::new().expect("temp folder");
+    let dir = temp_dir();
     let startup = Startup::open(Some(&dir.path().join("app")));
 
     assert_eq!(startup.data, DataStatus::Ready);
@@ -114,8 +116,10 @@ fn a_new_app_folder_is_ready() {
 
 #[test]
 fn a_damaged_app_database_is_reported_as_recovered() {
-    let dir = TempDir::new().expect("temp folder");
-    fs::write(dir.path().join("app.db"), b"not a database").expect("write");
+    let dir = temp_dir();
+    let path = dir.path().join("app.db");
+    drop(liurium_database(&path, Kind::App, current(Kind::App)));
+    damage(&path);
 
     let startup = Startup::open(Some(dir.path()));
 
@@ -124,14 +128,16 @@ fn a_damaged_app_database_is_reported_as_recovered() {
 
 #[test]
 fn a_newer_app_database_is_reported_as_failed() {
-    let dir = TempDir::new().expect("temp folder");
-    let app = db::open_app(dir.path()).expect("app database");
-    app.connection
+    let dir = temp_dir();
+    let path = app_data(dir.path(), &[]);
+    Connection::open(&path)
+        .expect("database")
         .pragma_update(None, "user_version", 9)
         .expect("version");
-    drop(app);
+    let before = Snapshot::of(&path);
 
     let startup = Startup::open(Some(dir.path()));
+    before.assert_unchanged(&path);
 
     assert_eq!(
         to_json(&startup.data),

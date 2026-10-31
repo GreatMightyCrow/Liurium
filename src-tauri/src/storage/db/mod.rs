@@ -18,7 +18,7 @@ use rusqlite::{Connection, OpenFlags, config::DbConfig};
 
 pub use error::DbError;
 pub use migrate::BACKUP_DIR;
-use migrate::Schema;
+pub(crate) use migrate::Schema;
 
 pub const APP_DB: &str = "app.db";
 
@@ -50,7 +50,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn schema(self) -> &'static Schema {
+    pub(crate) fn schema(self) -> &'static Schema {
         match self {
             Self::App => &APP_SCHEMA,
             Self::Project => &PROJECT_SCHEMA,

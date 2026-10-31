@@ -1,10 +1,10 @@
-//! Every open and migration path against real SQLite files in temp folders.
+//! Every open and migration path against real SQLite files in temp folders. Older
+//! databases come from hand-built fixtures (`test_support`), not from the runner.
 
 use std::{ffi::OsStr, fs};
 
-use tempfile::TempDir;
-
 use super::*;
+use crate::test_support::{Snapshot, app_data, current, damage, database, project, temp_dir};
 
 const NOTES: &str = "CREATE TABLE notes (body TEXT NOT NULL) STRICT;";
 const TAGS: &str = "CREATE TABLE tags (name TEXT NOT NULL) STRICT;";
@@ -34,14 +34,6 @@ const LARGE_V2: Schema = Schema {
     ],
 };
 
-fn temp() -> TempDir {
-    TempDir::new().expect("temp folder")
-}
-
-fn project_db(dir: &TempDir) -> PathBuf {
-    dir.path().join("project.db")
-}
-
 fn open_schema(path: &Path, schema: &Schema) -> Result<Connection, DbError> {
     open_with(
         path,
@@ -52,10 +44,10 @@ fn open_schema(path: &Path, schema: &Schema) -> Result<Connection, DbError> {
     )
 }
 
-/// A V1 database with one note in it.
-fn create_v1(path: &Path) {
-    let conn = open_schema(path, &V1).expect("new database");
-    conn.execute("INSERT INTO notes VALUES ('kept')", [])
+/// The older-schema fixture: a hand-built V1 database with one note in it.
+fn v1_with_a_note(path: &Path) {
+    database(path, &V1)
+        .execute("INSERT INTO notes VALUES ('kept')", [])
         .expect("insert");
 }
 
@@ -69,24 +61,24 @@ fn text(conn: &Connection, pragma: &str) -> String {
         .expect(pragma)
 }
 
-fn tables(conn: &Connection) -> Vec<String> {
-    let mut statement = conn
-        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
-        .expect("query");
+fn column(conn: &Connection, sql: &str) -> Vec<String> {
+    let mut statement = conn.prepare(sql).expect("query");
     statement
         .query_map([], |row| row.get(0))
-        .expect("tables")
+        .expect("rows")
         .collect::<Result<_, _>>()
-        .expect("table names")
+        .expect("values")
+}
+
+fn tables(conn: &Connection) -> Vec<String> {
+    column(
+        conn,
+        "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name",
+    )
 }
 
 fn notes(conn: &Connection) -> Vec<String> {
-    let mut statement = conn.prepare("SELECT body FROM notes").expect("query");
-    statement
-        .query_map([], |row| row.get(0))
-        .expect("notes")
-        .collect::<Result<_, _>>()
-        .expect("note bodies")
+    column(conn, "SELECT body FROM notes")
 }
 
 fn backups(path: &Path) -> Vec<PathBuf> {
@@ -103,7 +95,7 @@ fn file_name(path: &Path) -> &str {
 
 #[test]
 fn a_new_app_database_is_created_and_migrated() {
-    let dir = temp();
+    let dir = temp_dir();
     let app_dir = dir.path().join("io.github.greatmightycrow.liurium");
     let app = open_app(&app_dir).expect("app database");
     let conn = &app.connection;
@@ -118,9 +110,26 @@ fn a_new_app_database_is_created_and_migrated() {
 }
 
 #[test]
+fn an_existing_registry_survives_reopening() {
+    let dir = temp_dir();
+    let notes = project(dir.path(), "Notes", current(Kind::Project));
+    let app_dir = dir.path().join("app");
+    app_data(&app_dir, &[&notes]);
+
+    let app = open_app(&app_dir).expect("app database");
+
+    assert_eq!(app.moved_aside, None);
+    assert_eq!(
+        column(&app.connection, "SELECT id FROM projects"),
+        std::slice::from_ref(&notes.id)
+    );
+    assert!(backups(&app_dir.join(APP_DB)).is_empty());
+}
+
+#[test]
 fn a_new_project_database_uses_the_rollback_journal() {
-    let dir = temp();
-    let path = project_db(&dir);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
     let conn = open(&path, Kind::Project, OpenMode::CreateIfMissing).expect("project database");
 
     assert_eq!(text(&conn, "journal_mode"), "delete");
@@ -141,8 +150,8 @@ fn a_new_project_database_uses_the_rollback_journal() {
 
 #[test]
 fn a_missing_database_is_reported_and_not_created() {
-    let dir = temp();
-    let path = project_db(&dir);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
     let error = open(&path, Kind::Project, OpenMode::Existing).unwrap_err();
 
     assert!(matches!(error, DbError::Missing), "{error:?}");
@@ -151,22 +160,22 @@ fn a_missing_database_is_reported_and_not_created() {
 
 #[test]
 fn reopening_a_current_database_writes_nothing() {
-    let dir = temp();
-    let path = project_db(&dir);
-    drop(open(&path, Kind::Project, OpenMode::CreateIfMissing).expect("new database"));
-    let before = fs::read(&path).expect("file");
+    let dir = temp_dir();
+    let fixture = project(dir.path(), "Notes", current(Kind::Project));
+    let path = fixture.database();
+    let before = Snapshot::of(&path);
 
     drop(open(&path, Kind::Project, OpenMode::Existing).expect("reopened"));
 
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
     assert!(backups(&path).is_empty());
 }
 
 #[test]
 fn an_older_schema_is_upgraded_after_a_backup() {
-    let dir = temp();
-    let path = project_db(&dir);
-    create_v1(&path);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
+    v1_with_a_note(&path);
 
     let conn = open_schema(&path, &V2).expect("upgraded");
     assert_eq!(number(&conn, "user_version"), 2);
@@ -192,17 +201,17 @@ fn an_older_schema_is_upgraded_after_a_backup() {
 
 #[test]
 fn a_failed_migration_rolls_back_and_keeps_a_restorable_backup() {
-    let dir = temp();
-    let path = project_db(&dir);
-    create_v1(&path);
-    let before = fs::read(&path).expect("file");
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
+    v1_with_a_note(&path);
+    let before = Snapshot::of(&path);
 
     let error = open_schema(&path, &BROKEN_V2).unwrap_err();
     assert!(
         matches!(error, DbError::Migration { version: 2, .. }),
         "{error:?}"
     );
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
 
     let conn = open_schema(&path, &V1).expect("still V1");
     assert_eq!(number(&conn, "user_version"), 1);
@@ -221,9 +230,9 @@ fn a_failed_migration_rolls_back_and_keeps_a_restorable_backup() {
 
 #[test]
 fn a_full_disk_during_a_migration_rolls_back() {
-    let dir = temp();
-    let path = project_db(&dir);
-    create_v1(&path);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
+    v1_with_a_note(&path);
 
     let mut conn = Connection::open(&path).expect("database");
     let pages = number(&conn, "page_count");
@@ -242,10 +251,10 @@ fn a_full_disk_during_a_migration_rolls_back() {
 
 #[test]
 fn a_newer_schema_is_refused_and_left_untouched() {
-    let dir = temp();
-    let path = project_db(&dir);
-    drop(open_schema(&path, &V2).expect("V2 database"));
-    let before = fs::read(&path).expect("file");
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
+    drop(database(&path, &V2));
+    let before = Snapshot::of(&path);
 
     let error = open_schema(&path, &V1).unwrap_err();
 
@@ -259,81 +268,73 @@ fn a_newer_schema_is_refused_and_left_untouched() {
         ),
         "{error:?}"
     );
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
     assert!(backups(&path).is_empty());
 }
 
 #[test]
 fn a_file_that_is_not_a_database_is_corrupt_and_left_untouched() {
-    let dir = temp();
-    let path = project_db(&dir);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
     fs::write(&path, b"plain text, not SQLite").expect("write");
+    let before = Snapshot::of(&path);
 
     let error = open(&path, Kind::Project, OpenMode::Existing).unwrap_err();
 
     assert!(matches!(error, DbError::Corrupt), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), b"plain text, not SQLite");
+    before.assert_unchanged(&path);
 }
 
 #[test]
 fn a_damaged_database_is_corrupt_and_left_untouched() {
-    let dir = temp();
-    let path = project_db(&dir);
-    let conn = open_schema(&path, &V1).expect("new database");
-    for _ in 0..200 {
-        conn.execute("INSERT INTO notes VALUES (?1)", ["x".repeat(100)])
-            .expect("insert");
-    }
-    let page_size = usize::try_from(number(&conn, "page_size")).expect("page size");
-    drop(conn);
-
-    // Page 2 is the root of `notes`; an invalid page type breaks its b-tree.
-    let mut bytes = fs::read(&path).expect("file");
-    bytes[page_size..page_size + 8].fill(0xff);
-    fs::write(&path, &bytes).expect("write");
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
+    v1_with_a_note(&path);
+    damage(&path);
+    let before = Snapshot::of(&path);
 
     let error = open_schema(&path, &V1).unwrap_err();
 
     assert!(matches!(error, DbError::Corrupt), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), bytes);
+    before.assert_unchanged(&path);
 }
 
 #[test]
 fn a_foreign_sqlite_file_is_refused_and_left_untouched() {
-    let dir = temp();
-    let path = project_db(&dir);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
     let other = Connection::open(&path).expect("database");
     other
         .execute_batch("CREATE TABLE other (x);")
         .expect("table");
     drop(other);
-    let before = fs::read(&path).expect("file");
+    let before = Snapshot::of(&path);
 
     let error = open(&path, Kind::Project, OpenMode::Existing).unwrap_err();
 
     assert!(matches!(error, DbError::NotLiurium), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
 }
 
 #[test]
 fn a_project_database_is_not_opened_as_the_app_database() {
-    let dir = temp();
-    let path = project_db(&dir);
-    drop(open(&path, Kind::Project, OpenMode::CreateIfMissing).expect("new database"));
-    let before = fs::read(&path).expect("file");
+    let dir = temp_dir();
+    let fixture = project(dir.path(), "Notes", current(Kind::Project));
+    let path = fixture.database();
+    let before = Snapshot::of(&path);
 
     let error = open(&path, Kind::App, OpenMode::Existing).unwrap_err();
 
     assert!(matches!(error, DbError::NotLiurium), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
 }
 
 #[test]
 fn a_locked_database_reports_locked_and_is_left_untouched() {
-    let dir = temp();
-    let path = project_db(&dir);
-    drop(open(&path, Kind::Project, OpenMode::CreateIfMissing).expect("new database"));
-    let before = fs::read(&path).expect("file");
+    let dir = temp_dir();
+    let fixture = project(dir.path(), "Notes", current(Kind::Project));
+    let path = fixture.database();
+    let before = Snapshot::of(&path);
 
     // In rollback mode an exclusive transaction keeps every reader out.
     let holder = Connection::open(&path).expect("database");
@@ -350,12 +351,12 @@ fn a_locked_database_reports_locked_and_is_left_untouched() {
     drop(holder);
 
     assert!(matches!(error, DbError::Locked), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), before);
+    before.assert_unchanged(&path);
 }
 
 #[test]
 fn a_damaged_app_database_is_moved_aside_and_replaced() {
-    let dir = temp();
+    let dir = temp_dir();
     let path = dir.path().join(APP_DB);
     fs::write(&path, b"plain text, not SQLite").expect("write");
 
@@ -373,7 +374,7 @@ fn a_damaged_app_database_is_moved_aside_and_replaced() {
 // `-wal` file, and one without a valid header holds nothing to keep.
 #[test]
 fn moving_aside_takes_the_side_files_along() {
-    let dir = temp();
+    let dir = temp_dir();
     let path = dir.path().join(APP_DB);
     fs::write(&path, b"database").expect("write");
     fs::write(with_suffix(&path, "-wal"), b"wal").expect("write");
@@ -390,12 +391,13 @@ fn moving_aside_takes_the_side_files_along() {
 
 #[test]
 fn a_newer_app_database_stays_where_it_is() {
-    let dir = temp();
-    let app = open_app(dir.path()).expect("app database");
-    app.connection
+    let dir = temp_dir();
+    let path = app_data(dir.path(), &[]);
+    Connection::open(&path)
+        .expect("database")
         .pragma_update(None, "user_version", 7)
         .expect("version");
-    drop(app);
+    let before = Snapshot::of(&path);
 
     let error = open_app(dir.path()).unwrap_err();
 
@@ -409,14 +411,14 @@ fn a_newer_app_database_stays_where_it_is() {
         ),
         "{error:?}"
     );
-    assert!(dir.path().join(APP_DB).exists());
-    assert!(backups(&dir.path().join(APP_DB)).is_empty());
+    before.assert_unchanged(&path);
+    assert!(backups(&path).is_empty());
 }
 
 #[test]
 fn backup_names_never_reuse_a_file() {
-    let dir = temp();
-    let path = project_db(&dir);
+    let dir = temp_dir();
+    let path = dir.path().join("project.db");
     let first = migrate::backup_path(&path, "v1").expect("name");
     fs::write(&first, b"first").expect("write");
 

@@ -1,6 +1,8 @@
 pub mod commands;
 mod frame;
 pub mod storage;
+#[cfg(test)]
+mod test_support;
 mod theme;
 mod window;
 

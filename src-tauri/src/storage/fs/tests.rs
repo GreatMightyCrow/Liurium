@@ -2,11 +2,12 @@
 //! special rights; symbolic links need administrator rights or Developer Mode, so
 //! those tests are ignored locally and run in CI (M2-003 decision D3).
 
-use std::{process::Command, time::Duration};
+use std::time::Duration;
 
 use tempfile::TempDir;
 
 use super::*;
+use crate::test_support::{Snapshot, junction, read_only, temp_dir};
 
 const MAX: u64 = 1024 * 1024;
 
@@ -19,7 +20,7 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
-    let dir = TempDir::new().expect("temp folder");
+    let dir = temp_dir();
     let project = dir.path().join("project");
     let outside = dir.path().join("outside");
     fs::create_dir(&project).expect("project folder");
@@ -35,18 +36,6 @@ fn fixture() -> Fixture {
 
 fn rel(text: &str) -> RelPath {
     RelPath::parse(text).expect("valid path")
-}
-
-fn junction(link: &Path, target: &Path) {
-    let output = Command::new("cmd")
-        .arg("/C")
-        .arg("mklink")
-        .arg("/J")
-        .arg(link)
-        .arg(target)
-        .output()
-        .expect("mklink");
-    assert!(output.status.success(), "{output:?}");
 }
 
 fn temp_files(folder: &Path) -> Vec<PathBuf> {
@@ -78,6 +67,7 @@ fn a_new_file_is_written_and_read_back() {
 fn a_new_file_never_replaces_an_existing_one() {
     let f = fixture();
     fs::write(f.project.join("idea.md"), b"mine").expect("write");
+    let before = Snapshot::of(&f.project.join("idea.md"));
 
     let error = f
         .root
@@ -85,7 +75,7 @@ fn a_new_file_never_replaces_an_existing_one() {
         .unwrap_err();
 
     assert!(matches!(error, FsError::AlreadyExists), "{error:?}");
-    assert_eq!(fs::read(f.project.join("idea.md")).expect("file"), b"mine");
+    before.assert_unchanged(&f.project.join("idea.md"));
     assert!(temp_files(&f.project).is_empty());
 }
 
@@ -119,6 +109,7 @@ fn a_file_changed_outside_is_not_replaced() {
         .write(&rel("idea.md"), b"one", Expect::New)
         .expect("write");
     fs::write(&path, b"edited elsewhere").expect("outside edit");
+    let before = Snapshot::of(&path);
 
     let error = f
         .root
@@ -126,7 +117,7 @@ fn a_file_changed_outside_is_not_replaced() {
         .unwrap_err();
 
     assert!(matches!(error, FsError::Changed), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), b"edited elsewhere");
+    before.assert_unchanged(&path);
     assert!(temp_files(&f.project).is_empty());
 }
 
@@ -146,6 +137,7 @@ fn a_same_size_change_is_noticed_by_its_time() {
         .expect("file")
         .set_modified(stamp.modified + Duration::from_secs(1))
         .expect("time");
+    let before = Snapshot::of(&path);
 
     let error = f
         .root
@@ -153,7 +145,7 @@ fn a_same_size_change_is_noticed_by_its_time() {
         .unwrap_err();
 
     assert!(matches!(error, FsError::Changed), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), b"two");
+    before.assert_unchanged(&path);
 }
 
 #[test]
@@ -183,9 +175,8 @@ fn a_read_only_file_is_not_replaced() {
         .root
         .write(&rel("idea.md"), b"one", Expect::New)
         .expect("write");
-    let mut permissions = fs::metadata(&path).expect("file").permissions();
-    permissions.set_readonly(true);
-    fs::set_permissions(&path, permissions).expect("read-only");
+    read_only(&path);
+    let before = Snapshot::of(&path);
 
     let error = f
         .root
@@ -193,7 +184,7 @@ fn a_read_only_file_is_not_replaced() {
         .unwrap_err();
 
     assert!(matches!(error, FsError::ReadOnly), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), b"one");
+    before.assert_unchanged(&path);
     assert!(temp_files(&f.project).is_empty());
 }
 
@@ -205,6 +196,7 @@ fn an_interrupted_write_leaves_the_target_intact() {
         .root
         .write(&rel("idea.md"), b"old", Expect::New)
         .expect("write");
+    let before = Snapshot::of(&path);
 
     // A crash after the temp file is flushed: no commit, no clean-up.
     let staged = f
@@ -213,7 +205,7 @@ fn an_interrupted_write_leaves_the_target_intact() {
         .expect("stage");
     std::mem::forget(staged);
 
-    assert_eq!(fs::read(&path).expect("file"), b"old");
+    before.assert_unchanged(&path);
     let left = temp_files(&f.project);
     assert_eq!(left.len(), 1);
     assert_eq!(fs::read(&left[0]).expect("temp file"), b"new content");
@@ -234,11 +226,12 @@ fn a_change_between_stage_and_commit_removes_the_temp_file() {
         .stage(&rel("idea.md"), b"new", Expect::Unchanged(stamp))
         .expect("stage");
     fs::write(&path, b"edited elsewhere").expect("outside edit");
+    let before = Snapshot::of(&path);
 
     let error = staged.commit().unwrap_err();
 
     assert!(matches!(error, FsError::Changed), "{error:?}");
-    assert_eq!(fs::read(&path).expect("file"), b"edited elsewhere");
+    before.assert_unchanged(&path);
     assert!(temp_files(&f.project).is_empty());
 }
 
@@ -285,6 +278,7 @@ fn liurium_and_git_folders_are_write_protected() {
     fs::create_dir(f.project.join(".git")).expect("folder");
     fs::write(f.project.join(r".liurium\project.db"), b"db").expect("write");
     junction(&f.project.join("meta"), &f.project.join(".liurium"));
+    let before = Snapshot::of(&f.project.join(r".liurium\project.db"));
 
     for text in [
         ".liurium/project.db",
@@ -299,10 +293,7 @@ fn liurium_and_git_folders_are_write_protected() {
         let error = f.root.create_dir(&rel(text)).unwrap_err();
         assert!(matches!(error, FsError::Protected), "{text}: {error:?}");
     }
-    assert_eq!(
-        fs::read(f.project.join(r".liurium\project.db")).expect("file"),
-        b"db"
-    );
+    before.assert_unchanged(&f.project.join(r".liurium\project.db"));
     // Reading stays allowed.
     let (bytes, _) = f.root.read(&rel("meta/project.db"), MAX).expect("read");
     assert_eq!(bytes, b"db");
