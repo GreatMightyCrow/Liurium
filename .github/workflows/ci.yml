@@ -90,25 +90,17 @@ jobs:
       - name: Release build without installers
         run: pnpm tauri build --no-bundle
 
+      # The runner is elevated, and WebView2 ignores WEBVIEW2_* environment
+      # variables in elevated apps; only machine-wide policies apply. This sets
+      # the fixture's debugging port for liurium.exe on the runner only (ADR-0019).
+      - name: Debugging port policy for end-to-end tests
+        run: |
+          $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+          "Elevated: $($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
+          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name 'liurium.exe' -Value '--remote-debugging-port=9333' -PropertyType String -Force | Out-Null
+
       # Drives that release build over the Chrome DevTools Protocol (ADR-0019).
       - name: End-to-end tests
         run: pnpm e2e
-
-      # Temporary (M2-009): starts the app by hand and shows what runs after 20 s.
-      - name: End-to-end diagnostics
-        if: failure()
-        run: |
-          "Interactive: $([Environment]::UserInteractive), user: $(whoami)"
-          qwinsta
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
-          $app = Start-Process src-tauri\target\release\liurium.exe -PassThru
-          Start-Sleep -Seconds 20
-          $app.Refresh()
-          "App exited: $($app.HasExited), window: '$($app.MainWindowTitle)' $($app.MainWindowHandle)"
-          $procs = Get-CimInstance Win32_Process -Filter "Name='liurium.exe' OR Name='msedgewebview2.exe'" | Where-Object { "$($_.CommandLine)" -match 'liurium' }
-          $procs | ForEach-Object { "$($_.ProcessId) parent $($_.ParentProcessId) session $($_.SessionId) $($_.Name) debug-port-arg: $("$($_.CommandLine)" -match 'remote-debugging-port') type: $(if ("$($_.CommandLine)" -match '--type=(\S+)') { $Matches[1] } else { 'main' })" }
-          Get-NetTCPConnection -State Listen | Where-Object { $_.OwningProcess -in $procs.ProcessId } | Format-Table LocalAddress, LocalPort, OwningProcess
-          foreach ($root in 'HKLM:\SOFTWARE\Policies\Microsoft', 'HKCU:\Software\Policies\Microsoft') {
-            Get-ChildItem $root -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Edge' } | ForEach-Object { "$($_.Name)"; $_.GetValueNames() | ForEach-Object { "  $_" } }
-          }
-          taskkill /pid $app.Id /T /F
