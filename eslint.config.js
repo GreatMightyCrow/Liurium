@@ -8,11 +8,7 @@ export default defineConfig([
   globalIgnores(["dist", "src-tauri", "Vault", "Liurium_Brand_Assets"]),
   {
     files: ["**/*.{ts,tsx}"],
-    extends: [
-      js.configs.recommended,
-      tseslint.configs.strictTypeChecked,
-      reactHooks.configs.flat.recommended,
-    ],
+    extends: [js.configs.recommended, tseslint.configs.strictTypeChecked],
     languageOptions: {
       globals: globals.browser,
       parserOptions: {
@@ -20,6 +16,11 @@ export default defineConfig([
         tsconfigRootDir: import.meta.dirname,
       },
     },
+  },
+  {
+    // React code only; Playwright fixtures also take a function named `use`.
+    files: ["src/**/*.{ts,tsx}"],
+    extends: [reactHooks.configs.flat.recommended],
   },
   {
     // Architecture Overview: only the IPC client talks to Tauri.

@@ -89,3 +89,7 @@ jobs:
 
       - name: Release build without installers
         run: pnpm tauri build --no-bundle
+
+      # Drives that release build over the Chrome DevTools Protocol (ADR-0019).
+      - name: End-to-end tests
+        run: pnpm e2e
