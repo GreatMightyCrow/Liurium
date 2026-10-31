@@ -93,3 +93,13 @@ jobs:
       # Drives that release build over the Chrome DevTools Protocol (ADR-0019).
       - name: End-to-end tests
         run: pnpm e2e
+
+      # What the app needs to start: the WebView2 runtime and a free debugging port.
+      - name: End-to-end diagnostics
+        if: failure()
+        run: |
+          $keys = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                  'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          foreach ($key in $keys) { "WebView2 runtime ($key): $((Get-ItemProperty $key -ErrorAction SilentlyContinue).pv)" }
+          Get-Process liurium, msedgewebview2 -ErrorAction SilentlyContinue | Format-Table Id, Name, StartTime
+          Get-NetTCPConnection -LocalPort 9333 -ErrorAction SilentlyContinue | Format-Table State, OwningProcess

@@ -60,7 +60,19 @@ export const test = base.extend<{ app: Page }>({
       });
     });
     try {
-      await until(endpointUp, "the debugging port", 15_000);
+      // The first WebView2 start on a fresh machine (CI) can take a while.
+      await until(
+        async () => {
+          if (app.exitCode !== null || app.signalCode !== null) {
+            throw new Error(
+              `the app exited (code ${String(app.exitCode)}) before opening the debugging port`,
+            );
+          }
+          return endpointUp();
+        },
+        "the debugging port",
+        60_000,
+      );
       const browser = await playwright.chromium.connectOverCDP(ENDPOINT);
       const page = browser.contexts().at(0)?.pages().at(0);
       if (page === undefined) {
