@@ -21,7 +21,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::projects::current_project,
-            commands::projects::add_project
+            commands::projects::add_project,
+            commands::projects::list_projects,
+            commands::projects::open_project,
+            commands::projects::rename_project,
+            commands::projects::remove_project,
+            commands::projects::locate_project
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

@@ -1,7 +1,16 @@
 /// App commands (ADR-0018). Each gets an `allow-<name>` and a `deny-<name>` permission
 /// (underscores become hyphens). With this manifest, Tauri rejects every app command
 /// that the capability does not grant.
-const COMMANDS: &[&str] = &["app_info", "current_project", "add_project"];
+const COMMANDS: &[&str] = &[
+    "app_info",
+    "current_project",
+    "add_project",
+    "list_projects",
+    "open_project",
+    "rename_project",
+    "remove_project",
+    "locate_project",
+];
 
 fn main() {
     tauri_build::try_build(

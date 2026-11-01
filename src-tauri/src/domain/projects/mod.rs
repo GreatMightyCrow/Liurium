@@ -1,4 +1,4 @@
-//! Adding and opening projects (ADR-0016, M2-005). A project is a folder with
+//! Adding, opening, and managing projects (ADR-0016, M2-005, M2-006). A project is a folder with
 //! `.liurium/project.db`, which holds its identity; the registry in `app.db` remembers
 //! where each project was last seen. Liurium writes only `.liurium` into the folder.
 
@@ -66,18 +66,128 @@ pub fn add(app: &Connection, folder: &Path) -> Result<Project, ProjectError> {
 
 /// Opens a registered project by its id.
 pub fn open(app: &Connection, id: &str) -> Result<Project, ProjectError> {
-    let path: String = app
-        .query_row("SELECT path FROM projects WHERE id = ?1", [id], |row| {
-            row.get(0)
-        })
-        .optional()?
-        .ok_or(ProjectError::Unknown)?;
+    let project = find(app, id)?;
+    opened(app, &project)?;
+    Ok(project)
+}
+
+/// Loads a registered project without counting it as opened (M2-006 rename).
+pub fn find(app: &Connection, id: &str) -> Result<Project, ProjectError> {
+    let path = registered_path(app, id)?;
     let project = load(ProjectRoot::open(Path::new(&path))?)?;
     if project.id != id {
         return Err(ProjectError::OtherProject);
     }
+    Ok(project)
+}
+
+/// A registry entry as the project list shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub id: String,
+    /// Cached from `project.db`, so it can be shown while the folder is missing.
+    pub name: String,
+    /// Last known folder, as Windows shows it.
+    pub folder: String,
+    /// UTC in ISO 8601.
+    pub last_opened_at: Option<String>,
+    /// The folder still holds `.liurium/project.db`.
+    pub present: bool,
+}
+
+/// All registered projects, the most recently opened first. Only checks whether each
+/// folder still holds `project.db`: no project database is opened, so listing never
+/// upgrades or writes anything.
+pub fn list(app: &Connection) -> Result<Vec<Entry>, DbError> {
+    let mut statement = app.prepare(
+        "SELECT id, name, path, last_opened_at FROM projects
+         ORDER BY last_opened_at IS NULL, last_opened_at DESC, name COLLATE NOCASE, id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })?;
+    let mut entries = Vec::new();
+    for row in rows {
+        let (id, name, folder, last_opened_at): (String, String, String, Option<String>) = row?;
+        entries.push(Entry {
+            present: holds_project(Path::new(&folder)),
+            id,
+            name,
+            folder,
+            last_opened_at,
+        });
+    }
+    Ok(entries)
+}
+
+/// Sets the display name in `project.db`, where it travels with the folder (ADR-0016),
+/// and in the registry's cache.
+pub fn rename(app: &Connection, project: &mut Project, name: &str) -> Result<(), ProjectError> {
+    let name = valid_name(name).ok_or(ProjectError::InvalidName)?;
+    if project.read_only {
+        return Err(DbError::ReadOnly.into());
+    }
+    project.connection.execute(
+        "INSERT INTO meta (key, value) VALUES ('name', ?1)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        [&name],
+    )?;
+    app.execute(
+        "UPDATE projects SET name = ?2 WHERE id = ?1",
+        params![project.id, name],
+    )?;
+    project.name = name;
+    Ok(())
+}
+
+/// Forgets a project. Its folder is not touched; adding it again restores the project
+/// with its identity and name.
+pub fn remove(app: &Connection, id: &str) -> Result<(), ProjectError> {
+    match app.execute("DELETE FROM projects WHERE id = ?1", [id])? {
+        0 => Err(ProjectError::Unknown),
+        _ => Ok(()),
+    }
+}
+
+/// Points a registered project at the folder it moved to and opens it. The folder must
+/// hold this very project; a folder without a project or with another one is refused
+/// and the registry stays as it was.
+pub fn locate(app: &Connection, id: &str, folder: &Path) -> Result<Project, ProjectError> {
+    registered_path(app, id)?;
+    let root = ProjectRoot::open(folder)?;
+    if !root.suitable() {
+        return Err(ProjectError::Unsuitable);
+    }
+    let project = match load(root) {
+        Err(
+            ProjectError::Fs(storage_fs::FsError::NotFound) | ProjectError::Db(DbError::Missing),
+        ) => {
+            return Err(ProjectError::NoProject);
+        }
+        loaded => loaded?,
+    };
+    if project.id != id {
+        return Err(ProjectError::OtherProject);
+    }
+    register(app, &project)?;
     opened(app, &project)?;
     Ok(project)
+}
+
+fn registered_path(app: &Connection, id: &str) -> Result<String, ProjectError> {
+    app.query_row("SELECT path FROM projects WHERE id = ?1", [id], |row| {
+        row.get(0)
+    })
+    .optional()?
+    .ok_or(ProjectError::Unknown)
+}
+
+fn holds_project(folder: &Path) -> bool {
+    ProjectRoot::open(folder)
+        .and_then(|root| root.liurium_dir())
+        .ok()
+        .flatten()
+        .is_some_and(|dir| dir.join(PROJECT_DB).is_file())
 }
 
 /// The most recently opened project: its id and the name the registry shows.
@@ -233,6 +343,16 @@ fn default_name(root: &ProjectRoot) -> String {
     root.name()
         .map(|name| clean_name(&name))
         .unwrap_or_default()
+}
+
+/// A name the user typed: trimmed, not empty, at most `MAX_NAME_CHARS`, and without
+/// control characters. Refused rather than cleaned, so the user sees what is saved.
+fn valid_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    let valid = !name.is_empty()
+        && name.chars().count() <= MAX_NAME_CHARS
+        && !name.chars().any(char::is_control);
+    valid.then(|| name.to_owned())
 }
 
 /// No control characters, at most `MAX_NAME_CHARS`, trimmed.

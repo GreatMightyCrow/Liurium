@@ -1,4 +1,11 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./app";
@@ -41,4 +48,64 @@ test("a folder with notes becomes a project and opens again after a restart", as
     ".gitignore",
     "project.db",
   ]);
+});
+
+/** Every file below `root` with its bytes and modified time. */
+function snapshot(root: string): string[] {
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .sort()
+    .map((rel) => {
+      const path = join(root, rel);
+      const stat = statSync(path);
+      if (stat.isDirectory()) {
+        return `${rel}/`;
+      }
+      const hash = createHash("sha256")
+        .update(readFileSync(path))
+        .digest("hex");
+      return `${rel} ${String(stat.mtimeMs)} ${hash}`;
+    });
+}
+
+test("a moved project is located, and removing it from the list leaves its folder alone", async ({
+  app,
+}) => {
+  const before = app.folder("Moved-");
+  writeFileSync(join(before, "readme.md"), "# Moved\n");
+  const name = basename(before);
+
+  let page = await app.launch({ pick: before });
+  await openProjects(page);
+  await page.getByRole("button", { name: "Add project folder" }).click();
+  await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
+  await app.stop();
+
+  const after = join(app.folder("Target-"), "Garden");
+  renameSync(before, after);
+
+  page = await app.launch({ pick: after });
+  await openProjects(page);
+  const row = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { level: 2, name }),
+  });
+  await expect(row).toContainText("Folder not found");
+  await row.getByRole("button", { name: "Locate folder" }).click();
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row).toContainText(after);
+  await expect(row).not.toContainText("Folder not found");
+
+  const files = snapshot(after);
+  await row.getByRole("button", { name: `Actions for ${name}` }).click();
+  await page.getByRole("menuitem", { name: "Remove from list…" }).click();
+  await page.getByRole("button", { name: "Remove from list" }).click();
+  await expect(
+    page.getByRole("heading", { name: "No project yet" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Add project folder" }),
+  ).toBeFocused();
+
+  await app.stop();
+  expect(snapshot(after)).toEqual(files);
+  expect(readFileSync(join(after, "readme.md"), "utf8")).toBe("# Moved\n");
 });

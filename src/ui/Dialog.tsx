@@ -1,5 +1,5 @@
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode, RefObject } from "react";
 import { Button, type ButtonProps } from "./Button";
 import styles from "./Dialog.module.css";
 
@@ -12,6 +12,8 @@ interface DialogProps {
   actions?: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Where focus goes on close when the trigger is gone, e.g. a removed list row. */
+  finalFocus?: RefObject<HTMLElement | null>;
   children?: ReactNode;
 }
 
@@ -23,6 +25,7 @@ export function Dialog({
   actions,
   open,
   onOpenChange,
+  finalFocus,
   children,
 }: DialogProps) {
   return (
@@ -30,7 +33,7 @@ export function Dialog({
       {trigger !== undefined && <BaseDialog.Trigger render={trigger} />}
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className={styles.backdrop} />
-        <BaseDialog.Popup className={styles.popup}>
+        <BaseDialog.Popup className={styles.popup} finalFocus={finalFocus}>
           <BaseDialog.Title className={styles.title}>{title}</BaseDialog.Title>
           {description !== undefined && (
             <BaseDialog.Description className={styles.description}>

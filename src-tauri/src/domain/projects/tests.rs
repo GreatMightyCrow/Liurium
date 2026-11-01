@@ -4,7 +4,9 @@ use rusqlite::Connection;
 
 use super::*;
 use crate::storage::{db::DbError, fs::FsError};
-use crate::test_support::{Snapshot, current, deny_writes, junction, project, read_only, temp_dir};
+use crate::test_support::{
+    Snapshot, TreeSnapshot, current, deny_writes, junction, project, read_only, temp_dir,
+};
 
 /// A fresh `app.db` in its own temp folder.
 fn app(dir: &Path) -> Connection {
@@ -375,6 +377,286 @@ fn a_failed_creation_removes_what_it_made() {
         files: vec![kept.join("project.db")],
     });
     assert_eq!(names_in(&kept), ["mine.txt"]);
+}
+
+fn ids_in(entries: &[Entry]) -> Vec<&str> {
+    entries.iter().map(|entry| entry.id.as_str()).collect()
+}
+
+fn name_in(database: &Path) -> String {
+    Connection::open(database)
+        .and_then(|conn| {
+            conn.query_row("SELECT value FROM meta WHERE key = 'name'", [], |row| {
+                row.get(0)
+            })
+        })
+        .expect("name")
+}
+
+#[test]
+fn the_list_shows_the_newest_first_and_marks_moved_folders() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let first = project(dir.path(), "First", current(Kind::Project));
+    let second = project(dir.path(), "Second", current(Kind::Project));
+    let third = project(dir.path(), "Third", current(Kind::Project));
+    for fixture in [&first, &second, &third] {
+        add(&app, &fixture.root).expect("added");
+    }
+    app.execute(
+        "UPDATE projects SET last_opened_at = NULL WHERE id = ?1",
+        [&third.id],
+    )
+    .expect("never opened");
+    open(&app, &first.id).expect("opened");
+    fs::rename(&second.root, dir.path().join("Elsewhere")).expect("move");
+
+    let entries = list(&app).expect("list");
+
+    assert_eq!(ids_in(&entries), [&first.id, &second.id, &third.id]);
+    let present: Vec<bool> = entries.iter().map(|entry| entry.present).collect();
+    assert_eq!(present, [true, false, true]);
+    assert_eq!(entries[1].name, "Second", "the cached name stays");
+    assert!(entries[2].last_opened_at.is_none());
+}
+
+#[test]
+fn a_folder_that_lost_its_project_data_is_listed_as_missing() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    fs::remove_dir_all(fixture.root.join(LIURIUM_DIR)).expect("data gone");
+
+    let entries = list(&app).expect("list");
+
+    assert!(!entries[0].present);
+    assert!(fixture.root.exists());
+}
+
+#[test]
+fn listing_writes_nothing_into_project_folders() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    let before = TreeSnapshot::of(&fixture.root);
+
+    list(&app).expect("list");
+
+    before.assert_unchanged(&fixture.root);
+}
+
+#[test]
+fn renaming_writes_the_name_into_the_project_and_the_registry() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    let mut project = add(&app, &fixture.root).expect("added");
+
+    rename(&app, &mut project, "  Kitchen garden ").expect("renamed");
+
+    assert_eq!(project.name, "Kitchen garden");
+    drop(project);
+    assert_eq!(name_in(&fixture.database()), "Kitchen garden");
+    assert_eq!(list(&app).expect("list")[0].name, "Kitchen garden");
+    assert_eq!(
+        open(&app, &fixture.id).expect("opened").name,
+        "Kitchen garden"
+    );
+}
+
+#[test]
+fn bad_names_are_refused_and_change_nothing() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    let mut project = add(&app, &fixture.root).expect("added");
+
+    for bad in ["", "   ", "Gar\u{7}den", "Line\nbreak", &"x".repeat(201)] {
+        let error = rename(&app, &mut project, bad).unwrap_err();
+        assert!(
+            matches!(error, ProjectError::InvalidName),
+            "{bad:?}: {error:?}"
+        );
+    }
+    rename(&app, &mut project, &"x".repeat(200)).expect("200 characters are fine");
+
+    assert_eq!(name_in(&fixture.database()), "x".repeat(200));
+}
+
+#[test]
+fn a_write_protected_project_cannot_be_renamed() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Archive", current(Kind::Project));
+    read_only(&fixture.database());
+    let before = Snapshot::of(&fixture.database());
+    let mut project = add(&app, &fixture.root).expect("opened");
+
+    let error = rename(&app, &mut project, "New").unwrap_err();
+
+    assert!(
+        matches!(error, ProjectError::Db(DbError::ReadOnly)),
+        "{error:?}"
+    );
+    drop(project);
+    before.assert_unchanged(&fixture.database());
+    assert_eq!(list(&app).expect("list")[0].name, "Archive");
+}
+
+#[test]
+fn find_loads_a_project_without_counting_it_as_opened() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let first = project(dir.path(), "First", current(Kind::Project));
+    let second = project(dir.path(), "Second", current(Kind::Project));
+    add(&app, &first.root).expect("added");
+    add(&app, &second.root).expect("added");
+    fs::write(first.root.join(TEMP), "left over").expect("temp file");
+
+    let found = find(&app, &first.id).expect("found");
+
+    assert_eq!(found.id, first.id);
+    assert_eq!(
+        last_opened(&app).unwrap().map(|(id, _)| id),
+        Some(second.id)
+    );
+    assert!(
+        first.root.join(TEMP).exists(),
+        "no clean-up without opening"
+    );
+}
+
+#[test]
+fn removing_forgets_the_project_and_leaves_its_folder_byte_for_byte() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    fs::create_dir_all(fixture.root.join("daily")).expect("folder");
+    fs::write(fixture.root.join("daily").join("monday.md"), "- [ ] plan\n").expect("note");
+    let project = add(&app, &fixture.root).expect("added");
+    drop(project);
+    let before = TreeSnapshot::of(&fixture.root);
+
+    remove(&app, &fixture.id).expect("removed");
+
+    before.assert_unchanged(&fixture.root);
+    assert!(list(&app).expect("list").is_empty());
+    assert!(matches!(
+        open(&app, &fixture.id).unwrap_err(),
+        ProjectError::Unknown
+    ));
+    let again = add(&app, &fixture.root).expect("added again");
+    assert_eq!(
+        (again.id.as_str(), again.name.as_str()),
+        (fixture.id.as_str(), "Garden")
+    );
+}
+
+#[test]
+fn removing_an_unknown_project_is_reported() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+
+    let error = remove(&app, "00000000-0000-4000-8000-000000000000").unwrap_err();
+
+    assert!(matches!(error, ProjectError::Unknown), "{error:?}");
+}
+
+#[test]
+fn a_moved_project_is_located_and_opens_with_its_data() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    let moved = dir.path().join("Moved");
+    fs::rename(&fixture.root, &moved).expect("move");
+    fs::write(moved.join(TEMP), "left over").expect("temp file");
+
+    let project = locate(&app, &fixture.id, &moved).expect("located");
+
+    assert_eq!(
+        (project.id.as_str(), project.name.as_str()),
+        (fixture.id.as_str(), "Garden")
+    );
+    assert_eq!(
+        registered(&app),
+        [(fixture.id.clone(), project.root.display())]
+    );
+    assert!(list(&app).expect("list")[0].present);
+    assert!(!moved.join(TEMP).exists(), "opened like any project");
+}
+
+#[test]
+fn locating_a_folder_with_another_project_changes_nothing() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    fs::remove_dir_all(&fixture.root).expect("gone");
+    let other = project(dir.path(), "Other", current(Kind::Project));
+    fs::write(other.root.join(TEMP), "left over").expect("temp file");
+    let registry = registered(&app);
+
+    let error = locate(&app, &fixture.id, &other.root).unwrap_err();
+
+    assert!(matches!(error, ProjectError::OtherProject), "{error:?}");
+    assert_eq!(registered(&app), registry);
+    assert!(other.root.join(TEMP).exists(), "nothing cleaned up");
+}
+
+#[test]
+fn locating_a_folder_without_a_project_changes_nothing() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    fs::remove_dir_all(&fixture.root).expect("gone");
+    let plain = dir.path().join("Plain");
+    fs::create_dir(&plain).expect("folder");
+    fs::write(plain.join("readme.md"), "# Plain\n").expect("note");
+    let empty_data = dir.path().join("EmptyData");
+    fs::create_dir_all(empty_data.join(LIURIUM_DIR)).expect("folders");
+    let registry = registered(&app);
+
+    for folder in [&plain, &empty_data] {
+        let before = TreeSnapshot::of(folder);
+        let error = locate(&app, &fixture.id, folder).unwrap_err();
+        assert!(
+            matches!(error, ProjectError::NoProject),
+            "{folder:?}: {error:?}"
+        );
+        before.assert_unchanged(folder);
+    }
+    assert_eq!(registered(&app), registry);
+}
+
+#[test]
+fn locating_an_unknown_project_is_reported() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+
+    let error = locate(&app, &fixture.id, &fixture.root).unwrap_err();
+
+    assert!(matches!(error, ProjectError::Unknown), "{error:?}");
+    assert!(registered(&app).is_empty());
+}
+
+#[test]
+fn locating_a_copy_while_the_original_is_present_is_refused() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Original", current(Kind::Project));
+    add(&app, &fixture.root).expect("added");
+    let copy = dir.path().join("Copy");
+    fs::create_dir_all(copy.join(LIURIUM_DIR)).expect("folders");
+    fs::copy(fixture.database(), copy.join(LIURIUM_DIR).join(PROJECT_DB)).expect("copy");
+
+    let error = locate(&app, &fixture.id, &copy).unwrap_err();
+
+    assert!(matches!(error, ProjectError::Duplicate), "{error:?}");
 }
 
 #[test]

@@ -3,13 +3,13 @@ use std::{io, path::PathBuf};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use super::projects::{CurrentProject, Workspace};
+use super::projects::{CurrentProject, ProjectStatus, Workspace, checked};
 use super::*;
 use crate::domain::projects::ProjectError;
 use crate::storage::db::Kind;
 use crate::storage::fs::{FsError, PathRule};
 use crate::test_support::{
-    Snapshot, app_data, current, damage, liurium_database, project, temp_dir,
+    Snapshot, TreeSnapshot, app_data, current, damage, liurium_database, project, temp_dir,
 };
 
 fn to_json(value: &impl Serialize) -> Value {
@@ -182,6 +182,8 @@ fn project_errors_map_to_what_the_user_can_act_on() {
         (ProjectError::Unknown, CommandError::NotFound),
         (ProjectError::OtherProject, CommandError::OtherProject),
         (ProjectError::Duplicate, CommandError::DuplicateProject),
+        (ProjectError::NoProject, CommandError::NoProject),
+        (ProjectError::InvalidName, CommandError::InvalidName),
     ];
     for (error, expected) in cases {
         let shown = format!("{error:?}");
@@ -242,8 +244,205 @@ fn a_project_that_cannot_be_reopened_is_named_with_the_reason() {
 
     assert_eq!(
         to_json(&restarted),
-        json!({ "state": "unavailable", "name": "Garden", "error": { "kind": "notFound" } })
+        json!({
+            "state": "unavailable",
+            "id": fixture.id,
+            "name": "Garden",
+            "error": { "kind": "notFound" }
+        })
     );
+}
+
+fn statuses(workspace: &Workspace) -> Vec<(String, ProjectStatus)> {
+    workspace
+        .list()
+        .expect("list")
+        .into_iter()
+        .map(|entry| (entry.name, entry.status))
+        .collect()
+}
+
+#[test]
+fn the_list_marks_the_open_and_the_missing_projects() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    // Names in the same order as the opening times, which can share a millisecond.
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let notes = project(dir.path(), "Notes", current(Kind::Project));
+    let old = project(dir.path(), "Old", current(Kind::Project));
+    let workspace = workspace(&app_dir);
+    for fixture in [&old, &notes, &garden] {
+        workspace.add(&fixture.root).expect("added");
+    }
+    std::fs::rename(&old.root, dir.path().join("Moved")).expect("move");
+
+    // A fresh workspace, as after a restart, that lists before anything else.
+    let restarted = statuses(&self::workspace(&app_dir));
+
+    assert_eq!(
+        restarted,
+        [
+            ("Garden".to_owned(), ProjectStatus::Open),
+            ("Notes".to_owned(), ProjectStatus::Available),
+            ("Old".to_owned(), ProjectStatus::Missing),
+        ]
+    );
+    let entry = &workspace.list().expect("list")[0];
+    assert_eq!(
+        to_json(entry)
+            .as_object()
+            .map(|object| object.keys().cloned().collect::<Vec<_>>()),
+        Some(vec![
+            "folder".to_owned(),
+            "id".to_owned(),
+            "lastOpenedAt".to_owned(),
+            "name".to_owned(),
+            "status".to_owned()
+        ])
+    );
+    assert_eq!(to_json(&entry.status), json!("open"));
+}
+
+#[test]
+fn opening_another_project_makes_it_the_open_one() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    let workspace = workspace(&app_dir);
+    workspace.add(&garden.root).expect("added");
+    workspace.add(&work.root).expect("added");
+
+    let opened = workspace.open(&garden.id).expect("opened");
+
+    assert_eq!(opened.name, "Garden");
+    assert_eq!(
+        workspace.current().expect("current"),
+        CurrentProject::Open { project: opened }
+    );
+    assert_eq!(
+        statuses(&workspace)[0],
+        ("Garden".to_owned(), ProjectStatus::Open)
+    );
+}
+
+#[test]
+fn a_project_that_fails_to_open_leaves_the_open_one_open() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    let workspace = workspace(&app_dir);
+    workspace.add(&garden.root).expect("added");
+    let open = workspace.add(&work.root).expect("added");
+    std::fs::remove_dir_all(&garden.root).expect("gone");
+
+    assert_eq!(workspace.open(&garden.id), Err(CommandError::NotFound));
+    assert_eq!(
+        workspace.current().expect("current"),
+        CurrentProject::Open { project: open }
+    );
+}
+
+#[test]
+fn renaming_the_open_project_updates_what_the_page_is_shown() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    let workspace = workspace(&app_dir);
+    workspace.add(&work.root).expect("added");
+    workspace.add(&garden.root).expect("added");
+
+    workspace
+        .rename(&garden.id, "Kitchen")
+        .expect("renamed open");
+    workspace
+        .rename(&work.id, "Office")
+        .expect("renamed closed");
+
+    let CurrentProject::Open { project } = workspace.current().expect("current") else {
+        panic!("a project is open");
+    };
+    assert_eq!(project.name, "Kitchen");
+    assert_eq!(
+        statuses(&workspace),
+        [
+            ("Kitchen".to_owned(), ProjectStatus::Open),
+            ("Office".to_owned(), ProjectStatus::Available)
+        ]
+    );
+    assert_eq!(
+        workspace.rename(&work.id, " "),
+        Err(CommandError::InvalidName)
+    );
+}
+
+#[test]
+fn removing_the_open_project_closes_it_and_keeps_its_folder() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    let workspace = workspace(&app_dir);
+    workspace.add(&work.root).expect("added");
+    workspace.add(&garden.root).expect("added");
+
+    workspace.remove(&work.id).expect("removed closed");
+    assert!(matches!(
+        workspace.current().expect("current"),
+        CurrentProject::Open { .. }
+    ));
+    let before = TreeSnapshot::of(&garden.root);
+    workspace.remove(&garden.id).expect("removed open");
+
+    assert_eq!(workspace.current().expect("current"), CurrentProject::None);
+    assert!(workspace.list().expect("list").is_empty());
+    before.assert_unchanged(&garden.root);
+    assert_eq!(workspace.remove(&garden.id), Err(CommandError::NotFound));
+}
+
+#[test]
+fn a_located_project_becomes_the_open_one() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    workspace(&app_dir).add(&garden.root).expect("added");
+    let moved = dir.path().join("Moved");
+    std::fs::rename(&garden.root, &moved).expect("move");
+    let workspace = workspace(&app_dir);
+    assert!(matches!(
+        workspace.current().expect("current"),
+        CurrentProject::Unavailable { .. }
+    ));
+
+    let located = workspace.locate(&garden.id, &moved).expect("located");
+
+    assert_eq!(located.id, garden.id);
+    assert_eq!(
+        workspace.current().expect("current"),
+        CurrentProject::Open { project: located }
+    );
+    assert_eq!(
+        statuses(&workspace),
+        [("Garden".to_owned(), ProjectStatus::Open)]
+    );
+}
+
+#[test]
+fn ids_from_the_page_must_be_project_ids() {
+    assert_eq!(
+        checked("00000000-0000-4000-8000-000000000001"),
+        Ok("00000000-0000-4000-8000-000000000001")
+    );
+    for bad in [
+        "",
+        "..",
+        r"C:\Users",
+        "00000000-0000-4000-8000-00000000000Z",
+    ] {
+        assert_eq!(checked(bad), Err(CommandError::NotFound), "{bad}");
+    }
 }
 
 #[test]
@@ -256,6 +455,15 @@ fn without_app_data_project_commands_report_why() {
     assert_eq!(workspace.current(), Err(CommandError::NewerVersion));
     assert_eq!(
         workspace.add(Path::new("unused")),
+        Err(CommandError::NewerVersion)
+    );
+    let id = "00000000-0000-4000-8000-000000000001";
+    assert_eq!(workspace.list(), Err(CommandError::NewerVersion));
+    assert_eq!(workspace.open(id), Err(CommandError::NewerVersion));
+    assert_eq!(workspace.rename(id, "x"), Err(CommandError::NewerVersion));
+    assert_eq!(workspace.remove(id), Err(CommandError::NewerVersion));
+    assert_eq!(
+        workspace.locate(id, Path::new("unused")),
         Err(CommandError::NewerVersion)
     );
 }

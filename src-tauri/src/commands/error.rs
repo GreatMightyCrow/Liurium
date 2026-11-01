@@ -46,6 +46,10 @@ pub enum CommandError {
     OtherProject,
     /// Another folder holds the same project; it was copied.
     DuplicateProject,
+    /// The chosen folder holds no Liurium project.
+    NoProject,
+    /// A name that is empty, too long, or has control characters.
+    InvalidName,
     /// Nothing the user can act on.
     Internal,
 }
@@ -94,6 +98,8 @@ impl From<ProjectError> for CommandError {
             ProjectError::Unknown => Self::NotFound,
             ProjectError::OtherProject => Self::OtherProject,
             ProjectError::Duplicate => Self::DuplicateProject,
+            ProjectError::NoProject => Self::NoProject,
+            ProjectError::InvalidName => Self::InvalidName,
         }
     }
 }

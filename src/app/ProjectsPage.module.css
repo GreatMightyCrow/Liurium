@@ -6,31 +6,143 @@
     padding: var(--space-5);
   }
 
-  .facts {
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .list {
     display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--space-2) var(--space-5);
     margin: 0;
+    padding: 0;
+    border-block: var(--border-width) solid var(--color-border);
+    list-style: none;
   }
 
-  .facts dt {
-    color: var(--color-text-secondary);
+  /* Name and folder on the left, status and actions on the right. The name's button
+     covers the whole row (see .open::after); the actions sit above it. */
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-4);
+    align-items: center;
+    padding: var(--space-3);
   }
 
-  .facts dd {
+  .row + .row {
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .row:hover:not([data-status="missing"]) {
+    background: var(--color-surface-elevated);
+  }
+
+  /* The open project: accent bar and background, like the current page in the
+     sidebar, plus the word "Open". */
+  .row[aria-current="true"] {
+    box-shadow: inset var(--focus-ring-width) 0 0 var(--color-accent-text);
+    background: var(--color-accent-muted);
+  }
+
+  .name {
+    grid-column: 1;
     margin: 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    overflow-wrap: anywhere;
+  }
+
+  .open {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .open::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+  }
+
+  .open:disabled {
+    cursor: default;
   }
 
   /* Paths are long and have no spaces; let them break anywhere. */
   .folder {
+    grid-column: 1;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
   }
 
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    grid-column: 1;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .openLabel {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .missingLabel {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    color: var(--color-text);
+  }
+
+  .statusIcon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-warning);
+  }
+
+  .actions {
+    position: relative;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+
+  .rowProblem {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--color-danger);
+  }
+
   .notice {
+    margin: 0;
     color: var(--color-text-secondary);
   }
 
-  .addError {
+  .problem {
+    margin: 0;
     color: var(--color-danger);
+  }
+
+  /* Contrast themes drop the bar and background; a border in the theme's selection
+     color marks the open project instead, next to the word "Open". */
+  @media (forced-colors: active) {
+    .row[aria-current="true"] {
+      border-inline-start: var(--focus-ring-width) solid
+        var(--color-forced-selected);
+    }
   }
 }

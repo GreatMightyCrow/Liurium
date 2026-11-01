@@ -2,7 +2,7 @@ use std::{error::Error, fmt};
 
 use crate::storage::{db::DbError, fs::FsError};
 
-/// Why a project could not be added or opened. The folder is left as it was; only
+/// Why a project could not be added, opened, renamed, removed, or located. The folder is left as it was; only
 /// what this call created is removed again.
 #[derive(Debug)]
 pub enum ProjectError {
@@ -18,6 +18,10 @@ pub enum ProjectError {
     OtherProject,
     /// Another folder still holds this project: the folder was copied (ADR-0016).
     Duplicate,
+    /// The chosen folder holds no project (locating a moved project).
+    NoProject,
+    /// Empty, too long, or with control characters.
+    InvalidName,
 }
 
 impl fmt::Display for ProjectError {
@@ -30,6 +34,10 @@ impl fmt::Display for ProjectError {
             Self::Unknown => write!(f, "no project with this id"),
             Self::OtherProject => write!(f, "the folder holds another project"),
             Self::Duplicate => write!(f, "another folder holds the same project"),
+            Self::NoProject => write!(f, "the folder holds no project"),
+            Self::InvalidName => {
+                write!(f, "the name is empty, too long, or has control characters")
+            }
         }
     }
 }

@@ -2,4 +2,4 @@
 import type { CommandError } from "./CommandError";
 import type { ProjectInfo } from "./ProjectInfo";
 
-export type CurrentProject = { "state": "none" } | { "state": "open", project: ProjectInfo, } | { "state": "unavailable", name: string, error: CommandError, };
+export type CurrentProject = { "state": "none" } | { "state": "open", project: ProjectInfo, } | { "state": "unavailable", id: string, name: string, error: CommandError, };

@@ -10,6 +10,11 @@
     "core:window:allow-is-maximized",
     "allow-app-info",
     "allow-current-project",
-    "allow-add-project"
+    "allow-add-project",
+    "allow-list-projects",
+    "allow-open-project",
+    "allow-rename-project",
+    "allow-remove-project",
+    "allow-locate-project"
   ]
 }

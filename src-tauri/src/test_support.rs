@@ -3,6 +3,7 @@
 //! not with the code under test, so a bug there cannot hide in its own fixtures.
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -181,6 +182,47 @@ impl Snapshot {
             "{} was written",
             path.display()
         );
+    }
+}
+
+/// Every file and folder below a folder, files with bytes and modified time, to prove
+/// that nothing in it was added, removed, or written. Links are not followed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TreeSnapshot(BTreeMap<PathBuf, Option<Snapshot>>);
+
+impl TreeSnapshot {
+    pub fn of(root: &Path) -> Self {
+        let mut entries = BTreeMap::new();
+        let mut pending = vec![root.to_owned()];
+        while let Some(dir) = pending.pop() {
+            for entry in fs::read_dir(&dir).expect("folder") {
+                let path = entry.expect("entry").path();
+                let rel = path.strip_prefix(root).expect("below the root").to_owned();
+                if fs::symlink_metadata(&path).expect("metadata").is_dir() {
+                    entries.insert(rel, None);
+                    pending.push(path);
+                } else {
+                    entries.insert(rel, Some(Snapshot::of(&path)));
+                }
+            }
+        }
+        Self(entries)
+    }
+
+    #[track_caller]
+    pub fn assert_unchanged(&self, root: &Path) {
+        let now = Self::of(root);
+        assert_eq!(
+            now.0.keys().collect::<Vec<_>>(),
+            self.0.keys().collect::<Vec<_>>(),
+            "files in {}",
+            root.display()
+        );
+        for (rel, before) in &self.0 {
+            if let Some(before) = before {
+                before.assert_unchanged(&root.join(rel));
+            }
+        }
     }
 }
 

@@ -165,6 +165,8 @@ interface App {
    * with the same data folder.
    */
   launch: (options?: LaunchOptions) => Promise<Page>;
+  /** Stops the app, e.g. to move a project folder while nothing holds it. */
+  stop: () => Promise<void>;
   /** A new empty folder, removed after the app has stopped. */
   folder: (prefix: string) => string;
 }
@@ -187,6 +189,12 @@ export const test = base.extend<{ app: App }>({
           }
           running = await start(playwright, dataDir, options);
           return running.page;
+        },
+        stop: async () => {
+          if (running !== undefined) {
+            await stop(running);
+            running = undefined;
+          }
         },
         folder: (prefix) => {
           const folder = tempFolder(prefix);

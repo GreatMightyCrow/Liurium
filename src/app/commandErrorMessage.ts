@@ -39,9 +39,11 @@ const messages: {
   unsuitableFolder: () =>
     "Choose a folder of its own, not a whole drive or a folder inside .liurium or .git.",
   otherProject: () =>
-    "The project's folder now holds a different project. Nothing was changed.",
+    "The folder holds a different project. Nothing was changed.",
   duplicateProject: () =>
     "Another folder already holds this project, so this one looks like a copy. Nothing was changed.",
+  noProject: () => "This folder holds no Liurium project. Nothing was changed.",
+  invalidName: () => "Use a name with 1 to 200 characters and no line breaks.",
   internal: () =>
     "Something went wrong inside Liurium. Try again, and restart Liurium if it keeps happening.",
 };
