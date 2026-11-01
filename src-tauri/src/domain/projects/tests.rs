@@ -346,6 +346,12 @@ fn the_last_opened_project_is_the_newest() {
     assert_eq!(last_opened(&app).unwrap(), None);
     add(&app, &first.root).expect("added");
     add(&app, &second.root).expect("added");
+    // Both opened long ago, so the open below is newer even within one millisecond.
+    app.execute(
+        "UPDATE projects SET last_opened_at = '2000-01-01T00:00:00.000Z'",
+        [],
+    )
+    .expect("earlier time");
 
     open(&app, &first.id).expect("opened");
 
@@ -510,17 +516,23 @@ fn find_loads_a_project_without_counting_it_as_opened() {
     let dir = temp_dir();
     let app = app(dir.path());
     let first = project(dir.path(), "First", current(Kind::Project));
-    let second = project(dir.path(), "Second", current(Kind::Project));
     add(&app, &first.root).expect("added");
-    add(&app, &second.root).expect("added");
+    // A fixed time: comparing with another project's time is flaky, because two
+    // projects can be opened within the same millisecond (seen in CI).
+    let earlier = "2000-01-01T00:00:00.000Z";
+    app.execute(
+        "UPDATE projects SET last_opened_at = ?1 WHERE id = ?2",
+        [earlier, &first.id],
+    )
+    .expect("earlier time");
     fs::write(first.root.join(TEMP), "left over").expect("temp file");
 
     let found = find(&app, &first.id).expect("found");
 
     assert_eq!(found.id, first.id);
     assert_eq!(
-        last_opened(&app).unwrap().map(|(id, _)| id),
-        Some(second.id)
+        list(&app).expect("list")[0].last_opened_at.as_deref(),
+        Some(earlier)
     );
     assert!(
         first.root.join(TEMP).exists(),
