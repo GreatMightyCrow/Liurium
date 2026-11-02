@@ -10,6 +10,9 @@ const COMMANDS: &[&str] = &[
     "rename_project",
     "remove_project",
     "locate_project",
+    "get_settings",
+    "update_settings",
+    "restart_app",
 ];
 
 fn main() {

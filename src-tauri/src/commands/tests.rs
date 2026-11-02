@@ -4,13 +4,17 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 use super::projects::{CurrentProject, ProjectStatus, Workspace, checked};
+use super::settings::SettingsView;
 use super::*;
 use crate::domain::projects::ProjectError;
+use crate::domain::settings::{SettingKey, Settings};
+use crate::frame::FrameStyle;
 use crate::storage::db::Kind;
 use crate::storage::fs::{FsError, PathRule};
 use crate::test_support::{
     Snapshot, TreeSnapshot, app_data, current, damage, liurium_database, project, temp_dir,
 };
+use crate::theme::{Mode, ThemeChoice};
 
 fn to_json(value: &impl Serialize) -> Value {
     serde_json::to_value(value).expect("serializable")
@@ -443,6 +447,132 @@ fn ids_from_the_page_must_be_project_ids() {
     ] {
         assert_eq!(checked(bad), Err(CommandError::NotFound), "{bad}");
     }
+}
+
+fn stored_settings(app_dir: &Path) -> Settings {
+    let conn =
+        db::open(&app_dir.join("app.db"), Kind::App, db::OpenMode::Existing).expect("app.db");
+    stored::load(&conn).expect("settings").settings
+}
+
+const CHOSEN: Settings = Settings {
+    theme: ThemeChoice::Mint,
+    mode: Mode::Dark,
+    frame: FrameStyle::Native,
+};
+
+#[test]
+fn the_start_reads_the_stored_settings() {
+    let dir = temp_dir();
+    app_data(dir.path(), &[]);
+    stored::save(
+        &mut db::open(
+            &dir.path().join("app.db"),
+            Kind::App,
+            db::OpenMode::Existing,
+        )
+        .expect("app.db"),
+        &CHOSEN,
+    )
+    .expect("save");
+
+    let startup = Startup::open(Some(dir.path()));
+
+    assert_eq!(startup.settings.settings, CHOSEN);
+    assert!(startup.settings.fell_back.is_empty());
+}
+
+#[test]
+fn without_app_data_the_start_uses_the_default_settings() {
+    let dir = temp_dir();
+    let path = app_data(dir.path(), &[]);
+    Connection::open(&path)
+        .expect("database")
+        .pragma_update(None, "user_version", 9)
+        .expect("version");
+
+    assert_eq!(Startup::open(Some(dir.path())).settings, Loaded::default());
+    assert_eq!(Startup::open(None).settings, Loaded::default());
+}
+
+#[test]
+fn updating_saves_applies_and_forgets_old_fallbacks() {
+    let dir = temp_dir();
+    let workspace = workspace(dir.path());
+    let preferences = Preferences::new(Loaded {
+        settings: Settings::default(),
+        fell_back: vec![SettingKey::Theme],
+    });
+    let mut applied = None;
+
+    let view = preferences
+        .update(CHOSEN, &workspace, |settings| applied = Some(*settings))
+        .expect("update");
+
+    assert_eq!(applied, Some(CHOSEN));
+    assert_eq!(
+        view,
+        SettingsView {
+            settings: CHOSEN,
+            frame_at_start: FrameStyle::Liurium,
+            fell_back: Vec::new(),
+        }
+    );
+    assert_eq!(preferences.settings(), CHOSEN);
+    assert_eq!(stored_settings(dir.path()), CHOSEN);
+}
+
+#[test]
+fn a_failed_save_applies_nothing() {
+    let failed = DataStatus::Failed {
+        error: CommandError::NewerVersion,
+    };
+    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed);
+    let preferences = Preferences::new(Loaded::default());
+    let mut applied = false;
+
+    let result = preferences.update(CHOSEN, &workspace, |_| applied = true);
+
+    assert_eq!(result, Err(CommandError::NewerVersion));
+    assert!(!applied);
+    assert_eq!(preferences.settings(), Settings::default());
+}
+
+#[test]
+fn settings_from_the_page_must_be_allowed_values() {
+    let valid = json!({ "theme": "mint-graphite", "mode": "light", "frame": "hidden" });
+    assert!(serde_json::from_value::<Settings>(valid).is_ok());
+    for invalid in [
+        json!({ "theme": "violet", "mode": "light", "frame": "hidden" }),
+        json!({ "theme": "mint", "mode": "auto", "frame": "hidden" }),
+        json!({ "theme": "mint", "mode": "light", "frame": "frameless" }),
+        json!({ "theme": "mint", "mode": "light" }),
+        json!({ "theme": "mint", "mode": "light", "frame": "hidden", "path": "C:\\" }),
+    ] {
+        assert!(
+            serde_json::from_value::<Settings>(invalid.clone()).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
+fn the_settings_view_uses_camel_case_names() {
+    let view = Preferences::new(Loaded {
+        settings: CHOSEN,
+        fell_back: vec![SettingKey::Mode],
+    })
+    .view()
+    .expect("view");
+
+    assert_eq!(
+        to_json(&view),
+        json!({
+            "settings": { "theme": "mint", "mode": "dark", "frame": "native" },
+            "frameAtStart": "native",
+            "fellBack": ["mode"],
+        })
+    );
 }
 
 #[test]

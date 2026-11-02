@@ -5,6 +5,7 @@ import {
   defaultTheme,
   followMode,
   themeFrom,
+  themeOf,
   themes,
 } from "./theme";
 
@@ -47,6 +48,21 @@ test.each([
   "?accent=<script>&base=cool",
 ])("falls back to the default for %j", (search) => {
   expect(themeFrom(search)).toEqual(defaultTheme);
+});
+
+test("each theme in Settings is one of the allowed pairs, in the same order", () => {
+  const choices = [
+    "orange",
+    "orange-graphite",
+    "mint",
+    "mint-graphite",
+  ] as const;
+  expect(
+    choices.map((choice) => {
+      const { accent, base } = themeOf(choice);
+      return [accent, base];
+    }),
+  ).toEqual(themes);
 });
 
 test("the default is orange on warm", () => {

@@ -114,6 +114,9 @@ async function start(
     }
     // The port can open before WebView2 has created the page (seen on CI).
     const page = context.pages().at(0) ?? (await context.waitForEvent("page"));
+    // Playwright pretends a light color scheme by default; the tests need the
+    // window's real mode (M2-007).
+    await page.emulateMedia({ colorScheme: null });
     return { process: app, browser, page };
   } catch (error) {
     await kill(app);

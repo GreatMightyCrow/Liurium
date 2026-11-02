@@ -1,7 +1,9 @@
-//! Color themes (ADR-0015): an accent plus a base, in dark or light mode. Accent and
-//! base are fixed when the main window is created; the page learns them from the
-//! `accent` and `base` query parameters. The mode follows the window's theme.
+//! Color themes (ADR-0015): an accent plus a base, in dark or light mode, chosen in
+//! the settings (M2-007). The page learns accent and base from the `accent` and `base`
+//! query parameters at start and swaps them itself after a change. The mode follows
+//! the window's theme.
 
+use serde::{Deserialize, Serialize};
 use tauri::{Theme as WindowTheme, image::Image, include_image, window::Color};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,17 +28,34 @@ pub struct Theme {
     pub base: Base,
 }
 
-/// Used until the choice is stored with the app settings (M2-007).
-pub const DEFAULT_THEME: Theme = Theme {
-    accent: Accent::Orange,
-    base: Base::Warm,
-};
+/// The themes a user can choose: each accent with its own base or with graphite. Only
+/// these combinations have their contrast checked by `tokens.test.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "ThemeChoice.ts"))]
+pub enum ThemeChoice {
+    #[default]
+    Orange,
+    OrangeGraphite,
+    Mint,
+    MintGraphite,
+}
 
-/// Temporary switch for trying the other themes until settings exist.
-const THEME_VARIABLE: &str = "LIURIUM_THEME";
+impl ThemeChoice {
+    pub fn theme(self) -> Theme {
+        let (accent, base) = match self {
+            Self::Orange => (Accent::Orange, Base::Warm),
+            Self::OrangeGraphite => (Accent::Orange, Base::Graphite),
+            Self::Mint => (Accent::Mint, Base::Cool),
+            Self::MintGraphite => (Accent::Mint, Base::Graphite),
+        };
+        Theme { accent, base }
+    }
+}
 
-/// Windows shows this in the window and the taskbar. The orange icon needs no copy
-/// here: it is the icon inside the exe, which Windows uses by default.
+/// Windows shows these in the window and the taskbar. The orange one is also the
+/// icon inside the exe; it is needed here to switch back from mint while running.
+const ORANGE_ICON: Image<'static> = include_image!("icons/icon.ico");
 const MINT_ICON: Image<'static> = include_image!("icons/mint/icon.ico");
 
 impl Accent {
@@ -70,29 +89,19 @@ impl Base {
     }
 }
 
-/// Dark or light, chosen with `LIURIUM_MODE` until settings exist (M2-007).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Dark or light, chosen in the settings (M2-007).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "Mode.ts"))]
 pub enum Mode {
     /// Follows the Windows setting, also when it changes while Liurium runs.
+    #[default]
     System,
     Light,
     Dark,
 }
 
-pub const DEFAULT_MODE: Mode = Mode::System;
-
-const MODE_VARIABLE: &str = "LIURIUM_MODE";
-
 impl Mode {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "system" => Some(Self::System),
-            "light" => Some(Self::Light),
-            "dark" => Some(Self::Dark),
-            _ => None,
-        }
-    }
-
     /// `None` lets Windows decide. WebView2 reports the window's theme to the page as
     /// `prefers-color-scheme`, so the page needs no mode in its URL.
     pub fn window_theme(self) -> Option<WindowTheme> {
@@ -104,27 +113,7 @@ impl Mode {
     }
 }
 
-fn mode_from(value: Option<&str>) -> Mode {
-    value.and_then(Mode::parse).unwrap_or(DEFAULT_MODE)
-}
-
-pub fn chosen_mode() -> Mode {
-    mode_from(std::env::var(MODE_VARIABLE).ok().as_deref())
-}
-
 impl Theme {
-    /// Only the combinations whose contrast `tokens.test.ts` checks.
-    fn parse(value: &str) -> Option<Self> {
-        let (accent, base) = match value {
-            "orange" => (Accent::Orange, Base::Warm),
-            "orange-graphite" => (Accent::Orange, Base::Graphite),
-            "mint" => (Accent::Mint, Base::Cool),
-            "mint-graphite" => (Accent::Mint, Base::Graphite),
-            _ => return None,
-        };
-        Some(Self { accent, base })
-    }
-
     pub fn query(self) -> String {
         format!("accent={}&base={}", self.accent.name(), self.base.name())
     }
@@ -158,75 +147,64 @@ impl Theme {
         self.base.canvas(shown)
     }
 
-    /// `None` keeps the exe's own icon.
-    pub fn window_icon(self) -> Option<Image<'static>> {
+    pub fn window_icon(self) -> Image<'static> {
         match self.accent {
-            Accent::Orange => None,
-            Accent::Mint => Some(MINT_ICON),
+            Accent::Orange => ORANGE_ICON,
+            Accent::Mint => MINT_ICON,
         }
     }
-}
-
-/// Unknown or missing values fall back to the default.
-fn theme_from(value: Option<&str>) -> Theme {
-    value.and_then(Theme::parse).unwrap_or(DEFAULT_THEME)
-}
-
-pub fn chosen() -> Theme {
-    theme_from(std::env::var(THEME_VARIABLE).ok().as_deref())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const ALL: [Theme; 4] = [
-        DEFAULT_THEME,
-        Theme {
-            accent: Accent::Orange,
-            base: Base::Graphite,
-        },
-        Theme {
-            accent: Accent::Mint,
-            base: Base::Cool,
-        },
-        Theme {
-            accent: Accent::Mint,
-            base: Base::Graphite,
-        },
+    const CHOICES: [ThemeChoice; 4] = [
+        ThemeChoice::Orange,
+        ThemeChoice::OrangeGraphite,
+        ThemeChoice::Mint,
+        ThemeChoice::MintGraphite,
     ];
 
     #[test]
-    fn known_names_select_their_theme() {
-        let names = ["orange", "orange-graphite", "mint", "mint-graphite"];
-        for (name, theme) in names.into_iter().zip(ALL) {
-            assert_eq!(theme_from(Some(name)), theme, "{name}");
+    fn each_choice_has_its_name_and_theme() {
+        let expected = [
+            ("\"orange\"", Accent::Orange, Base::Warm),
+            ("\"orange-graphite\"", Accent::Orange, Base::Graphite),
+            ("\"mint\"", Accent::Mint, Base::Cool),
+            ("\"mint-graphite\"", Accent::Mint, Base::Graphite),
+        ];
+        for (choice, (name, accent, base)) in CHOICES.into_iter().zip(expected) {
+            assert_eq!(serde_json::to_string(&choice).unwrap(), name);
+            assert_eq!(serde_json::from_str::<ThemeChoice>(name).unwrap(), choice);
+            assert_eq!(choice.theme(), Theme { accent, base }, "{name}");
         }
+        assert_eq!(ThemeChoice::default(), ThemeChoice::Orange);
     }
 
     #[test]
-    fn missing_or_unknown_values_use_the_default() {
+    fn unknown_theme_names_are_rejected() {
         // Orange on cool and mint on warm are not allowed combinations.
-        for value in [
-            None,
-            Some(""),
-            Some("Mint"),
-            Some("violet"),
-            Some("mint-warm"),
-        ] {
-            assert_eq!(theme_from(value), DEFAULT_THEME, "{value:?}");
+        for name in ["\"\"", "\"Mint\"", "\"violet\"", "\"mint-warm\"", "1"] {
+            assert!(serde_json::from_str::<ThemeChoice>(name).is_err(), "{name}");
         }
     }
 
     #[test]
     fn the_query_names_accent_and_base() {
-        assert_eq!(DEFAULT_THEME.query(), "accent=orange&base=warm");
-        assert_eq!(ALL[3].query(), "accent=mint&base=graphite");
+        assert_eq!(
+            ThemeChoice::Orange.theme().query(),
+            "accent=orange&base=warm"
+        );
+        assert_eq!(
+            ThemeChoice::MintGraphite.theme().query(),
+            "accent=mint&base=graphite"
+        );
     }
 
     #[test]
     fn the_start_script_sets_the_theme_attributes() {
-        let script = ALL[2].start_script();
+        let script = ThemeChoice::Mint.theme().start_script();
         assert!(
             script.contains("root.dataset.accent = \"mint\""),
             "{script}"
@@ -236,14 +214,16 @@ mod tests {
     }
 
     #[test]
-    fn only_mint_replaces_the_window_icon() {
-        for theme in ALL {
-            assert_eq!(
-                theme.window_icon().is_some(),
-                theme.accent == Accent::Mint,
-                "{theme:?}"
-            );
+    fn each_accent_has_its_window_icon() {
+        for choice in CHOICES {
+            let theme = choice.theme();
+            let expected = match theme.accent {
+                Accent::Orange => ORANGE_ICON,
+                Accent::Mint => MINT_ICON,
+            };
+            assert_eq!(theme.window_icon().rgba(), expected.rgba(), "{choice:?}");
         }
+        assert_ne!(ORANGE_ICON.rgba(), MINT_ICON.rgba());
     }
 
     // The mint icon is a copy so the page can show it in the title row.
@@ -260,18 +240,19 @@ mod tests {
     }
 
     #[test]
-    fn known_modes_select_their_mode() {
-        assert_eq!(mode_from(Some("system")), Mode::System);
-        assert_eq!(mode_from(Some("light")), Mode::Light);
-        assert_eq!(mode_from(Some("dark")), Mode::Dark);
-    }
-
-    #[test]
-    fn missing_or_unknown_modes_follow_windows() {
-        for value in [None, Some(""), Some("Light"), Some("auto")] {
-            assert_eq!(mode_from(value), Mode::System, "{value:?}");
+    fn modes_have_their_names_and_follow_windows_by_default() {
+        for (mode, name) in [
+            (Mode::System, "\"system\""),
+            (Mode::Light, "\"light\""),
+            (Mode::Dark, "\"dark\""),
+        ] {
+            assert_eq!(serde_json::to_string(&mode).unwrap(), name);
+            assert_eq!(serde_json::from_str::<Mode>(name).unwrap(), mode);
         }
-        assert_eq!(DEFAULT_MODE, Mode::System);
+        for name in ["\"\"", "\"Light\"", "\"auto\""] {
+            assert!(serde_json::from_str::<Mode>(name).is_err(), "{name}");
+        }
+        assert_eq!(Mode::default(), Mode::System);
     }
 
     #[test]
@@ -283,7 +264,7 @@ mod tests {
 
     #[test]
     fn the_start_script_reads_the_mode_from_the_window() {
-        let script = DEFAULT_THEME.start_script();
+        let script = ThemeChoice::default().theme().start_script();
         assert!(
             script.contains("matchMedia(\"(prefers-color-scheme: light)\")"),
             "{script}"

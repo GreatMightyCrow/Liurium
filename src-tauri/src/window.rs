@@ -1,16 +1,15 @@
 //! The main window, created from its entry in `tauri.conf.json` (`create: false`)
-//! with the frame style (ADR-0013), the theme, and the mode (ADR-0015) chosen at start.
+//! with the stored frame style (ADR-0013), theme, and mode (ADR-0015, M2-007).
 
+use crate::commands::Preferences;
+use crate::domain::settings::Settings;
 use crate::frame::FrameStyle;
 use crate::theme::Theme;
-use crate::{frame, theme};
 use std::error::Error;
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
-pub fn create_main_window(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    let style = frame::chosen();
-    let theme = theme::chosen();
-    let mode = theme::chosen_mode();
+pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box<dyn Error>> {
+    let theme = settings.theme.theme();
     let mut config = app
         .config()
         .app
@@ -18,36 +17,52 @@ pub fn create_main_window(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         .first()
         .cloned()
         .ok_or("tauri.conf.json defines no window")?;
-    config.decorations = style.decorations();
-    config.theme = mode.window_theme();
+    config.decorations = settings.frame.decorations();
+    config.theme = settings.mode.window_theme();
     // With the system mode the theme is known only once the window exists, so the
     // window stays hidden until its background matches.
     config.visible = false;
-    config.url = page(style, theme);
-    let mut builder = WebviewWindowBuilder::from_config(app, &config)?
-        .initialization_script(theme.start_script());
+    config.url = page(settings.frame, theme);
+    let builder = WebviewWindowBuilder::from_config(app, &config)?
+        .initialization_script(theme.start_script())
+        .icon(theme.window_icon())?;
     // The end-to-end build keeps WebView2's own data in the test's folder too.
     #[cfg(feature = "e2e")]
-    if let Some(dir) = crate::e2e::data_dir() {
-        builder = builder.data_directory(dir.join("EBWebView"));
-    }
-    if let Some(icon) = theme.window_icon() {
-        builder = builder.icon(icon)?;
-    }
+    let builder = match crate::e2e::data_dir() {
+        Some(dir) => builder.data_directory(dir.join("EBWebView")),
+        None => builder,
+    };
     let window = builder.build()?;
-    // The background only prevents a flash; the window must appear even if setting it
-    // fails, so these errors do not stop the start.
-    if let Ok(shown) = window.theme() {
-        let _ = window.set_background_color(Some(theme.background(shown)));
-    }
+    paint(&window, theme);
+    // Windows' mode can change while Liurium runs; the background follows with the
+    // theme chosen by then.
     let follower = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::ThemeChanged(shown) = event {
+            let theme = follower.state::<Preferences>().settings().theme.theme();
             let _ = follower.set_background_color(Some(theme.background(*shown)));
         }
     });
     window.show()?;
     Ok(())
+}
+
+/// A changed theme and mode take effect at once; the frame style needs a restart.
+pub fn apply(window: &WebviewWindow, settings: &Settings) {
+    let theme = settings.theme.theme();
+    // Icon and background are looks only; a failure keeps the old ones, the saved
+    // settings stay and apply at the next start.
+    let _ = window.set_icon(theme.window_icon());
+    let _ = window.set_theme(settings.mode.window_theme());
+    paint(window, theme);
+}
+
+/// The background only prevents a flash; the window must work even if setting it
+/// fails, so the error is ignored.
+fn paint(window: &WebviewWindow, theme: Theme) {
+    if let Ok(shown) = window.theme() {
+        let _ = window.set_background_color(Some(theme.background(shown)));
+    }
 }
 
 fn page(style: FrameStyle, theme: Theme) -> WebviewUrl {
@@ -57,12 +72,12 @@ fn page(style: FrameStyle, theme: Theme) -> WebviewUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::DEFAULT_STYLE;
-    use crate::theme::DEFAULT_THEME;
+    use crate::theme::ThemeChoice;
 
     #[test]
     fn the_page_url_names_frame_and_theme() {
-        let WebviewUrl::App(path) = page(DEFAULT_STYLE, DEFAULT_THEME) else {
+        let WebviewUrl::App(path) = page(FrameStyle::default(), ThemeChoice::default().theme())
+        else {
             panic!("the main window must load the bundled page");
         };
         assert_eq!(

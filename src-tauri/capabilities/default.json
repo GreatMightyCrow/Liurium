@@ -15,6 +15,9 @@
     "allow-open-project",
     "allow-rename-project",
     "allow-remove-project",
-    "allow-locate-project"
+    "allow-locate-project",
+    "allow-get-settings",
+    "allow-update-settings",
+    "allow-restart-app"
   ]
 }

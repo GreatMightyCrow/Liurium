@@ -11,7 +11,11 @@ use std::{
 use ts_rs::{Config, TS};
 
 use super::projects::{CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
+use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
+use crate::domain::settings::{SettingKey, Settings};
+use crate::frame::FrameStyle;
+use crate::theme::{Mode, ThemeChoice};
 
 fn output<T: TS + 'static>(config: &Config) -> (PathBuf, String) {
     (
@@ -32,6 +36,12 @@ fn typescript_bindings_match_the_rust_types() {
         output::<CurrentProject>(&config),
         output::<ProjectStatus>(&config),
         output::<ProjectEntry>(&config),
+        output::<ThemeChoice>(&config),
+        output::<Mode>(&config),
+        output::<FrameStyle>(&config),
+        output::<Settings>(&config),
+        output::<SettingKey>(&config),
+        output::<SettingsView>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import { getAppInfo } from "./commands";
+import { getAppInfo, updateSettings } from "./commands";
 import { CommandFailure } from "./errors";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -17,6 +17,19 @@ test("getAppInfo calls app_info and returns its result", async () => {
 
   await expect(getAppInfo()).resolves.toEqual(info);
   expect(invokeMock).toHaveBeenCalledWith("app_info", undefined);
+});
+
+test("updateSettings sends the settings under the name Rust expects", async () => {
+  const settings = { theme: "mint", mode: "light", frame: "hidden" } as const;
+  invokeMock.mockResolvedValue({
+    settings,
+    frameAtStart: "liurium",
+    fellBack: [],
+  });
+
+  await updateSettings(settings);
+
+  expect(invokeMock).toHaveBeenCalledWith("update_settings", { settings });
 });
 
 test("an error from Rust becomes a typed CommandFailure", async () => {

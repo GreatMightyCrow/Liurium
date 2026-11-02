@@ -2,3 +2,4 @@
 //! call in here; storage does the file and database work.
 
 pub mod projects;
+pub mod settings;

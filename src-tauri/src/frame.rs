@@ -1,32 +1,23 @@
-//! Window frame styles (ADR-0013). The style is fixed when the main window is
-//! created; the page learns it from the `frame` query parameter.
+//! Window frame styles (ADR-0013), chosen in the settings (M2-007). The style is fixed
+//! when the main window is created; a change applies after a restart. The page learns
+//! it from the `frame` query parameter.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "FrameStyle.ts"))]
 pub enum FrameStyle {
     /// The Windows title bar, in the window's mode.
     Native,
     /// Liurium's own title row with title and window buttons.
+    #[default]
     Liurium,
     /// No extra row; window buttons sit in the top edge of the app.
     Hidden,
 }
 
-/// Used until the choice is stored with the app settings (M2-007).
-pub const DEFAULT_STYLE: FrameStyle = FrameStyle::Liurium;
-
-/// Temporary switch for trying the other styles until settings exist.
-const STYLE_VARIABLE: &str = "LIURIUM_FRAME_STYLE";
-
 impl FrameStyle {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "native" => Some(Self::Native),
-            "liurium" => Some(Self::Liurium),
-            "hidden" => Some(Self::Hidden),
-            _ => None,
-        }
-    }
-
     fn name(self) -> &'static str {
         match self {
             Self::Native => "native",
@@ -45,31 +36,27 @@ impl FrameStyle {
     }
 }
 
-/// Unknown or missing values fall back to the default.
-fn style_from(value: Option<&str>) -> FrameStyle {
-    value.and_then(FrameStyle::parse).unwrap_or(DEFAULT_STYLE)
-}
-
-pub fn chosen() -> FrameStyle {
-    style_from(std::env::var(STYLE_VARIABLE).ok().as_deref())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const ALL: [FrameStyle; 3] = [FrameStyle::Native, FrameStyle::Liurium, FrameStyle::Hidden];
+
     #[test]
-    fn known_names_select_their_style() {
-        assert_eq!(style_from(Some("native")), FrameStyle::Native);
-        assert_eq!(style_from(Some("liurium")), FrameStyle::Liurium);
-        assert_eq!(style_from(Some("hidden")), FrameStyle::Hidden);
+    fn styles_are_stored_by_their_names() {
+        for style in ALL {
+            let name = format!("\"{}\"", style.name());
+            assert_eq!(serde_json::to_string(&style).unwrap(), name);
+            assert_eq!(serde_json::from_str::<FrameStyle>(&name).unwrap(), style);
+        }
+        for name in ["\"\"", "\"Hidden\"", "\"frameless\""] {
+            assert!(serde_json::from_str::<FrameStyle>(name).is_err(), "{name}");
+        }
     }
 
     #[test]
-    fn missing_or_unknown_values_use_the_default() {
-        for value in [None, Some(""), Some("Hidden"), Some("frameless")] {
-            assert_eq!(style_from(value), DEFAULT_STYLE, "{value:?}");
-        }
+    fn the_liurium_frame_is_the_default() {
+        assert_eq!(FrameStyle::default(), FrameStyle::Liurium);
     }
 
     #[test]

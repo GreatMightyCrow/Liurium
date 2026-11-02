@@ -11,7 +11,7 @@ mod window;
 
 use std::path::PathBuf;
 
-use commands::{Startup, Workspace};
+use commands::{Preferences, Startup, Workspace};
 use tauri::{App, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,14 +26,19 @@ pub fn run() {
             commands::projects::open_project,
             commands::projects::rename_project,
             commands::projects::remove_project,
-            commands::projects::locate_project
+            commands::projects::locate_project,
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            commands::settings::restart_app
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);
             let startup = Startup::open(app_dir.as_deref());
+            let settings = startup.settings.settings;
             app.manage(Workspace::new(app_dir, &startup.data));
+            app.manage(Preferences::new(startup.settings.clone()));
             app.manage(startup);
-            window::create_main_window(app.handle())
+            window::create_main_window(app.handle(), settings)
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

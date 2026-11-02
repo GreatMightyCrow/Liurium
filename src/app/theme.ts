@@ -1,6 +1,9 @@
+import type { ThemeChoice } from "../lib/ipc/commands";
+
 // Color themes (ADR-0015): an accent plus a base, in dark or light mode. Rust creates
 // the window and passes the theme as `?accent=<accent>&base=<base>`; anything not
-// allowed falls back to the default. tokens.css styles the allowed pairs through
+// allowed falls back to the default. After a change in Settings (M2-007) the page
+// swaps the attributes itself. tokens.css styles the allowed pairs through
 // `data-accent`, `data-base`, and `data-mode`.
 export type Accent = "orange" | "mint";
 export type Base = "warm" | "cool" | "graphite";
@@ -28,13 +31,27 @@ export function themeFrom(search: string): Theme {
   return allowed ? { accent: allowed[0], base: allowed[1] } : defaultTheme;
 }
 
+/** The accent and base of a theme chosen in Settings; the same pairs as Rust's. */
+export function themeOf(choice: ThemeChoice): Theme {
+  switch (choice) {
+    case "orange":
+      return { accent: "orange", base: "warm" };
+    case "orange-graphite":
+      return { accent: "orange", base: "graphite" };
+    case "mint":
+      return { accent: "mint", base: "cool" };
+    case "mint-graphite":
+      return { accent: "mint", base: "graphite" };
+  }
+}
+
 export function applyTheme(root: HTMLElement, theme: Theme): void {
   root.dataset.accent = theme.accent;
   root.dataset.base = theme.base;
 }
 
 /**
- * Dark or light. Rust sets the window theme from `LIURIUM_MODE` or Windows, and
+ * Dark or light. Rust sets the window theme from the settings or Windows, and
  * WebView2 reports it as the preferred color scheme, also when Windows changes it.
  */
 export type Mode = "dark" | "light";

@@ -6,6 +6,7 @@
 mod bindings;
 mod error;
 pub mod projects;
+pub mod settings;
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +17,9 @@ use tauri::{AppHandle, State};
 
 pub use error::CommandError;
 pub use projects::Workspace;
+pub use settings::Preferences;
 
+use crate::domain::settings::{self as stored, Loaded};
 use crate::storage::db::{self, AppDb, DbError};
 
 /// What the start found in the app data folder.
@@ -54,20 +57,34 @@ impl DataStatus {
 /// Set once when the app starts.
 pub struct Startup {
     pub data: DataStatus,
+    /// Read before the window is created, so its first frame has the stored theme.
+    pub settings: Loaded,
 }
 
 impl Startup {
-    /// Opens `app.db` so it exists and is migrated from the start (ADR-0016). The app
-    /// also starts when this fails; the page shows the status. The connection is
-    /// closed again until the first command needs it (M2-005).
+    /// Opens `app.db` so it exists and is migrated from the start (ADR-0016), and
+    /// reads the settings. The app also starts when this fails, with the default
+    /// settings; the page shows the status. The connection is closed again until the
+    /// first command needs it (M2-005).
     pub fn open(app_dir: Option<&Path>) -> Self {
-        let data = match app_dir {
-            Some(dir) => DataStatus::of(db::open_app(dir)),
-            None => DataStatus::Failed {
-                error: CommandError::Internal,
-            },
+        let Some(dir) = app_dir else {
+            return Self {
+                data: DataStatus::Failed {
+                    error: CommandError::Internal,
+                },
+                settings: Loaded::default(),
+            };
         };
-        Self { data }
+        let opened = db::open_app(dir);
+        let settings = opened
+            .as_ref()
+            .ok()
+            .and_then(|app| stored::load(&app.connection).ok())
+            .unwrap_or_default();
+        Self {
+            data: DataStatus::of(opened),
+            settings,
+        }
     }
 }
 

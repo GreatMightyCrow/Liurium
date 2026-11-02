@@ -43,6 +43,10 @@
     --color-forced-selected: Highlight;
     --color-forced-on-selected: HighlightText;
 
+    /* Color: theme swatches in Settings, the accent of each theme in every theme */
+    --color-swatch-orange: #ff8c42;
+    --color-swatch-mint: #4fd1a1;
+
     /* Spacing, 4px grid */
     --space-1: 4px;
     --space-2: 8px;

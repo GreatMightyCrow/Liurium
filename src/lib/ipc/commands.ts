@@ -4,6 +4,8 @@ import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
 import type { ProjectInfo } from "./bindings/ProjectInfo";
 import type { ProjectStatus } from "./bindings/ProjectStatus";
+import type { Settings } from "./bindings/Settings";
+import type { SettingsView } from "./bindings/SettingsView";
 import { toCommandFailure } from "./errors";
 
 export type {
@@ -12,8 +14,14 @@ export type {
   ProjectEntry,
   ProjectInfo,
   ProjectStatus,
+  Settings,
+  SettingsView,
 };
 export type { DataStatus } from "./bindings/DataStatus";
+export type { FrameStyle } from "./bindings/FrameStyle";
+export type { Mode } from "./bindings/Mode";
+export type { SettingKey } from "./bindings/SettingKey";
+export type { ThemeChoice } from "./bindings/ThemeChoice";
 
 // One function per Rust command (src-tauri/src/commands). Each command also needs
 // its permission in src-tauri/capabilities/default.json (Security Model, ADR-0018).
@@ -56,6 +64,20 @@ export function removeProject(id: string): Promise<void> {
 /** Rust shows the folder dialog to find a moved project; `null` when cancelled. */
 export function locateProject(id: string): Promise<ProjectInfo | null> {
   return call("locate_project", { id });
+}
+
+export function getSettings(): Promise<SettingsView> {
+  return call("get_settings");
+}
+
+/** Saves, then Rust changes the window's icon, background, and mode at once. */
+export function updateSettings(settings: Settings): Promise<SettingsView> {
+  return call("update_settings", { settings });
+}
+
+/** Closes Liurium and starts it again, so a new window frame applies. */
+export function restartApp(): Promise<void> {
+  return call("restart_app");
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

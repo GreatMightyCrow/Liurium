@@ -139,7 +139,7 @@ impl Workspace {
         }
     }
 
-    fn app(&self) -> Result<rusqlite::Connection, CommandError> {
+    pub(super) fn app(&self) -> Result<rusqlite::Connection, CommandError> {
         let dir = self.app_dir.as_ref().map_err(Clone::clone)?;
         Ok(db::open(&dir.join(APP_DB), Kind::App, OpenMode::Existing)?)
     }

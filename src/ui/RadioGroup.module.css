@@ -1,0 +1,63 @@
+@layer components {
+  .group {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .options {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .option {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    min-height: var(--size-control-sm);
+    cursor: pointer;
+  }
+
+  .options[data-disabled] .option {
+    opacity: var(--opacity-disabled);
+    cursor: default;
+  }
+
+  /* A ring with a dot when chosen; the ring needs 3:1 against the surface. */
+  .radio {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: 50%;
+  }
+
+  .radio[data-checked] {
+    border-color: var(--color-accent-text);
+  }
+
+  .indicator {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: 50%;
+    background: var(--color-accent-text);
+  }
+
+  .mark {
+    display: inline-flex;
+  }
+
+  /* Contrast themes drop the dot's background; the system's selection color keeps
+     the chosen option visible. */
+  @media (forced-colors: active) {
+    .indicator {
+      forced-color-adjust: none;
+      background: var(--color-forced-selected);
+    }
+  }
+}

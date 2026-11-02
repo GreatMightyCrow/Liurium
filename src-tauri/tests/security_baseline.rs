@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 12] = [
+const REVIEWED_PERMISSIONS: [&str; 15] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -27,6 +27,10 @@ const REVIEWED_PERMISSIONS: [&str; 12] = [
     "allow-rename-project",
     "allow-remove-project",
     "allow-locate-project",
+    // Settings (M2-007): only the allowed values pass; Rust changes the window itself.
+    "allow-get-settings",
+    "allow-update-settings",
+    "allow-restart-app",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {
