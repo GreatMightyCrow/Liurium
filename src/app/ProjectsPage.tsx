@@ -1,4 +1,4 @@
-import { Ellipsis, Folder, TriangleAlert } from "lucide-react";
+import { Ellipsis, Folder, FolderOpen, FolderX } from "lucide-react";
 import {
   type SubmitEvent,
   type ReactNode,
@@ -255,6 +255,7 @@ interface BodyProps {
 }
 
 function Body({ loaded, busy, problem, addButton, actions }: BodyProps) {
+  const baseId = useId();
   switch (loaded.status) {
     case "loading":
       return <LoadingState label="Loading projects…" />;
@@ -279,6 +280,13 @@ function Body({ loaded, busy, problem, addButton, actions }: BodyProps) {
     );
   }
   const { current } = loaded;
+  const openOne = loaded.projects.find((project) => project.status === "open");
+  const groups = grouped(
+    loaded.projects.filter((project) => project.status !== "open"),
+    new Date(),
+  );
+  const problemOf = (project: ProjectEntry) =>
+    problem?.id === project.id ? problem.text : null;
   return (
     <>
       <div className={styles.toolbar}>{addButton("secondary")}</div>
@@ -288,24 +296,130 @@ function Body({ loaded, busy, problem, addButton, actions }: BodyProps) {
           {commandErrorMessage(current.error)}
         </p>
       )}
-      {current.state === "open" && current.project.readOnly && (
-        <p className={styles.notice}>
-          “{current.project.name}” is write-protected. Liurium shows the project
-          but saves nothing to it.
+      {openOne !== undefined && (
+        <OpenProject
+          project={openOne}
+          readOnly={current.state === "open" && current.project.readOnly}
+          busy={busy}
+          problem={problemOf(openOne)}
+          actions={actions}
+        />
+      )}
+      {groups.map((group) => {
+        const titleId = `${baseId}-${group.key}`;
+        return (
+          <section key={group.key} className={styles.group}>
+            <h2 id={titleId} className={styles.groupTitle}>
+              {group.title}
+            </h2>
+            <ul className={styles.list} aria-labelledby={titleId}>
+              {group.projects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  busy={busy}
+                  problem={problemOf(project)}
+                  actions={actions}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+interface Group {
+  key: "today" | "week" | "earlier" | "never";
+  title: string;
+  projects: ProjectEntry[];
+}
+
+/** The projects by when they were last opened, in the order Rust sorted them. */
+function grouped(projects: ProjectEntry[], now: Date): Group[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 6);
+  const groups: Group[] = [
+    { key: "today", title: "Today", projects: [] },
+    { key: "week", title: "This week", projects: [] },
+    { key: "earlier", title: "Earlier", projects: [] },
+    { key: "never", title: "Never opened", projects: [] },
+  ];
+  const [todays, weeks, earlier, never] = groups as [
+    Group,
+    Group,
+    Group,
+    Group,
+  ];
+  for (const project of projects) {
+    if (project.lastOpenedAt === null) {
+      never.projects.push(project);
+      continue;
+    }
+    const opened = new Date(project.lastOpenedAt);
+    if (opened >= today) {
+      todays.projects.push(project);
+    } else if (opened >= weekAgo) {
+      weeks.projects.push(project);
+    } else {
+      earlier.projects.push(project);
+    }
+  }
+  return groups.filter((group) => group.projects.length > 0);
+}
+
+interface OpenProjectProps {
+  project: ProjectEntry;
+  readOnly: boolean;
+  busy: boolean;
+  problem: string | null;
+  actions: Actions;
+}
+
+// The project Liurium has open, above the others.
+function OpenProject({
+  project,
+  readOnly,
+  busy,
+  problem,
+  actions,
+}: OpenProjectProps) {
+  const titleId = useId();
+  return (
+    <section className={styles.current} aria-labelledby={titleId}>
+      <FolderOpen
+        className={styles.currentIcon}
+        strokeWidth={1.5}
+        aria-hidden
+      />
+      <h2 id={titleId} className={styles.currentName}>
+        {project.name}
+      </h2>
+      <FolderPath folder={project.folder} className={styles.currentPath} />
+      <p className={styles.currentMeta}>
+        <span className={styles.openLabel}>Open now</span>
+        {project.lastOpenedAt !== null && (
+          <span>
+            Opened <When at={project.lastOpenedAt} />
+          </span>
+        )}
+      </p>
+      <div className={styles.currentActions}>
+        <ProjectMenu project={project} busy={busy} actions={actions} />
+      </div>
+      {readOnly && (
+        <p className={styles.currentNote}>
+          Write-protected. Liurium shows the project but saves nothing to it.
         </p>
       )}
-      <ul className={styles.list} aria-label="Projects">
-        {loaded.projects.map((project) => (
-          <ProjectRow
-            key={project.id}
-            project={project}
-            busy={busy}
-            problem={problem?.id === project.id ? problem.text : null}
-            actions={actions}
-          />
-        ))}
-      </ul>
-    </>
+      {problem !== null && (
+        <p role="alert" className={styles.currentNote}>
+          {problem}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -318,101 +432,51 @@ interface ProjectRowProps {
 
 function ProjectRow({ project, busy, problem, actions }: ProjectRowProps) {
   const missing = project.status === "missing";
+  // The icon shows the state; the words next to it say it too.
+  const Icon = missing ? FolderX : Folder;
   return (
-    <li
-      className={styles.row}
-      data-status={project.status}
-      aria-current={project.status === "open" ? "true" : undefined}
-    >
-      <h2 className={styles.name}>
-        {missing ? (
-          project.name
-        ) : (
-          <button
-            type="button"
-            className={styles.open}
-            disabled={busy}
-            onClick={() => {
-              actions.open(project);
-            }}
-          >
-            {project.name}
-          </button>
-        )}
-      </h2>
-      <p className={styles.folder}>{project.folder}</p>
-      <p className={styles.meta}>
-        <Status project={project} />
-        <span className={styles.opened}>
-          {project.lastOpenedAt === null ? (
-            "Never opened"
+    <li className={styles.row} data-status={project.status}>
+      <Icon className={styles.rowIcon} strokeWidth={1.5} aria-hidden />
+      <div className={styles.label}>
+        <h3 className={styles.name}>
+          {missing ? (
+            project.name
           ) : (
-            <>
-              Opened{" "}
-              <time dateTime={project.lastOpenedAt}>
-                {openedAt.format(new Date(project.lastOpenedAt))}
-              </time>
-            </>
-          )}
-        </span>
-      </p>
-      <div className={styles.actions}>
-        {missing && (
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              actions.locate(project);
-            }}
-          >
-            Locate folder
-          </Button>
-        )}
-        <Menu
-          trigger={
-            <IconButton
-              icon={Ellipsis}
-              label={`Actions for ${project.name}`}
-              size="sm"
+            <button
+              type="button"
+              className={styles.open}
               disabled={busy}
-            />
-          }
-        >
-          {project.status === "available" && (
-            <MenuItem
-              onSelect={() => {
+              onClick={() => {
                 actions.open(project);
               }}
             >
-              Open
-            </MenuItem>
+              {project.name}
+            </button>
           )}
-          {missing ? (
-            <MenuItem
-              onSelect={() => {
+        </h3>
+        <FolderPath folder={project.folder} className={styles.path} />
+        {missing && (
+          <p className={styles.missing}>
+            Folder not found
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
                 actions.locate(project);
               }}
             >
               Locate folder
-            </MenuItem>
-          ) : (
-            <MenuItem
-              onSelect={() => {
-                actions.rename(project);
-              }}
-            >
-              Rename…
-            </MenuItem>
-          )}
-          <MenuSeparator />
-          <MenuItem
-            onSelect={() => {
-              actions.remove(project);
-            }}
-          >
-            Remove from list…
-          </MenuItem>
-        </Menu>
+            </Button>
+          </p>
+        )}
+      </div>
+      <p className={styles.when}>
+        {!missing && project.lastOpenedAt !== null && (
+          <When at={project.lastOpenedAt} />
+        )}
+      </p>
+      <div className={styles.actions}>
+        <ProjectMenu project={project} busy={busy} actions={actions} />
       </div>
       {problem !== null && (
         <p role="alert" className={styles.rowProblem}>
@@ -423,25 +487,109 @@ function ProjectRow({ project, busy, problem, actions }: ProjectRowProps) {
   );
 }
 
-// In words, never by color alone. An available project needs no label.
-function Status({ project }: { project: ProjectEntry }) {
-  switch (project.status) {
-    case "open":
-      return <span className={styles.openLabel}>Open</span>;
-    case "missing":
-      return (
-        <span className={styles.missingLabel}>
-          <TriangleAlert
-            className={styles.statusIcon}
-            strokeWidth={1.5}
-            aria-hidden
-          />
-          Folder not found
-        </span>
-      );
-    case "available":
-      return null;
+interface ProjectMenuProps {
+  project: ProjectEntry;
+  busy: boolean;
+  actions: Actions;
+}
+
+function ProjectMenu({ project, busy, actions }: ProjectMenuProps) {
+  const missing = project.status === "missing";
+  return (
+    <Menu
+      trigger={
+        <IconButton
+          icon={Ellipsis}
+          label={`Actions for ${project.name}`}
+          size="sm"
+          disabled={busy}
+        />
+      }
+    >
+      {project.status === "available" && (
+        <MenuItem
+          onSelect={() => {
+            actions.open(project);
+          }}
+        >
+          Open
+        </MenuItem>
+      )}
+      {missing ? (
+        <MenuItem
+          onSelect={() => {
+            actions.locate(project);
+          }}
+        >
+          Locate folder
+        </MenuItem>
+      ) : (
+        <MenuItem
+          onSelect={() => {
+            actions.rename(project);
+          }}
+        >
+          Rename…
+        </MenuItem>
+      )}
+      <MenuSeparator />
+      <MenuItem
+        onSelect={() => {
+          actions.remove(project);
+        }}
+      >
+        Remove from list…
+      </MenuItem>
+    </Menu>
+  );
+}
+
+/** The folder path with its last part, the project folder, stressed. */
+function FolderPath({
+  folder,
+  className,
+}: {
+  folder: string;
+  className?: string;
+}) {
+  const cut = Math.max(folder.lastIndexOf("\\"), folder.lastIndexOf("/")) + 1;
+  const leaf = folder.slice(cut);
+  return (
+    <p className={className} title={folder}>
+      {leaf === "" ? (
+        <span className={styles.leaf}>{folder}</span>
+      ) : (
+        <>
+          {folder.slice(0, cut)}
+          <span className={styles.leaf}>{leaf}</span>
+        </>
+      )}
+    </p>
+  );
+}
+
+// English words to match the UI; the tooltip gives the full date in the system format.
+const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+function ago(date: Date, now: Date): string {
+  const minutes = Math.round((date.getTime() - now.getTime()) / 60000);
+  if (Math.abs(minutes) < 60) {
+    return relative.format(minutes, "minute");
   }
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) {
+    return relative.format(hours, "hour");
+  }
+  return relative.format(Math.round(hours / 24), "day");
+}
+
+function When({ at }: { at: string }) {
+  const date = new Date(at);
+  return (
+    <time dateTime={at} title={openedAt.format(date)}>
+      {ago(date, new Date())}
+    </time>
+  );
 }
 
 interface RenameDialogProps {

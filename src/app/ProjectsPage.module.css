@@ -1,8 +1,8 @@
 @layer components {
   .content {
     display: grid;
-    gap: var(--space-4);
-    max-width: var(--size-text-measure);
+    gap: var(--space-5);
+    max-width: var(--size-page-max);
     padding: var(--space-5);
   }
 
@@ -11,42 +11,145 @@
     justify-content: flex-end;
   }
 
+  /* The open project: the one thing on the page that stands out. */
+  .current {
+    display: grid;
+    grid-template-areas:
+      "icon name actions"
+      ". path actions"
+      ". meta actions"
+      ". note note";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-3);
+    align-items: center;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .currentIcon {
+    grid-area: icon;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    color: var(--color-accent-text);
+  }
+
+  .currentName {
+    grid-area: name;
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    overflow-wrap: anywhere;
+  }
+
+  .currentPath {
+    grid-area: path;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .currentMeta {
+    display: flex;
+    flex-wrap: wrap;
+    grid-area: meta;
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    margin-top: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .currentActions {
+    grid-area: actions;
+    align-self: start;
+  }
+
+  .currentNote {
+    grid-area: note;
+    margin: 0;
+    margin-top: var(--space-2);
+    color: var(--color-text-secondary);
+  }
+
+  .currentNote[role="alert"] {
+    color: var(--color-danger);
+  }
+
+  .openLabel {
+    color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .group {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .groupTitle {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
   .list {
     display: grid;
     margin: 0;
     padding: 0;
-    border-block: var(--border-width) solid var(--color-border);
+    border-top: var(--border-width) solid var(--color-border);
     list-style: none;
   }
 
-  /* Name and folder on the left, status and actions on the right. The name's button
+  /* One line per project: icon, name, folder, when, actions. The name's button
      covers the whole row (see .open::after); the actions sit above it. */
   .row {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-1) var(--space-4);
+    grid-template-areas:
+      "icon label when actions"
+      ". problem problem problem";
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: var(--space-1) var(--space-3);
     align-items: center;
-    padding: var(--space-3);
-  }
-
-  .row + .row {
-    border-top: var(--border-width) solid var(--color-border);
+    min-height: var(--size-header);
+    padding-inline: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
   }
 
   .row:hover:not([data-status="missing"]) {
-    background: var(--color-surface-elevated);
+    background: var(--color-surface);
   }
 
-  /* The open project: accent bar and background, like the current page in the
-     sidebar, plus the word "Open". */
-  .row[aria-current="true"] {
-    box-shadow: inset var(--focus-ring-width) 0 0 var(--color-accent-text);
-    background: var(--color-accent-muted);
+  .rowIcon {
+    grid-area: icon;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .row[data-status="missing"] .rowIcon {
+    color: var(--color-warning);
+  }
+
+  /* Name and folder side by side; when the row gets narrow (small window, high
+     zoom), the folder moves below the name instead of being squeezed. */
+  .label {
+    display: flex;
+    flex-wrap: wrap;
+    grid-area: label;
+    gap: var(--space-1) var(--space-3);
+    align-items: center;
+    min-width: 0;
+    padding-block: var(--space-2);
   }
 
   .name {
-    grid-column: 1;
+    flex: 0 1 var(--size-project-name);
+    min-width: 0;
     margin: 0;
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
@@ -75,61 +178,51 @@
   }
 
   /* Paths are long and have no spaces; let them break anywhere. */
-  .folder {
-    grid-column: 1;
+  .path {
+    flex: 1 1 var(--size-path-min);
+    min-width: 0;
     margin: 0;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
 
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-3);
-    grid-column: 1;
+  .leaf {
+    color: var(--color-text);
+  }
+
+  .when {
+    grid-area: when;
     margin: 0;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+    white-space: nowrap;
   }
 
-  .openLabel {
-    color: var(--color-text);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  .missingLabel {
-    display: inline-flex;
-    gap: var(--space-1);
-    align-items: center;
-    color: var(--color-text);
-  }
-
-  .statusIcon {
+  /* Part of the label, so it moves to its own line when the row gets narrow. */
+  .missing {
+    display: flex;
     flex: none;
-    width: var(--size-icon-sm);
-    height: var(--size-icon-sm);
-    color: var(--color-warning);
+    gap: var(--space-3);
+    align-items: center;
+    margin: 0;
+    font-size: var(--font-size-sm);
   }
 
   .actions {
     position: relative;
     display: flex;
+    grid-area: actions;
     gap: var(--space-2);
     align-items: center;
-    grid-column: 2;
-    grid-row: 1 / span 3;
   }
 
   .rowProblem {
-    grid-column: 1 / -1;
+    grid-area: problem;
     margin: 0;
+    padding-block-end: var(--space-2);
     color: var(--color-danger);
-  }
-
-  .notice {
-    margin: 0;
-    color: var(--color-text-secondary);
   }
 
   .problem {
@@ -137,10 +230,10 @@
     color: var(--color-danger);
   }
 
-  /* Contrast themes drop the bar and background; a border in the theme's selection
-     color marks the open project instead, next to the word "Open". */
+  /* Contrast themes drop the surface; a border in the theme's selection color
+     marks the open project instead, next to the words "Open now". */
   @media (forced-colors: active) {
-    .row[aria-current="true"] {
+    .current {
       border-inline-start: var(--focus-ring-width) solid
         var(--color-forced-selected);
     }

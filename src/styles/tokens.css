@@ -62,6 +62,9 @@
     --size-icon-sm: 16px;
     --size-icon-md: 20px;
     --size-text-measure: 60ch;
+    --size-page-max: 1120px;
+    --size-project-name: 200px;
+    --size-path-min: 240px;
 
     /* Controls: buttons and fields */
     --size-control-sm: 28px;

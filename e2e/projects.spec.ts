@@ -86,16 +86,18 @@ test("a moved project is located, and removing it from the list leaves its folde
   page = await app.launch({ pick: after });
   await openProjects(page);
   const row = page.getByRole("listitem").filter({
-    has: page.getByRole("heading", { level: 2, name }),
+    has: page.getByRole("heading", { level: 3, name }),
   });
   await expect(row).toContainText("Folder not found");
   await row.getByRole("button", { name: "Locate folder" }).click();
-  await expect(row).toHaveAttribute("aria-current", "true");
-  await expect(row).toContainText(after);
-  await expect(row).not.toContainText("Folder not found");
+  // Once open, the project moves out of the list to the top of the page.
+  const open = page.getByRole("region", { name });
+  await expect(open).toContainText("Open now");
+  await expect(open).toContainText(after);
+  await expect(row).toHaveCount(0);
 
   const files = snapshot(after);
-  await row.getByRole("button", { name: `Actions for ${name}` }).click();
+  await open.getByRole("button", { name: `Actions for ${name}` }).click();
   await page.getByRole("menuitem", { name: "Remove from list…" }).click();
   await page.getByRole("button", { name: "Remove from list" }).click();
   await expect(

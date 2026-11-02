@@ -119,38 +119,87 @@ test("loads, then invites to add the first project", async () => {
   expect(addButton()).toBeDefined();
 });
 
-test("lists the projects in the order Rust gives, with their state in words", async () => {
-  showAll();
+function timeIn(element: HTMLElement): HTMLElement {
+  return within(element).getByText((_, node) => node?.tagName === "TIME");
+}
 
-  const list = await screen.findByRole("list", { name: "Projects" });
-  const names = within(list)
+function namesIn(list: HTMLElement): (string | null)[] {
+  return within(list)
     .getAllByRole("heading")
     .map((heading) => heading.textContent);
-  expect(names).toEqual(["Garden", "Work", "Old blog"]);
+}
 
-  const open = await row("Garden");
-  expect(open.getAttribute("aria-current")).toBe("true");
-  expect(open.textContent).toContain("Open");
-  expect(open.textContent).toContain("D:\\Notes\\Garden");
-  expect(
-    within(open)
-      .getByText((_, element) => element?.tagName === "TIME")
-      .getAttribute("dateTime"),
-  ).toBe(gardenEntry.lastOpenedAt);
+test("shows the open project on top, the others by when they were opened", async () => {
+  // Only the clock is fake; promises and timers stay real.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 9, 31, 18, 0));
+  try {
+    const at = (month: number, day: number, hour: number) =>
+      new Date(2026, month, day, hour).toISOString();
+    const notes = {
+      ...work,
+      id: "n",
+      name: "Notes",
+      lastOpenedAt: at(9, 31, 8),
+    };
+    const old = {
+      ...work,
+      id: "o",
+      name: "Archive",
+      lastOpenedAt: at(9, 1, 8),
+    };
+    showWith([gardenEntry, notes, work, old, blog], {
+      state: "open",
+      project: garden,
+    });
 
-  const available = await row("Work");
-  expect(available.getAttribute("aria-current")).toBeNull();
-  expect(available.textContent).not.toContain("Folder not found");
+    const open = await screen.findByRole("region", { name: "Garden" });
+    expect(open.textContent).toContain("Open now");
+    expect(open.textContent).toContain("D:\\Notes\\Garden");
+    expect(timeIn(open).getAttribute("dateTime")).toBe(
+      gardenEntry.lastOpenedAt,
+    );
 
-  const missing = await row("Old blog");
-  expect(missing.textContent).toContain("Folder not found");
-  expect(missing.textContent).toContain("Never opened");
-  expect(
-    within(missing).getByRole("button", { name: "Locate folder" }),
-  ).toBeDefined();
-  expect(
-    within(missing).queryByRole("button", { name: "Old blog" }),
-  ).toBeNull();
+    expect(screen.getAllByRole("list")).toHaveLength(4);
+    expect(namesIn(screen.getByRole("list", { name: "Today" }))).toEqual([
+      "Notes",
+    ]);
+    expect(namesIn(screen.getByRole("list", { name: "This week" }))).toEqual([
+      "Work",
+    ]);
+    expect(namesIn(screen.getByRole("list", { name: "Earlier" }))).toEqual([
+      "Archive",
+    ]);
+    expect(namesIn(screen.getByRole("list", { name: "Never opened" }))).toEqual(
+      ["Old blog"],
+    );
+
+    expect(timeIn(await row("Notes")).textContent).toBe("10 hours ago");
+    const available = await row("Work");
+    expect(timeIn(available).textContent).toBe("yesterday");
+    expect(timeIn(available).getAttribute("title")).not.toBe("");
+    expect(available.textContent).not.toContain("Folder not found");
+    expect(timeIn(await row("Archive")).textContent).toBe("30 days ago");
+
+    const missing = await row("Old blog");
+    expect(missing.textContent).toContain("Folder not found");
+    expect(
+      within(missing).getByRole("button", { name: "Locate folder" }),
+    ).toBeDefined();
+    expect(
+      within(missing).queryByRole("button", { name: "Old blog" }),
+    ).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("the folder name stands out from the folders above it", async () => {
+  showAll();
+
+  const path = within(await row("Work")).getByTitle("D:\\Work");
+  expect(path.textContent).toBe("D:\\Work");
+  expect(path.lastElementChild?.textContent).toBe("Work");
 });
 
 test("clicking a name opens the project and shows the new list", async () => {
@@ -329,7 +378,10 @@ test("says when the open project is write-protected", async () => {
     project: { ...garden, readOnly: true },
   });
 
-  expect(await screen.findByText(/“Garden” is write-protected/)).toBeDefined();
+  const open = await screen.findByRole("region", { name: "Garden" });
+  expect(open.textContent).toContain(
+    "Write-protected. Liurium shows the project but saves nothing to it.",
+  );
 });
 
 test("names the last project that could not be opened at start, and why", async () => {
