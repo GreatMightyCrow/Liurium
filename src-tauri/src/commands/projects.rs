@@ -11,7 +11,10 @@ use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
 use super::{CommandError, DataStatus};
-use crate::domain::projects::{self, Project};
+use crate::domain::{
+    projects::{self, Project},
+    sync::{self, SyncRoot, SyncTool},
+};
 use crate::storage::db::{self, APP_DB, Kind, OpenMode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -24,15 +27,19 @@ pub struct ProjectInfo {
     pub folder: String,
     /// Opened without writing anything (write-protected file or folder).
     pub read_only: bool,
+    /// The sync tool whose folder holds the project, the first time it is opened there
+    /// (M2-010); `null` otherwise.
+    pub synced_by: Option<SyncTool>,
 }
 
-impl From<&Project> for ProjectInfo {
-    fn from(project: &Project) -> Self {
+impl ProjectInfo {
+    fn new(project: &Project, synced_by: Option<SyncTool>) -> Self {
         Self {
             id: project.id.clone(),
             name: project.name.clone(),
             folder: project.root.display(),
             read_only: project.read_only,
+            synced_by,
         }
     }
 }
@@ -90,11 +97,9 @@ struct Current {
 }
 
 impl Current {
-    fn open(project: Project) -> Self {
+    fn open(project: Project, info: ProjectInfo) -> Self {
         Self {
-            view: CurrentProject::Open {
-                project: (&project).into(),
-            },
+            view: CurrentProject::Open { project: info },
             open: Some(project),
         }
     }
@@ -123,11 +128,13 @@ pub struct Workspace {
     app_dir: Result<PathBuf, CommandError>,
     /// `None` until the first request reopens the project of the last run.
     current: Arc<Mutex<Option<Current>>>,
+    /// Folders of sync tools, found at start.
+    sync_roots: Arc<[SyncRoot]>,
 }
 
 impl Workspace {
     /// Without a usable `app.db` (see `Startup`), every project command reports why.
-    pub fn new(app_dir: Option<PathBuf>, data: &DataStatus) -> Self {
+    pub fn new(app_dir: Option<PathBuf>, data: &DataStatus, sync_roots: Vec<SyncRoot>) -> Self {
         let app_dir = match (app_dir, data) {
             (_, DataStatus::Failed { error }) => Err(error.clone()),
             (None, _) => Err(CommandError::Internal),
@@ -136,6 +143,7 @@ impl Workspace {
         Self {
             app_dir,
             current: Arc::new(Mutex::new(None)),
+            sync_roots: sync_roots.into(),
         }
     }
 
@@ -152,15 +160,15 @@ impl Workspace {
     pub fn current(&self) -> Result<CurrentProject, CommandError> {
         let app = self.app()?;
         let mut guard = self.lock()?;
-        Ok(restored(&mut guard, &app)?.view.clone())
+        Ok(self.restored(&mut guard, &app)?.view.clone())
     }
 
     /// Adds the folder as a project and makes it the open one.
     pub fn add(&self, folder: &Path) -> Result<ProjectInfo, CommandError> {
         let app = self.app()?;
         let project = projects::add(&app, folder)?;
-        let info = ProjectInfo::from(&project);
-        *self.lock()? = Some(Current::open(project));
+        let info = self.info(&app, &project);
+        *self.lock()? = Some(Current::open(project, info.clone()));
         Ok(info)
     }
 
@@ -169,7 +177,7 @@ impl Workspace {
         let app = self.app()?;
         let open = {
             let mut guard = self.lock()?;
-            let current = restored(&mut guard, &app)?;
+            let current = self.restored(&mut guard, &app)?;
             current.open.as_ref().map(|project| project.id.clone())
         };
         // The folder checks run without the lock: a slow network drive must not block
@@ -198,8 +206,8 @@ impl Workspace {
         let app = self.app()?;
         let mut guard = self.lock()?;
         let project = projects::open(&app, id)?;
-        let info = ProjectInfo::from(&project);
-        *guard = Some(Current::open(project));
+        let info = self.info(&app, &project);
+        *guard = Some(Current::open(project, info.clone()));
         Ok(info)
     }
 
@@ -207,13 +215,13 @@ impl Workspace {
     pub fn rename(&self, id: &str, name: &str) -> Result<(), CommandError> {
         let app = self.app()?;
         let mut guard = self.lock()?;
-        let current = restored(&mut guard, &app)?;
+        let current = self.restored(&mut guard, &app)?;
         match current.open.as_mut().filter(|project| project.id == id) {
             Some(project) => {
                 projects::rename(&app, project, name)?;
-                current.view = CurrentProject::Open {
-                    project: (&*project).into(),
-                };
+                if let CurrentProject::Open { project: info } = &mut current.view {
+                    info.name.clone_from(&project.name);
+                }
             }
             None => projects::rename(&app, &mut projects::find(&app, id)?, name)?,
         }
@@ -225,7 +233,7 @@ impl Workspace {
     pub fn remove(&self, id: &str) -> Result<(), CommandError> {
         let app = self.app()?;
         let mut guard = self.lock()?;
-        let current = restored(&mut guard, &app)?;
+        let current = self.restored(&mut guard, &app)?;
         projects::remove(&app, id)?;
         if current.id() == Some(id) {
             *current = Current::none();
@@ -238,35 +246,51 @@ impl Workspace {
         let app = self.app()?;
         let mut guard = self.lock()?;
         let project = projects::locate(&app, id, folder)?;
-        let info = ProjectInfo::from(&project);
-        *guard = Some(Current::open(project));
+        let info = self.info(&app, &project);
+        *guard = Some(Current::open(project, info.clone()));
         Ok(info)
     }
-}
 
-/// The current project; on the first call, the one open at the last run is reopened.
-fn restored<'a>(
-    current: &'a mut Option<Current>,
-    app: &rusqlite::Connection,
-) -> Result<&'a mut Current, CommandError> {
-    if current.is_none() {
-        *current = Some(restore(app)?);
+    /// What the page is shown about a project just opened, with the sync-folder
+    /// warning the first time the project is opened inside a sync folder.
+    fn info(&self, app: &rusqlite::Connection, project: &Project) -> ProjectInfo {
+        let synced_by = sync::tool_for(project.root.path(), &self.sync_roots).filter(|_| {
+            // If the registry cannot record it, the warning shows again next time
+            // rather than never.
+            projects::first_sync_warning(app, &project.id).unwrap_or(true)
+        });
+        ProjectInfo::new(project, synced_by)
     }
-    current.as_mut().ok_or(CommandError::Internal)
-}
 
-fn restore(app: &rusqlite::Connection) -> Result<Current, CommandError> {
-    let Some((id, name)) = projects::last_opened(app)? else {
-        return Ok(Current::none());
-    };
-    Ok(match projects::open(app, &id) {
-        Ok(project) => Current::open(project),
-        Err(error) => Current::shown(CurrentProject::Unavailable {
-            id,
-            name,
-            error: error.into(),
-        }),
-    })
+    /// The current project; on the first call, the one open at the last run is
+    /// reopened.
+    fn restored<'a>(
+        &self,
+        current: &'a mut Option<Current>,
+        app: &rusqlite::Connection,
+    ) -> Result<&'a mut Current, CommandError> {
+        if current.is_none() {
+            *current = Some(self.restore(app)?);
+        }
+        current.as_mut().ok_or(CommandError::Internal)
+    }
+
+    fn restore(&self, app: &rusqlite::Connection) -> Result<Current, CommandError> {
+        let Some((id, name)) = projects::last_opened(app)? else {
+            return Ok(Current::none());
+        };
+        Ok(match projects::open(app, &id) {
+            Ok(project) => {
+                let info = self.info(app, &project);
+                Current::open(project, info)
+            }
+            Err(error) => Current::shown(CurrentProject::Unavailable {
+                id,
+                name,
+                error: error.into(),
+            }),
+        })
+    }
 }
 
 /// Ids come from the page; anything that is not a project id names no project.

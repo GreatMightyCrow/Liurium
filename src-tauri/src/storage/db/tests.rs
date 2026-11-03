@@ -101,7 +101,7 @@ fn a_new_app_database_is_created_and_migrated() {
     let conn = &app.connection;
 
     assert_eq!(app.moved_aside, None);
-    assert_eq!(number(conn, "user_version"), 1);
+    assert_eq!(number(conn, "user_version"), 2);
     assert_eq!(number(conn, "application_id"), i64::from(APP_ID));
     assert_eq!(text(conn, "journal_mode"), "wal");
     assert_eq!(number(conn, "foreign_keys"), 1);
@@ -366,7 +366,7 @@ fn a_damaged_app_database_is_moved_aside_and_replaced() {
     assert_eq!(moved.parent(), Some(dir.path().join(BACKUP_DIR).as_path()));
     assert!(file_name(moved).starts_with("app-broken-"), "{moved:?}");
     assert_eq!(fs::read(moved).expect("moved"), b"plain text, not SQLite");
-    assert_eq!(number(&app.connection, "user_version"), 1);
+    assert_eq!(number(&app.connection, "user_version"), 2);
     assert_eq!(tables(&app.connection), ["projects", "settings"]);
 }
 
@@ -406,7 +406,7 @@ fn a_newer_app_database_stays_where_it_is() {
             error,
             DbError::NewerSchema {
                 found: 7,
-                supported: 1
+                supported: 2
             }
         ),
         "{error:?}"

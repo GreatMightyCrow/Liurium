@@ -399,6 +399,14 @@ pub fn same_path(a: &Path, b: &Path) -> Result<bool, FsError> {
     Ok(a.components().count() == b.components().count() && is_inside(&a, &b))
 }
 
+/// Whether the existing `path` is the existing folder `root` or lies inside it.
+pub fn inside(root: &Path, path: &Path) -> Result<bool, FsError> {
+    Ok(is_inside(
+        &fs::canonicalize(root)?,
+        &fs::canonicalize(path)?,
+    ))
+}
+
 /// Both paths canonical. Compared part by part, ignoring case as Windows does for
 /// names (Unicode lowercase, close to NTFS's own case table).
 fn is_inside(root: &Path, path: &Path) -> bool {

@@ -8,6 +8,9 @@ use crate::theme::Theme;
 use std::error::Error;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
+/// The label of the main window in `tauri.conf.json`.
+const MAIN: &str = "main";
+
 pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box<dyn Error>> {
     let theme = settings.theme.theme();
     let mut config = app
@@ -45,6 +48,19 @@ pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box
     });
     window.show()?;
     Ok(())
+}
+
+/// Brings the main window to the front for a second start (M2-010). A window still
+/// hidden is starting up and shows itself once its background matches.
+pub fn focus(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    if window.is_visible().unwrap_or(false) {
+        // A failure leaves the window where it is; the second start ends either way.
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 /// A changed theme and mode take effect at once; the frame style needs a restart.

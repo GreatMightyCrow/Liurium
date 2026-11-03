@@ -202,6 +202,17 @@ pub fn last_opened(app: &Connection) -> Result<Option<(String, String)>, DbError
         .optional()?)
 }
 
+/// Records that the project's sync-folder warning is shown (M2-010). True only the first
+/// time, so the warning comes once per project.
+pub fn first_sync_warning(app: &Connection, id: &str) -> Result<bool, DbError> {
+    let changed = app.execute(
+        "UPDATE projects SET sync_warned_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?1 AND sync_warned_at IS NULL",
+        [id],
+    )?;
+    Ok(changed == 1)
+}
+
 fn load(root: ProjectRoot) -> Result<Project, ProjectError> {
     let dir = root
         .liurium_dir()?

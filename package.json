@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "e2e": "playwright test",
-    "e2e:build": "tauri build --no-bundle --features=e2e -- --target-dir target/e2e",
+    "e2e:build": "tauri build --no-bundle --features=e2e --config src-tauri/tauri.e2e.conf.json -- --target-dir target/e2e",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",

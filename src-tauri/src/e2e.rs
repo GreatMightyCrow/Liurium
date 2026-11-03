@@ -4,10 +4,14 @@
 
 use std::{env, path::PathBuf};
 
+use crate::domain::sync::{SyncRoot, SyncTool};
+
 /// App data folder for the test run, so tests never touch the user's own data.
 const DATA_DIR: &str = "LIURIUM_E2E_DATA_DIR";
 /// Folder that "Add project folder" uses instead of showing the dialog.
 const PICK: &str = "LIURIUM_E2E_PICK";
+/// Folder treated as OneDrive's; the test build ignores the real sync folders.
+const ONEDRIVE: &str = "LIURIUM_E2E_ONEDRIVE";
 
 pub fn data_dir() -> Option<PathBuf> {
     env::var_os(DATA_DIR).map(PathBuf::from)
@@ -15,4 +19,14 @@ pub fn data_dir() -> Option<PathBuf> {
 
 pub fn picked_folder() -> Option<PathBuf> {
     env::var_os(PICK).map(PathBuf::from)
+}
+
+pub fn sync_roots() -> Vec<SyncRoot> {
+    env::var_os(ONEDRIVE)
+        .map(|folder| SyncRoot {
+            tool: SyncTool::OneDrive,
+            folder: PathBuf::from(folder),
+        })
+        .into_iter()
+        .collect()
 }

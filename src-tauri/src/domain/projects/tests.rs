@@ -697,3 +697,40 @@ fn names_lose_control_characters_and_length() {
     assert_eq!(clean_name("  Garden\u{0}\u{1b}[31m "), "Garden[31m");
     assert_eq!(clean_name(&"x".repeat(500)).chars().count(), MAX_NAME_CHARS);
 }
+
+#[test]
+fn the_sync_warning_is_due_once_per_project() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let garden = dir.path().join("Garden");
+    let notes = dir.path().join("Notes");
+    fs::create_dir(&garden).expect("folder");
+    fs::create_dir(&notes).expect("folder");
+    let garden = add(&app, &garden).expect("added");
+    let notes = add(&app, &notes).expect("added");
+
+    assert!(first_sync_warning(&app, &garden.id).expect("first"));
+    assert!(!first_sync_warning(&app, &garden.id).expect("second"));
+    assert!(first_sync_warning(&app, &notes.id).expect("other project"));
+    assert!(!first_sync_warning(&app, "unknown").expect("unknown"));
+}
+
+#[test]
+fn a_registry_from_before_the_sync_warning_keeps_its_projects() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    fs::create_dir(&app_dir).expect("app folder");
+    let fixture = project(dir.path(), "Garden", current(db::Kind::Project));
+    crate::test_support::liurium_database(&app_dir.join(db::APP_DB), db::Kind::App, 1)
+        .execute(
+            "INSERT INTO projects (id, path, name) VALUES (?1, ?2, 'Garden')",
+            [&fixture.id, &fixture.root.to_string_lossy().into_owned()],
+        )
+        .expect("registry entry");
+
+    let app = db::open_app(&app_dir).expect("upgraded").connection;
+
+    let project = open(&app, &fixture.id).expect("opened");
+    assert_eq!(project.name, "Garden");
+    assert!(first_sync_warning(&app, &fixture.id).expect("first"));
+}

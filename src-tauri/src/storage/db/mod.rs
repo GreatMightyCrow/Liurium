@@ -33,9 +33,10 @@ const PROJECT_ID: i32 = 0x4C69_7550;
 
 static APP_SCHEMA: Schema = Schema {
     application_id: APP_ID,
-    migrations: &[include_str!(
-        "migrations/app/0001_projects_and_settings.sql"
-    )],
+    migrations: &[
+        include_str!("migrations/app/0001_projects_and_settings.sql"),
+        include_str!("migrations/app/0002_sync_warning.sql"),
+    ],
 };
 
 static PROJECT_SCHEMA: Schema = Schema {

@@ -19,6 +19,7 @@ import {
   type ProjectEntry,
   removeProject,
   renameProject,
+  type SyncTool,
 } from "../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../lib/ipc/errors";
 import { Button } from "../ui/Button";
@@ -300,6 +301,7 @@ function Body({ loaded, busy, problem, addButton, actions }: BodyProps) {
         <OpenProject
           project={openOne}
           readOnly={current.state === "open" && current.project.readOnly}
+          syncedBy={current.state === "open" ? current.project.syncedBy : null}
           busy={busy}
           problem={problemOf(openOne)}
           actions={actions}
@@ -373,15 +375,23 @@ function grouped(projects: ProjectEntry[], now: Date): Group[] {
 interface OpenProjectProps {
   project: ProjectEntry;
   readOnly: boolean;
+  /** Set only the first time the project is open in a sync folder (Rust decides). */
+  syncedBy: SyncTool | null;
   busy: boolean;
   problem: string | null;
   actions: Actions;
 }
 
+const syncToolNames: Record<SyncTool, string> = {
+  oneDrive: "OneDrive",
+  dropbox: "Dropbox",
+};
+
 // The project Liurium has open, above the others.
 function OpenProject({
   project,
   readOnly,
+  syncedBy,
   busy,
   problem,
   actions,
@@ -412,6 +422,12 @@ function OpenProject({
       {readOnly && (
         <p className={styles.currentNote}>
           Write-protected. Liurium shows the project but saves nothing to it.
+        </p>
+      )}
+      {syncedBy !== null && (
+        <p className={styles.currentNote}>
+          {syncToolNames[syncedBy]} syncs this folder. Open the project on one
+          computer at a time, or changes made on two at once can conflict.
         </p>
       )}
       {problem !== null && (

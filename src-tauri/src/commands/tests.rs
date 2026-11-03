@@ -8,6 +8,7 @@ use super::settings::SettingsView;
 use super::*;
 use crate::domain::projects::ProjectError;
 use crate::domain::settings::{SettingKey, Settings};
+use crate::domain::sync::{SyncRoot, SyncTool};
 use crate::frame::FrameStyle;
 use crate::storage::db::Kind;
 use crate::storage::fs::{FsError, PathRule};
@@ -197,7 +198,7 @@ fn project_errors_map_to_what_the_user_can_act_on() {
 
 fn workspace(app_dir: &Path) -> Workspace {
     let startup = Startup::open(Some(app_dir));
-    Workspace::new(Some(app_dir.to_owned()), &startup.data)
+    Workspace::new(Some(app_dir.to_owned()), &startup.data, Vec::new())
 }
 
 #[test]
@@ -527,7 +528,7 @@ fn a_failed_save_applies_nothing() {
     let failed = DataStatus::Failed {
         error: CommandError::NewerVersion,
     };
-    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed);
+    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed, Vec::new());
     let preferences = Preferences::new(Loaded::default());
     let mut applied = false;
 
@@ -580,7 +581,7 @@ fn without_app_data_project_commands_report_why() {
     let failed = DataStatus::Failed {
         error: CommandError::NewerVersion,
     };
-    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed);
+    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed, Vec::new());
 
     assert_eq!(workspace.current(), Err(CommandError::NewerVersion));
     assert_eq!(
@@ -596,4 +597,78 @@ fn without_app_data_project_commands_report_why() {
         workspace.locate(id, Path::new("unused")),
         Err(CommandError::NewerVersion)
     );
+}
+
+fn synced_workspace(app_dir: &Path, onedrive: &Path) -> Workspace {
+    let startup = Startup::open(Some(app_dir));
+    let roots = vec![SyncRoot {
+        tool: SyncTool::OneDrive,
+        folder: onedrive.to_owned(),
+    }];
+    Workspace::new(Some(app_dir.to_owned()), &startup.data, roots)
+}
+
+fn synced_by(current: &CurrentProject) -> Option<SyncTool> {
+    match current {
+        CurrentProject::Open { project } => project.synced_by,
+        _ => panic!("a project is open"),
+    }
+}
+
+#[test]
+fn a_project_in_a_sync_folder_is_warned_about_once() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let onedrive = dir.path().join("OneDrive");
+    let fixture = project(&onedrive, "Garden", current(Kind::Project));
+    let workspace = synced_workspace(&app_dir, &onedrive);
+
+    let added = workspace.add(&fixture.root).expect("added");
+    assert_eq!(added.synced_by, Some(SyncTool::OneDrive));
+    assert_eq!(to_json(&added)["syncedBy"], json!("oneDrive"));
+    // The page asks again while the project stays open: still shown in this session.
+    let shown = workspace.current().expect("current");
+    assert_eq!(synced_by(&shown), Some(SyncTool::OneDrive));
+
+    let reopened = workspace.open(&fixture.id).expect("opened");
+    assert_eq!(reopened.synced_by, None);
+    let restarted = synced_workspace(&app_dir, &onedrive);
+    assert_eq!(synced_by(&restarted.current().expect("current")), None);
+}
+
+#[test]
+fn a_project_reopened_at_start_gets_its_first_warning_then() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let onedrive = dir.path().join("OneDrive");
+    let fixture = project(&onedrive, "Garden", current(Kind::Project));
+    // Added before Liurium knew the folder was synced.
+    workspace(&app_dir).add(&fixture.root).expect("added");
+
+    let restarted = synced_workspace(&app_dir, &onedrive);
+    assert_eq!(
+        synced_by(&restarted.current().expect("current")),
+        Some(SyncTool::OneDrive)
+    );
+    restarted.rename(&fixture.id, "Kitchen").expect("renamed");
+    let renamed = restarted.current().expect("current");
+    assert_eq!(synced_by(&renamed), Some(SyncTool::OneDrive));
+
+    let again = synced_workspace(&app_dir, &onedrive);
+    assert_eq!(synced_by(&again.current().expect("current")), None);
+}
+
+#[test]
+fn a_project_outside_sync_folders_is_not_warned_about() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let onedrive = dir.path().join("OneDrive");
+    std::fs::create_dir(&onedrive).expect("sync folder");
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    let workspace = synced_workspace(&app_dir, &onedrive);
+
+    let added = workspace.add(&fixture.root).expect("added");
+
+    assert_eq!(added.synced_by, None);
+    assert_eq!(to_json(&added)["syncedBy"], json!(null));
 }

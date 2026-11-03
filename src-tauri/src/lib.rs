@@ -17,6 +17,11 @@ use tauri::{App, Manager};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second start ends before anything else is set up and never opens
+        // app.db (M2-010). Its working folder and arguments are untrusted and ignored.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            window::focus(app);
+        }))
         // Every command here needs its permission (build.rs, capabilities, ADR-0018).
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -35,7 +40,7 @@ pub fn run() {
             let app_dir = app_data_dir(app);
             let startup = Startup::open(app_dir.as_deref());
             let settings = startup.settings.settings;
-            app.manage(Workspace::new(app_dir, &startup.data));
+            app.manage(Workspace::new(app_dir, &startup.data, sync_roots()));
             app.manage(Preferences::new(startup.settings.clone()));
             app.manage(startup);
             window::create_main_window(app.handle(), settings)
@@ -50,4 +55,11 @@ fn app_data_dir(app: &App) -> Option<PathBuf> {
         return Some(dir);
     }
     app.path().app_local_data_dir().ok()
+}
+
+fn sync_roots() -> Vec<domain::sync::SyncRoot> {
+    #[cfg(feature = "e2e")]
+    return e2e::sync_roots();
+    #[cfg(not(feature = "e2e"))]
+    domain::sync::detect()
 }

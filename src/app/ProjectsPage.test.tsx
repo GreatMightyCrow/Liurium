@@ -46,6 +46,7 @@ const garden: ProjectInfo = {
   name: "Garden",
   folder: "D:\\Notes\\Garden",
   readOnly: false,
+  syncedBy: null,
 };
 
 const gardenEntry: ProjectEntry = {
@@ -382,6 +383,31 @@ test("says when the open project is write-protected", async () => {
   expect(open.textContent).toContain(
     "Write-protected. Liurium shows the project but saves nothing to it.",
   );
+});
+
+test.each([
+  ["oneDrive", "OneDrive"],
+  ["dropbox", "Dropbox"],
+] as const)(
+  "warns when %s syncs the open project's folder",
+  async (tool, name) => {
+    showWith([gardenEntry], {
+      state: "open",
+      project: { ...garden, syncedBy: tool },
+    });
+
+    const open = await screen.findByRole("region", { name: "Garden" });
+    expect(open.textContent).toContain(
+      `${name} syncs this folder. Open the project on one computer at a time, or changes made on two at once can conflict.`,
+    );
+  },
+);
+
+test("has no sync warning for a folder no sync tool keeps", async () => {
+  showAll();
+
+  const open = await screen.findByRole("region", { name: "Garden" });
+  expect(open.textContent).not.toContain("syncs this folder");
 });
 
 test("names the last project that could not be opened at start, and why", async () => {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -48,6 +49,27 @@ test("a folder with notes becomes a project and opens again after a restart", as
     ".gitignore",
     "project.db",
   ]);
+});
+
+test("a project in a sync folder is warned about once", async ({ app }) => {
+  const oneDrive = app.folder("OneDrive-");
+  const folder = join(oneDrive, "Garden");
+  mkdirSync(folder);
+  const warning =
+    "OneDrive syncs this folder. Open the project on one computer at a time, or changes made on two at once can conflict.";
+
+  let page = await app.launch({ pick: folder, oneDrive });
+  await openProjects(page);
+  await page.getByRole("button", { name: "Add project folder" }).click();
+  const open = page.getByRole("region", { name: "Garden" });
+  await expect(open).toContainText(warning);
+
+  page = await app.launch({ oneDrive });
+  await openProjects(page);
+  await expect(page.getByRole("region", { name: "Garden" })).toContainText(
+    "Open now",
+  );
+  await expect(page.getByText("syncs this folder")).toHaveCount(0);
 });
 
 /** Every file below `root` with its bytes and modified time. */

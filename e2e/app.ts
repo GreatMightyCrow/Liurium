@@ -63,12 +63,16 @@ function tempFolder(prefix: string): string {
 interface LaunchOptions {
   /** The folder "Add project folder" takes instead of showing the dialog. */
   pick?: string;
+  /** A folder the app treats as OneDrive's (M2-010); real sync folders are ignored. */
+  oneDrive?: string;
 }
 
 interface Running {
   process: ChildProcess;
   browser: Browser;
   page: Page;
+  /** The window's handle, taken the first time a test asks about the window. */
+  window?: string;
 }
 
 async function start(
@@ -90,6 +94,9 @@ async function start(
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${String(PORT)}`,
       LIURIUM_E2E_DATA_DIR: dataDir,
       ...(options.pick === undefined ? {} : { LIURIUM_E2E_PICK: options.pick }),
+      ...(options.oneDrive === undefined
+        ? {}
+        : { LIURIUM_E2E_ONEDRIVE: options.oneDrive }),
     },
     stdio: "ignore",
   });
@@ -162,6 +169,72 @@ async function kill(app: ChildProcess): Promise<void> {
   );
 }
 
+export interface WindowState {
+  minimized: boolean;
+  foreground: boolean;
+}
+
+function powershell(script: string): string {
+  return execFileSync(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    { encoding: "utf8" },
+  ).trim();
+}
+
+// The handle of the app's window while it is shown. Windows' "main window" of a
+// process changes to another of its windows once this one is minimized.
+function mainWindow(pid: number): string {
+  const handle = powershell(
+    `(Get-Process -Id ${String(pid)}).MainWindowHandle.ToInt64()`,
+  );
+  if (!/^[1-9]\d*$/.test(handle)) {
+    throw new Error(`the app has no window yet (${handle})`);
+  }
+  return handle;
+}
+
+// WebView2 keeps reporting the page as visible while the window is minimized, so
+// the window itself is asked through Windows (read-only calls).
+function windowState(handle: string): WindowState {
+  const [minimized, foreground] = powershell(
+    [
+      "Add-Type -Namespace Liurium -Name Win -MemberDefinition '",
+      '[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);',
+      '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      "'",
+      `$window = [IntPtr]${handle}`,
+      "'{0} {1}' -f [Liurium.Win]::IsIconic($window), ([Liurium.Win]::GetForegroundWindow() -eq $window)",
+    ].join("\n"),
+  ).split(" ");
+  return { minimized: minimized === "True", foreground: foreground === "True" };
+}
+
+/** A second start without a debugging port: it should hand over and exit. */
+async function startAgain(
+  dataDir: string,
+  args: string[],
+): Promise<number | null> {
+  const second = spawn(APP, args, {
+    env: { ...process.env, LIURIUM_E2E_DATA_DIR: dataDir },
+    stdio: "ignore",
+  });
+  const exited = new Promise<number | null>((done) => {
+    second.once("exit", (code) => {
+      done(code);
+    });
+  });
+  const code = await Promise.race([exited, sleep(15_000, "running" as const)]);
+  if (code === "running") {
+    // Not `kill`: the debugging port belongs to the first app and stays open.
+    execFileSync("taskkill", ["/pid", String(second.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
+    throw new Error("the second start kept running");
+  }
+  return code;
+}
+
 interface App {
   /**
    * Starts the app and returns its page; calling it again restarts the app
@@ -170,6 +243,16 @@ interface App {
   launch: (options?: LaunchOptions) => Promise<Page>;
   /** Stops the app, e.g. to move a project folder while nothing holds it. */
   stop: () => Promise<void>;
+  /**
+   * Starts the app once more while it runs, with its own data folder and
+   * arguments, and resolves with that start's exit code (M2-010).
+   */
+  startAgain: (dataDir: string, args: string[]) => Promise<number | null>;
+  /**
+   * Whether the running app's window is minimized and in front. Ask once while
+   * the window is shown, so the right window is remembered.
+   */
+  window: () => WindowState;
   /** A new empty folder, removed after the app has stopped. */
   folder: (prefix: string) => string;
 }
@@ -198,6 +281,14 @@ export const test = base.extend<{ app: App }>({
             await stop(running);
             running = undefined;
           }
+        },
+        startAgain: (otherDataDir, args) => startAgain(otherDataDir, args),
+        window: () => {
+          if (running?.process.pid === undefined) {
+            throw new Error("the app is not running");
+          }
+          running.window ??= mainWindow(running.process.pid);
+          return windowState(running.window);
         },
         folder: (prefix) => {
           const folder = tempFolder(prefix);

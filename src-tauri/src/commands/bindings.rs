@@ -14,6 +14,7 @@ use super::projects::{CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
 use crate::domain::settings::{SettingKey, Settings};
+use crate::domain::sync::SyncTool;
 use crate::frame::FrameStyle;
 use crate::theme::{Mode, ThemeChoice};
 
@@ -32,6 +33,7 @@ fn typescript_bindings_match_the_rust_types() {
         output::<AppInfo>(&config),
         output::<DataStatus>(&config),
         output::<CommandError>(&config),
+        output::<SyncTool>(&config),
         output::<ProjectInfo>(&config),
         output::<CurrentProject>(&config),
         output::<ProjectStatus>(&config),

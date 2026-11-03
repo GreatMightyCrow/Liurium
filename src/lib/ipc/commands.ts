@@ -21,6 +21,7 @@ export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
 export type { SettingKey } from "./bindings/SettingKey";
+export type { SyncTool } from "./bindings/SyncTool";
 export type { ThemeChoice } from "./bindings/ThemeChoice";
 
 // One function per Rust command (src-tauri/src/commands). Each command also needs
