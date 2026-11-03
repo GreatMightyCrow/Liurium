@@ -7,6 +7,8 @@ test("a second start brings the running window back and opens nothing itself", a
   app,
 }) => {
   const page = await app.launch();
+  // On a cold start the page can still navigate to the app after the port opens.
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   const loadedAt = await page.evaluate(() => performance.timeOrigin);
   await expect.poll(() => app.window().minimized).toBe(false);
   await page.getByRole("button", { name: "Minimize" }).click();
