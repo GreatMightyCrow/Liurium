@@ -4,6 +4,7 @@ import type { AppDataInfo } from "./bindings/AppDataInfo";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ConflictChoice } from "./bindings/ConflictChoice";
+import type { BacklinkSource } from "./bindings/BacklinkSource";
 import type { NoteLink } from "./bindings/NoteLink";
 import type { NotesView } from "./bindings/NotesView";
 import type { OpenedNote } from "./bindings/OpenedNote";
@@ -34,6 +35,8 @@ export type {
 export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
+export type { BacklinkLine } from "./bindings/BacklinkLine";
+export type { BacklinkSource } from "./bindings/BacklinkSource";
 export type { LinkCandidate } from "./bindings/LinkCandidate";
 export type { LinkTarget } from "./bindings/LinkTarget";
 export type { NoteEntry } from "./bindings/NoteEntry";
@@ -191,6 +194,11 @@ export function trashEntry(path: string): Promise<void> {
  *  parses the text; nothing is written. */
 export function noteLinks(path: string, text: string): Promise<NoteLink[]> {
   return call("note_links", { path, text });
+}
+
+/** The notes that link to this one, with the line around each link. */
+export function backlinksOf(path: string): Promise<BacklinkSource[]> {
+  return call("backlinks", { path });
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

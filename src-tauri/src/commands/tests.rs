@@ -1571,3 +1571,37 @@ fn the_open_projects_links_are_resolved_against_its_notes() {
     };
     assert_eq!(notes[1].link, "Plan");
 }
+
+#[test]
+fn backlinks_follow_edits_saved_in_liurium() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    std::fs::write(garden.root.join("Plan.md"), "# Plan\n").expect("note");
+    std::fs::write(garden.root.join("Home.md"), "nothing\n").expect("note");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &garden.root);
+    assert!(
+        workspace
+            .backlinks("Plan.md")
+            .expect("backlinks")
+            .is_empty()
+    );
+
+    workspace.open_note("Home.md", false).expect("open");
+    workspace
+        .update_note("Home.md", "now [[Plan]] here\n", true)
+        .expect("save");
+    let found = workspace.backlinks("Plan.md").expect("backlinks");
+
+    assert_eq!(
+        to_json(&found),
+        json!([{
+            "path": "Home.md",
+            "links": [{ "offset": 4, "line": "now [[Plan]] here", "from": 4, "to": 12 }]
+        }])
+    );
+    assert_eq!(
+        workspace.backlinks(".liurium/x.md").unwrap_err(),
+        CommandError::InvalidPath
+    );
+}

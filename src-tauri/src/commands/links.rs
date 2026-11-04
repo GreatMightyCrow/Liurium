@@ -7,10 +7,11 @@ use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{
+    backlinks::{backlinks as find_backlinks, refresh_notes},
     links::{self, Anchor, Link, LinkKind, NoteSet, Target},
     session::{MAX_NOTE_BYTES, note_path},
 };
-use crate::storage::fs::FsError;
+use crate::storage::{db, fs::FsError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,7 +124,55 @@ pub fn note_links_in(
         .collect())
 }
 
+/// A note that links to the open one (M3-006).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "BacklinkSource.ts"))]
+pub struct BacklinkSource {
+    pub path: String,
+    pub links: Vec<BacklinkLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "BacklinkLine.ts"))]
+pub struct BacklinkLine {
+    /// Where the link starts in the source note's text, in UTF-16 units.
+    pub offset: usize,
+    /// The line around the link, shortened with "…" when long.
+    pub line: String,
+    /// The link inside `line`, in UTF-16 units.
+    pub from: usize,
+    pub to: usize,
+}
+
 impl Workspace {
+    /// The notes that link to `path`, after the notes saved in Liurium since the
+    /// last walk had their links read again.
+    pub fn backlinks(&self, path: &str) -> Result<Vec<BacklinkSource>, CommandError> {
+        let target = note_path(path)?;
+        let set = self.note_set()?;
+        let (id, root, _) = self.open_project_root()?.ok_or(CommandError::NoProject)?;
+        let mut cache = db::open_cache(self.app_dir()?, &id)?;
+        refresh_notes(&mut cache.connection, &root, &self.editor().take_saved())?;
+        Ok(find_backlinks(&cache.connection, &root, &set, &target)?
+            .into_iter()
+            .map(|source| BacklinkSource {
+                path: source.path,
+                links: source
+                    .links
+                    .into_iter()
+                    .map(|link| BacklinkLine {
+                        offset: link.offset,
+                        line: link.line,
+                        from: link.from,
+                        to: link.to,
+                    })
+                    .collect(),
+            })
+            .collect())
+    }
+
     pub fn note_links(&self, path: &str, text: &str) -> Result<Vec<NoteLink>, CommandError> {
         let limit = usize::try_from(MAX_NOTE_BYTES.saturating_mul(2)).unwrap_or(usize::MAX);
         if text.len() > limit {
@@ -146,6 +195,15 @@ pub async fn note_links(
 ) -> Result<Vec<NoteLink>, CommandError> {
     let workspace = workspace.inner().clone();
     blocking(move || workspace.note_links(&path, &text)).await
+}
+
+#[tauri::command]
+pub async fn backlinks(
+    path: String,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<BacklinkSource>, CommandError> {
+    let workspace = workspace.inner().clone();
+    blocking(move || workspace.backlinks(&path)).await
 }
 
 #[cfg(test)]

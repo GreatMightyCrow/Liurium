@@ -10,6 +10,7 @@ import {
 } from "../../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../../lib/ipc/errors";
 import { RadioGroup } from "../../ui/RadioGroup";
+import { Backlinks } from "./Backlinks";
 import { anchorIndex, inEditor, toEditorPositions } from "./links";
 import { Button } from "../../ui/Button";
 import { Dialog, DialogClose } from "../../ui/Dialog";
@@ -65,6 +66,8 @@ let pendingAnchor: {
   path: string;
   heading: string | null;
   block: string | null;
+  /** A place in the text (UTF-16), from a backlink (M3-006). */
+  offset: number | null;
 } | null = null;
 
 type LinkQuestion =
@@ -149,7 +152,7 @@ export function NotePane({
       if (target.path.toLowerCase() === path.toLowerCase()) {
         jumpTo(anchor);
       } else {
-        pendingAnchor = { path: target.path, ...anchor };
+        pendingAnchor = { path: target.path, ...anchor, offset: null };
         onOpen(target.path);
       }
     } else if (target.state === "ambiguous") {
@@ -171,7 +174,12 @@ export function NotePane({
     ) {
       const anchor = pendingAnchor;
       pendingAnchor = null;
-      jumpTo(anchor);
+      if (anchor.offset === null) {
+        jumpTo(anchor);
+      } else {
+        const text = instance.text();
+        instance.goTo(toEditorPositions(text, [anchor.offset])[0]);
+      }
     }
   };
 
@@ -234,6 +242,18 @@ export function NotePane({
             onFollow={follow}
             suggestions={() => suggestions.current}
             onReady={ready}
+          />
+          <Backlinks
+            path={state.note.path}
+            onOpenAt={(source, offset) => {
+              pendingAnchor = {
+                path: source,
+                heading: null,
+                block: null,
+                offset,
+              };
+              onOpen(source);
+            }}
           />
         </>
       )}

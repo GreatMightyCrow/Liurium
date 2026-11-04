@@ -12,7 +12,7 @@ use ts_rs::{Config, TS};
 
 use super::data::AppDataInfo;
 use super::editor::{ConflictChoice, NoteLineEnding, NoteReadOnly, OpenedNote, SaveState};
-use super::links::{LinkCandidate, LinkTarget, NoteLink};
+use super::links::{BacklinkLine, BacklinkSource, LinkCandidate, LinkTarget, NoteLink};
 use super::notes::{NoteEntry, NotesView, SkippedNotes};
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::settings::SettingsView;
@@ -63,6 +63,8 @@ fn typescript_bindings_match_the_rust_types() {
         output::<NoteLink>(&config),
         output::<LinkTarget>(&config),
         output::<LinkCandidate>(&config),
+        output::<BacklinkSource>(&config),
+        output::<BacklinkLine>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

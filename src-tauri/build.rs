@@ -29,6 +29,7 @@ const COMMANDS: &[&str] = &[
     "move_entry",
     "trash_entry",
     "note_links",
+    "backlinks",
 ];
 
 fn main() {

@@ -165,9 +165,28 @@ pub enum CloseCheck {
 #[derive(Clone, Default)]
 pub struct Editor {
     slot: Arc<Mutex<Option<Slot>>>,
+    /// Notes saved since the cache last read their links (M3-006); refreshed before
+    /// backlinks are computed.
+    saved: Arc<Mutex<Vec<RelPath>>>,
 }
 
 impl Editor {
+    fn mark(&self, path: &RelPath) {
+        if let Ok(mut saved) = self.saved.lock()
+            && !saved.contains(path)
+        {
+            saved.push(path.clone());
+        }
+    }
+
+    /// The notes saved since the last call.
+    pub fn take_saved(&self) -> Vec<RelPath> {
+        self.saved
+            .lock()
+            .map(|mut saved| std::mem::take(&mut *saved))
+            .unwrap_or_default()
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, Option<Slot>>, CommandError> {
         self.slot.lock().map_err(|_| CommandError::Internal)
     }
@@ -185,6 +204,8 @@ impl Editor {
         if flushed {
             *slot = None;
         }
+        // The next walk of another project reads its own changed notes.
+        drop(self.take_saved());
     }
 
     /// Tries to save before the window closes.
@@ -254,7 +275,10 @@ impl Workspace {
                 return Ok(OpenedNote::of(&open.session));
             }
             // Leaving a note saves it; a conflict keeps both.
+            let left = open.session.path().clone();
             open.session.flush(&open.root)?;
+            self.editor().mark(&left);
+            self.editor().mark(open.session.path());
         }
         let session = Session::open(&root, path, project_read_only, unify)?;
         let opened = OpenedNote::of(&session);
@@ -281,9 +305,12 @@ impl Workspace {
             }
             .into());
         }
-        self.with_open(path, |open| {
+        self.with_open(path, |open, editor| {
             Ok(match open.session.update(&open.root, text, save)? {
-                Saved::Saved => SaveState::Saved,
+                Saved::Saved => {
+                    editor.mark(open.session.path());
+                    SaveState::Saved
+                }
                 Saved::Draft => SaveState::Draft,
                 Saved::Conflict => SaveState::Conflict,
             })
@@ -295,7 +322,7 @@ impl Workspace {
         path: &str,
         choice: ConflictChoice,
     ) -> Result<OpenedNote, CommandError> {
-        self.with_open(path, |open| {
+        self.with_open(path, |open, editor| {
             let choice = match choice {
                 ConflictChoice::Reload => Choice::Reload,
                 ConflictChoice::Overwrite => Choice::Overwrite,
@@ -304,6 +331,7 @@ impl Workspace {
             let _: Resolved = open
                 .session
                 .resolve(&open.root, choice, open.project_read_only)?;
+            editor.mark(open.session.path());
             Ok(OpenedNote::of(&open.session))
         })
     }
@@ -327,12 +355,12 @@ impl Workspace {
     fn with_open<T>(
         &self,
         path: &str,
-        work: impl FnOnce(&mut Slot) -> Result<T, CommandError>,
+        work: impl FnOnce(&mut Slot, &Editor) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
         let path = note_path(path)?;
         let mut slot = self.editor().lock()?;
         match slot.as_mut() {
-            Some(open) if open.session.is(&path) => work(open),
+            Some(open) if open.session.is(&path) => work(open, self.editor()),
             _ => Err(NoteError::NotOpen.into()),
         }
     }

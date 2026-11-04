@@ -28,6 +28,7 @@ vi.mock("../../lib/ipc/commands", () => ({
   closeNote: vi.fn(),
   noteLinks: vi.fn(),
   createNote: vi.fn(),
+  backlinksOf: vi.fn(() => Promise.resolve([])),
 }));
 
 // CodeMirror itself runs in the end-to-end tests (real WebView2, real CSP); here a

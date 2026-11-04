@@ -50,7 +50,8 @@ pub fn run() {
             commands::organize::rename_entry,
             commands::organize::move_entry,
             commands::organize::trash_entry,
-            commands::links::note_links
+            commands::links::note_links,
+            commands::links::backlinks
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

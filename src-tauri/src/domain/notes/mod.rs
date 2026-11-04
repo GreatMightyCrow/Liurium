@@ -2,6 +2,7 @@
 //! project's cache, which can be thrown away and built again at any time (ADR-0016).
 //! Only the cache is written; the project folder is only read.
 
+pub mod backlinks;
 pub mod links;
 pub mod organize;
 pub mod session;
@@ -124,45 +125,22 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
     }
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    {
-        let mut insert = tx.prepare(
-            "INSERT OR IGNORE INTO links (source, start_byte, end_byte, kind, embed, target, heading, block) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        )?;
-        for (path, stamp, new, found) in &writes {
-            if *new {
-                tx.execute(
-                    "INSERT INTO notes (path, size, modified_ns) VALUES (?1, ?2, ?3)",
-                    params![path, stamp.0, stamp.1],
-                )?;
-                changes.added += 1;
-            } else {
-                tx.execute(
-                    "UPDATE notes SET size = ?2, modified_ns = ?3 WHERE path = ?1",
-                    params![path, stamp.0, stamp.1],
-                )?;
-                tx.execute("DELETE FROM links WHERE source = ?1", [path])?;
-                changes.changed += 1;
-            }
-
-            for link in found {
-                let (heading, block) = match &link.anchor {
-                    Some(Anchor::Heading(heading)) => (Some(heading.as_str()), None),
-                    Some(Anchor::Block(block)) => (None, Some(block.as_str())),
-                    None => (None, None),
-                };
-                insert.execute(params![
-                    path,
-                    i64::try_from(link.range.start).unwrap_or(i64::MAX),
-                    i64::try_from(link.range.end).unwrap_or(i64::MAX),
-                    link.kind.as_str(),
-                    link.embed,
-                    link.target,
-                    heading,
-                    block,
-                ])?;
-            }
+    for (path, stamp, new, found) in &writes {
+        if *new {
+            tx.execute(
+                "INSERT INTO notes (path, size, modified_ns) VALUES (?1, ?2, ?3)",
+                params![path, stamp.0, stamp.1],
+            )?;
+            changes.added += 1;
+        } else {
+            tx.execute(
+                "UPDATE notes SET size = ?2, modified_ns = ?3 WHERE path = ?1",
+                params![path, stamp.0, stamp.1],
+            )?;
+            tx.execute("DELETE FROM links WHERE source = ?1", [path])?;
+            changes.changed += 1;
         }
+        write_links(&tx, path, found)?;
     }
     // Their links go with them (ON DELETE CASCADE).
     for path in known.keys() {
@@ -171,6 +149,32 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
     }
     tx.commit()?;
     Ok(changes)
+}
+
+/// Stores a note's links; its old rows must be gone already.
+fn write_links(conn: &Connection, path: &str, found: &[Link]) -> Result<(), DbError> {
+    let mut insert = conn.prepare(
+        "INSERT OR IGNORE INTO links (source, start_byte, end_byte, kind, embed, target, heading, block) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )?;
+    for link in found {
+        let (heading, block) = match &link.anchor {
+            Some(Anchor::Heading(heading)) => (Some(heading.as_str()), None),
+            Some(Anchor::Block(block)) => (None, Some(block.as_str())),
+            None => (None, None),
+        };
+        insert.execute(params![
+            path,
+            i64::try_from(link.range.start).unwrap_or(i64::MAX),
+            i64::try_from(link.range.end).unwrap_or(i64::MAX),
+            link.kind.as_str(),
+            link.embed,
+            link.target,
+            heading,
+            block,
+        ])?;
+    }
+    Ok(())
 }
 
 /// The links stored for one note, in text order.

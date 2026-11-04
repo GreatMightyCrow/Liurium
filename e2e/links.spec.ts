@@ -108,9 +108,13 @@ test("links are followed with Ctrl + click and Ctrl + Enter; missing and ambiguo
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Backspace");
   await page.keyboard.type("Ne");
-  await expect(page.locator(".cm-tooltip-autocomplete")).toContainText(
-    "New idea",
-  );
+  // Right after [[ every note is offered; wait until the typed letters chose.
+  await expect(
+    page.locator(".cm-tooltip-autocomplete li[aria-selected]"),
+  ).toContainText("New idea");
+  // CodeMirror ignores Enter for 75 ms after the list changes (interactionDelay),
+  // so a key pressed at once is not taken by mistake; a person is never that fast.
+  await page.waitForTimeout(200);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Control+s");
   await expect

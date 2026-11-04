@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
+  backlinksOf,
   closeNote,
   createFolder,
   createNote,
@@ -143,4 +144,12 @@ test("note_links sends the path and the editor's text", async () => {
     path: "Home.md",
     text: "See [[Plan]]",
   });
+});
+
+test("backlinks sends the note's path", async () => {
+  invokeMock.mockResolvedValue([]);
+
+  await backlinksOf("Plan.md");
+
+  expect(invokeMock).toHaveBeenCalledWith("backlinks", { path: "Plan.md" });
 });

@@ -1,0 +1,122 @@
+@layer components {
+  /* A band under the editor; never more than a third of the note's height. */
+  .band {
+    flex: none;
+    max-height: 33%;
+    padding: var(--space-2) var(--space-5) var(--space-3);
+    overflow: auto;
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .quiet {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .toggle {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    min-height: var(--size-control-sm);
+    padding: 0 var(--space-2) 0 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .toggle:hover {
+    color: var(--color-text);
+  }
+
+  .toggle:focus-visible,
+  .line:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .chevron {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .chevron[data-open] {
+    transform: rotate(90deg);
+  }
+
+  .sources {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .source {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .sourceName {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    align-items: baseline;
+    margin: 0;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .folder {
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+
+  .lines {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* One line of the source note; the whole line opens it at the link. */
+  .line {
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
+  .line:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .link {
+    color: var(--color-accent-text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .link {
+      color: LinkText;
+    }
+  }
+}
