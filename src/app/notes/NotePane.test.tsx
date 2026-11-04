@@ -165,14 +165,16 @@ test("typing sends a draft soon and saves a second after the last change", async
   act(() => {
     editor().onChange("# Plan\r\nmore text");
   });
-  await wait(SAVE_AFTER_MS - 1);
+  // The fake clock also moves with real time (shouldAdvanceTime), so a slow runner
+  // needs some room: still unsaved well before the second is over.
+  await wait(SAVE_AFTER_MS - 200);
   expect(updateNoteMock).not.toHaveBeenCalledWith(
     "Ideas/Plan.md",
     expect.any(String),
     true,
   );
 
-  await wait(1);
+  await wait(200);
   await waitFor(() => {
     expect(status()).toBe("Saved");
   });
