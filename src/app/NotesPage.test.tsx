@@ -183,7 +183,10 @@ test(`only the first ${String(SHOWN_NOTES)} notes are listed, the rest are count
   expect(await screen.findByText("1,005 notes")).toBeDefined();
   expect(within(tree()).getAllByRole("link")).toHaveLength(SHOWN_NOTES);
   expect(screen.getByText("And 5 more notes not shown here.")).toBeDefined();
-});
+  // A thousand real rows in jsdom took 7 s on the CI runner before the shared row
+  // menu (M3-004), 1.5 s locally after it; the default 5 s is too tight for jsdom
+  // there, not for the app.
+}, 20_000);
 
 test("without an open project the page leads to Projects", async () => {
   listNotesMock.mockResolvedValue({ state: "noProject" });

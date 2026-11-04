@@ -1,4 +1,5 @@
 import { ContextMenu } from "@base-ui/react/context-menu";
+import { Menu as BaseMenu } from "@base-ui/react/menu";
 import {
   ChevronRight,
   Ellipsis,
@@ -12,6 +13,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  useRef,
   useState,
 } from "react";
 import { Link } from "wouter";
@@ -23,8 +25,7 @@ import {
   trashEntry,
 } from "../../lib/ipc/commands";
 import { Button } from "../../ui/Button";
-import { IconButton } from "../../ui/IconButton";
-import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
+import { MenuItem, MenuSeparator } from "../../ui/Menu";
 import { flushOpenNote } from "./useOpenNote";
 import menuStyles from "../../ui/Menu.module.css";
 import styles from "./NoteTree.module.css";
@@ -90,6 +91,16 @@ export function NoteTree({
     path: "",
   });
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<{
+    target: Target;
+    anchor: HTMLElement;
+  } | null>(null);
+  /** Focus returns here when the row menu closes. */
+  const menuAnchor = useRef<HTMLElement | null>(null);
+  const openRowMenu = (target: Target, anchor: HTMLElement) => {
+    menuAnchor.current = anchor;
+    setRowMenu({ target, anchor });
+  };
   /** Where New note and New folder put things: the folder last chosen. */
   const [current, setCurrent] = useState<string>(
     openPath === null ? "" : parentOf(openPath),
@@ -365,9 +376,16 @@ export function NoteTree({
                 <Folder className={styles.icon} strokeWidth={1.5} aria-hidden />
                 <span className={styles.name}>{child.name}</span>
               </button>
-              <RowMenu label={`Actions for ${child.name}`}>
-                {items({ kind: "folder", path: child.path })}
-              </RowMenu>
+              <MoreButton
+                label={`Actions for ${child.name}`}
+                open={
+                  rowMenu?.target.kind === "folder" &&
+                  rowMenu.target.path === child.path
+                }
+                onOpen={(anchor) => {
+                  openRowMenu({ kind: "folder", path: child.path }, anchor);
+                }}
+              />
             </div>
             {open && renderFolder(child)}
           </li>
@@ -385,7 +403,12 @@ export function NoteTree({
           onChoose={() => {
             setCurrent(parentOf(note.path));
           }}
-          menu={items({ kind: "note", path: note.path })}
+          menuOpen={
+            rowMenu?.target.kind === "note" && rowMenu.target.path === note.path
+          }
+          onMenu={(anchor) => {
+            openRowMenu({ kind: "note", path: note.path }, anchor);
+          }}
         />
       ))}
     </ul>
@@ -415,6 +438,28 @@ export function NoteTree({
           New folder
         </Button>
       </div>
+      {/* One menu for every "…" button, placed at the button that opened it: a
+          menu per row made a long tree slow (CI timed out at 1000 notes). */}
+      <BaseMenu.Root
+        open={rowMenu !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRowMenu(null);
+          }
+        }}
+      >
+        <BaseMenu.Portal>
+          <BaseMenu.Positioner
+            className={menuStyles.positioner}
+            anchor={rowMenu?.anchor}
+            align="start"
+          >
+            <BaseMenu.Popup className={menuStyles.menu} finalFocus={menuAnchor}>
+              {rowMenu !== null && items(rowMenu.target)}
+            </BaseMenu.Popup>
+          </BaseMenu.Positioner>
+        </BaseMenu.Portal>
+      </BaseMenu.Root>
       <ContextMenu.Root>
         <ContextMenu.Trigger
           render={
@@ -514,20 +559,27 @@ export function NoteTree({
   );
 }
 
-function RowMenu({ label, children }: { label: string; children: ReactNode }) {
+interface MoreButtonProps {
+  label: string;
+  open: boolean;
+  onOpen: (anchor: HTMLElement) => void;
+}
+
+function MoreButton({ label, open, onOpen }: MoreButtonProps) {
   return (
-    <Menu
-      trigger={
-        <IconButton
-          label={label}
-          icon={Ellipsis}
-          size="sm"
-          className={styles.more}
-        />
-      }
+    <button
+      type="button"
+      className={styles.more}
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      data-popup-open={open ? "" : undefined}
+      onClick={(event) => {
+        onOpen(event.currentTarget);
+      }}
     >
-      {children}
-    </Menu>
+      <Ellipsis className={styles.icon} strokeWidth={1.5} aria-hidden />
+    </button>
   );
 }
 
@@ -539,7 +591,8 @@ interface NoteRowProps {
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onChoose: () => void;
-  menu: ReactNode;
+  menuOpen: boolean;
+  onMenu: (anchor: HTMLElement) => void;
 }
 
 function NoteRow({
@@ -550,7 +603,8 @@ function NoteRow({
   onDragOver,
   onDrop,
   onChoose,
-  menu,
+  menuOpen,
+  onMenu,
 }: NoteRowProps) {
   return (
     <li data-path={note.path} data-kind="note" className={styles.item}>
@@ -567,7 +621,11 @@ function NoteRow({
           <FileText className={styles.icon} strokeWidth={1.5} aria-hidden />
           <span className={styles.name}>{note.name}</span>
         </Link>
-        <RowMenu label={`Actions for ${note.name}`}>{menu}</RowMenu>
+        <MoreButton
+          label={`Actions for ${note.name}`}
+          open={menuOpen}
+          onOpen={onMenu}
+        />
       </div>
     </li>
   );

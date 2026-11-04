@@ -108,9 +108,30 @@
     overflow-wrap: anywhere;
   }
 
+  /* The "…" button of a row; one shared menu opens at it. */
   .more {
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-secondary);
     opacity: 0;
+  }
+
+  .more:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  .more:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
   }
 
   .row:hover .more,
