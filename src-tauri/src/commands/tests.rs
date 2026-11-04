@@ -1032,7 +1032,7 @@ fn the_open_projects_notes_are_listed_with_size_time_and_skips() {
     assert_eq!(json["state"], "ready");
     assert_eq!(
         json["notes"][1],
-        json!({ "path": "README.md", "size": 9, "modifiedMs": modified as u64 })
+        json!({ "path": "README.md", "size": 9, "modifiedMs": modified as u64, "link": "README" })
     );
     assert_eq!(note_paths(&view), ["Ideas/Plan.md", "README.md"]);
     assert_eq!(
@@ -1534,4 +1534,40 @@ fn an_unsolved_conflict_blocks_moving_the_open_note() {
         std::fs::read_to_string(root.join("Plan.md")).expect("note"),
         "theirs, longer"
     );
+}
+
+#[test]
+fn the_open_projects_links_are_resolved_against_its_notes() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    std::fs::create_dir(garden.root.join("Ideas")).expect("folder");
+    std::fs::write(garden.root.join("Ideas/Plan.md"), "plan").expect("note");
+    std::fs::write(garden.root.join("Home.md"), "home").expect("note");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &garden.root);
+
+    let found = workspace
+        .note_links("Home.md", "See [[Plan#Next]] and [x](Ideas/Missing.md)")
+        .expect("links");
+
+    assert_eq!(
+        to_json(&found),
+        json!([
+            {
+                "from": 4,
+                "to": 17,
+                "target": { "state": "note", "path": "Ideas/Plan.md", "heading": "Next", "block": null }
+            },
+            {
+                "from": 22,
+                "to": 43,
+                "target": { "state": "missing", "path": "Ideas/Missing.md" }
+            }
+        ])
+    );
+    let notes = match workspace.notes().expect("notes") {
+        notes::NotesView::Ready { notes, .. } => notes,
+        notes::NotesView::NoProject => panic!("no project"),
+    };
+    assert_eq!(notes[1].link, "Plan");
 }

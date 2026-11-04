@@ -31,7 +31,12 @@ const NOTHING_SKIPPED: SkippedNotes = {
 };
 
 function note(path: string): NoteEntry {
-  return { path, size: 10, modifiedMs: Date.UTC(2026, 10, 4, 9, 30) };
+  return {
+    path,
+    size: 10,
+    modifiedMs: Date.UTC(2026, 10, 4, 9, 30),
+    link: path.replace(/\.md$/, ""),
+  };
 }
 
 function ready(

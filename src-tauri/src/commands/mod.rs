@@ -7,6 +7,7 @@ mod bindings;
 pub mod data;
 pub mod editor;
 mod error;
+pub mod links;
 pub mod notes;
 pub mod organize;
 pub mod projects;

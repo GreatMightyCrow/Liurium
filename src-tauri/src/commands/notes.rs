@@ -6,14 +6,14 @@
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex, PoisonError},
 };
 
 use serde::Serialize;
 use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
-use crate::domain::notes::{self, Index};
+use crate::domain::notes::{self, Index, links::NoteSet};
 use crate::storage::fs::{Limits, ProjectRoot, Skipped};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -27,6 +27,9 @@ pub struct NoteEntry {
     /// Milliseconds since 1970-01-01 UTC.
     #[cfg_attr(test, ts(type = "number"))]
     pub modified_ms: i64,
+    /// What Liurium writes inside `[[…]]` for this note: its name, or the shortest
+    /// unique end of its path (M3-005).
+    pub link: String,
 }
 
 /// What the walk passed over, by reason; counts only.
@@ -80,12 +83,13 @@ pub enum NotesView {
 }
 
 impl NotesView {
-    fn of(index: Index) -> Self {
+    fn of(index: Index, set: &NoteSet) -> Self {
         Self::Ready {
             notes: index
                 .notes
                 .into_iter()
                 .map(|note| NoteEntry {
+                    link: set.link_text(&note.path),
                     path: note.path,
                     size: note.size,
                     modified_ms: note.modified_ns.div_euclid(1_000_000),
@@ -104,6 +108,9 @@ impl NotesView {
 #[derive(Clone, Default)]
 pub struct NoteIndex {
     shared: Arc<(Mutex<Slot>, Condvar)>,
+    /// One walk at a time: an older walk that wrote its view of the folder after a
+    /// newer one left moved notes in the cache (found by the M3-005 tests).
+    walking: Arc<Mutex<()>>,
 }
 
 #[derive(Default)]
@@ -111,6 +118,8 @@ struct Slot {
     generation: u64,
     project: Option<String>,
     result: Option<Result<NotesView, CommandError>>,
+    /// The notes of the last walk, for resolving links (M3-005).
+    set: Option<Arc<NoteSet>>,
 }
 
 impl NoteIndex {
@@ -123,23 +132,35 @@ impl NoteIndex {
         slot.generation += 1;
         slot.project = Some(project_id.clone());
         slot.result = None;
+        slot.set = None;
         let generation = slot.generation;
         drop(slot);
 
         let shared = Arc::clone(&self.shared);
+        let walking = Arc::clone(&self.walking);
         std::thread::spawn(move || {
+            // A poisoned lock only means an earlier walk panicked; the cache is
+            // written in one transaction, so walking on is safe.
+            let _one_at_a_time = walking.lock().unwrap_or_else(PoisonError::into_inner);
             // A panic must not leave `wait` waiting forever.
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                notes::refresh(&app_dir, &project_id, &root)
-                    .map(NotesView::of)
-                    .map_err(CommandError::from)
-            }))
-            .unwrap_or(Err(CommandError::Internal));
+            let walked = catch_unwind(AssertUnwindSafe(|| {
+                notes::refresh(&app_dir, &project_id, &root).map(|index| {
+                    let set = NoteSet::new(index.notes.iter().map(|note| note.path.clone()));
+                    let view = NotesView::of(index, &set);
+                    (view, Arc::new(set))
+                })
+            }));
+            let (result, set) = match walked {
+                Ok(Ok((view, set))) => (Ok(view), Some(set)),
+                Ok(Err(error)) => (Err(CommandError::from(error)), None),
+                Err(_) => (Err(CommandError::Internal), None),
+            };
             let (lock, ready) = &*shared;
             if let Ok(mut slot) = lock.lock()
                 && slot.generation == generation
             {
                 slot.result = Some(result);
+                slot.set = set;
             }
             ready.notify_all();
         });
@@ -164,6 +185,7 @@ impl NoteIndex {
             slot.generation += 1;
             slot.project = None;
             slot.result = None;
+            slot.set = None;
         }
         ready.notify_all();
     }
@@ -185,7 +207,39 @@ impl NoteIndex {
     }
 }
 
+impl NoteIndex {
+    /// The notes of this project's last walk, once it is done.
+    pub fn note_set(&self, project_id: &str) -> Option<Arc<NoteSet>> {
+        let (lock, ready) = &*self.shared;
+        let mut slot = lock.lock().ok()?;
+        loop {
+            if slot.project.as_deref() != Some(project_id) {
+                return None;
+            }
+            if slot.result.is_some() {
+                return slot.set.clone();
+            }
+            slot = ready.wait(slot).ok()?;
+        }
+    }
+}
+
 impl Workspace {
+    /// The open project's notes for resolving links, after its walk.
+    pub(super) fn note_set(&self) -> Result<Arc<NoteSet>, CommandError> {
+        for _ in 0..3 {
+            let Some((id, root)) = self.open_root()? else {
+                return Err(CommandError::NoProject);
+            };
+            self.note_index()
+                .ensure(self.app_dir()?.to_path_buf(), &id, &root);
+            if let Some(set) = self.note_index().note_set(&id) {
+                return Ok(set);
+            }
+        }
+        Err(CommandError::Internal)
+    }
+
     /// The notes of the open project, after its walk.
     pub fn notes(&self) -> Result<NotesView, CommandError> {
         // A project opened while waiting replaces the one asked for; ask again.

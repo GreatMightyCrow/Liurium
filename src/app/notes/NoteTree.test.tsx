@@ -34,7 +34,7 @@ vi.mock("../../lib/ipc/commands", () => ({
   trashEntry: vi.fn(),
 }));
 
-const note = (path: string) => ({ path, size: 1, modifiedMs: 0 });
+const note = (path: string) => ({ path, size: 1, modifiedMs: 0, link: path });
 
 const TOP = buildTree(
   [note("README.md"), note("Ideas/Plan.md"), note("Ideas/Deep/x.md")],

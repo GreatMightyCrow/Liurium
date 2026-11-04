@@ -8,6 +8,7 @@ import {
   getAppInfo,
   listNotes,
   moveEntry,
+  noteLinks,
   openAppDataFolder,
   openNote,
   pruneBackups,
@@ -131,4 +132,15 @@ test("the organize commands send paths and names under Rust's names", async () =
     ["move_entry", { path: "Ideas/Plan.md", folder: "" }],
     ["trash_entry", { path: "Plan.md" }],
   ]);
+});
+
+test("note_links sends the path and the editor's text", async () => {
+  invokeMock.mockResolvedValue([]);
+
+  await noteLinks("Home.md", "See [[Plan]]");
+
+  expect(invokeMock).toHaveBeenCalledWith("note_links", {
+    path: "Home.md",
+    text: "See [[Plan]]",
+  });
 });

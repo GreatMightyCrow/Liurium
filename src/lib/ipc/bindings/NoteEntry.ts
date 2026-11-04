@@ -8,4 +8,9 @@ path: string, size: number,
 /**
  * Milliseconds since 1970-01-01 UTC.
  */
-modifiedMs: number, };
+modifiedMs: number, 
+/**
+ * What Liurium writes inside `[[…]]` for this note: its name, or the shortest
+ * unique end of its path (M3-005).
+ */
+link: string, };

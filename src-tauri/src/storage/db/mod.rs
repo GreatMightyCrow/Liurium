@@ -51,7 +51,10 @@ static PROJECT_SCHEMA: Schema = Schema {
 
 static CACHE_SCHEMA: Schema = Schema {
     application_id: CACHE_ID,
-    migrations: &[include_str!("migrations/cache/0001_notes.sql")],
+    migrations: &[
+        include_str!("migrations/cache/0001_notes.sql"),
+        include_str!("migrations/cache/0002_links.sql"),
+    ],
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

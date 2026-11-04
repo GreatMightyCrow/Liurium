@@ -2,6 +2,7 @@
 //! project's cache, which can be thrown away and built again at any time (ADR-0016).
 //! Only the cache is written; the project folder is only read.
 
+pub mod links;
 pub mod organize;
 pub mod session;
 #[cfg(test)]
@@ -20,8 +21,11 @@ use rusqlite::{Connection, TransactionBehavior, params};
 
 use crate::storage::{
     db::{self, DbError},
-    fs::{Limits, ProjectRoot, Skipped, Walk},
+    fs::{Limits, ProjectRoot, RelPath, Skipped, Walk},
 };
+
+use links::{Anchor, Link, LinkKind};
+use session::MAX_NOTE_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedNote {
@@ -38,6 +42,8 @@ pub struct Changes {
     pub added: usize,
     pub changed: usize,
     pub removed: usize,
+    /// Notes read again to find their links: the added and changed ones (M3-005).
+    pub parsed: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +74,7 @@ pub fn refresh_with(
 ) -> Result<Index, DbError> {
     let walk = root.find_notes(limits);
     let mut cache = db::open_cache(app_dir, project_id)?;
-    let changes = update(&mut cache.connection, &walk)?;
+    let changes = update(&mut cache.connection, &walk, root)?;
     Ok(Index {
         notes: read(&cache.connection)?,
         changes,
@@ -79,12 +85,21 @@ pub fn refresh_with(
     })
 }
 
-/// One transaction: the cache is either the old or the new list, never half.
-fn update(conn: &mut Connection, walk: &Walk) -> Result<Changes, DbError> {
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+/// The links of one note, or none when it cannot be read as a note (too large,
+/// not UTF-8, gone meanwhile): it still counts as a note, it just links nowhere.
+fn links_of(root: &ProjectRoot, path: &RelPath) -> Vec<Link> {
+    root.read(path, MAX_NOTE_BYTES)
+        .ok()
+        .and_then(|(bytes, _)| text::decode(&bytes).ok())
+        .map_or_else(Vec::new, |note| links::parse(&note.text))
+}
+
+/// Notes that are new or changed are read and parsed first; then one transaction
+/// writes everything, so the cache is either the old or the new state, never half.
+fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Changes, DbError> {
     let mut known: HashMap<String, (i64, i64)> = HashMap::new();
     {
-        let mut statement = tx.prepare("SELECT path, size, modified_ns FROM notes")?;
+        let mut statement = conn.prepare("SELECT path, size, modified_ns FROM notes")?;
         let rows = statement.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
         for row in rows {
             let (path, stamp) = row?;
@@ -92,36 +107,99 @@ fn update(conn: &mut Connection, walk: &Walk) -> Result<Changes, DbError> {
         }
     }
     let mut changes = Changes::default();
+    let mut writes = Vec::new();
     for note in &walk.notes {
         let path = note.path.to_string();
         let stamp = (
             i64::try_from(note.stamp.len).unwrap_or(i64::MAX),
             nanos(note.stamp.modified),
         );
-        match known.remove(&path) {
-            None => {
+        let new = match known.remove(&path) {
+            None => true,
+            Some(old) if old != stamp => false,
+            Some(_) => continue,
+        };
+        writes.push((path, stamp, new, links_of(root, &note.path)));
+        changes.parsed += 1;
+    }
+
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    {
+        let mut insert = tx.prepare(
+            "INSERT OR IGNORE INTO links (source, start_byte, end_byte, kind, embed, target, heading, block) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )?;
+        for (path, stamp, new, found) in &writes {
+            if *new {
                 tx.execute(
                     "INSERT INTO notes (path, size, modified_ns) VALUES (?1, ?2, ?3)",
                     params![path, stamp.0, stamp.1],
                 )?;
                 changes.added += 1;
-            }
-            Some(old) if old != stamp => {
+            } else {
                 tx.execute(
                     "UPDATE notes SET size = ?2, modified_ns = ?3 WHERE path = ?1",
                     params![path, stamp.0, stamp.1],
                 )?;
+                tx.execute("DELETE FROM links WHERE source = ?1", [path])?;
                 changes.changed += 1;
             }
-            Some(_) => {}
+
+            for link in found {
+                let (heading, block) = match &link.anchor {
+                    Some(Anchor::Heading(heading)) => (Some(heading.as_str()), None),
+                    Some(Anchor::Block(block)) => (None, Some(block.as_str())),
+                    None => (None, None),
+                };
+                insert.execute(params![
+                    path,
+                    i64::try_from(link.range.start).unwrap_or(i64::MAX),
+                    i64::try_from(link.range.end).unwrap_or(i64::MAX),
+                    link.kind.as_str(),
+                    link.embed,
+                    link.target,
+                    heading,
+                    block,
+                ])?;
+            }
         }
     }
+    // Their links go with them (ON DELETE CASCADE).
     for path in known.keys() {
         tx.execute("DELETE FROM notes WHERE path = ?1", [path])?;
         changes.removed += 1;
     }
     tx.commit()?;
     Ok(changes)
+}
+
+/// The links stored for one note, in text order.
+pub fn stored_links(conn: &Connection, source: &str) -> Result<Vec<Link>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT start_byte, end_byte, kind, embed, target, heading, block FROM links \
+         WHERE source = ?1 ORDER BY start_byte",
+    )?;
+    let rows = statement.query_map([source], |row| {
+        let start: i64 = row.get(0)?;
+        let end: i64 = row.get(1)?;
+        let kind: String = row.get(2)?;
+        let heading: Option<String> = row.get(5)?;
+        let block: Option<String> = row.get(6)?;
+        Ok(Link {
+            range: usize::try_from(start).unwrap_or(0)..usize::try_from(end).unwrap_or(0),
+            kind: if kind == "wiki" {
+                LinkKind::Wiki
+            } else {
+                LinkKind::Markdown
+            },
+            embed: row.get(3)?,
+            target: row.get(4)?,
+            anchor: heading
+                .map(Anchor::Heading)
+                .or_else(|| block.map(Anchor::Block)),
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 fn read(conn: &Connection) -> Result<Vec<IndexedNote>, DbError> {

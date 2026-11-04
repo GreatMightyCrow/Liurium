@@ -1,0 +1,457 @@
+//! Links between notes (M3-005, ADR-0020): found with `pulldown-cmark`, the one
+//! Markdown parser, and resolved against the project's notes. Link text is
+//! untrusted: nothing here touches a file, and a target that leaves the project,
+//! names `.liurium` or `.git`, or has a scheme is never a note link.
+
+use std::{collections::HashMap, ops::Range};
+
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
+
+use super::organize::is_note_name;
+use crate::storage::fs::{RelPath, SKIPPED_FOLDERS};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkKind {
+    /// `[[target]]`, `[[target|text]]`, `![[target]]`.
+    Wiki,
+    /// `[text](path.md)`, also reference links.
+    Markdown,
+}
+
+impl LinkKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wiki => "wiki",
+            Self::Markdown => "markdown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Anchor {
+    /// `#Heading`; for Markdown links the fragment as written (`next-steps`).
+    Heading(String),
+    /// `#^id`.
+    Block(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    /// Bytes of the whole link in the note's text.
+    pub range: Range<usize>,
+    pub kind: LinkKind,
+    pub embed: bool,
+    /// Without the anchor; empty for a link to a place in the same note. Markdown
+    /// targets are percent-decoded.
+    pub target: String,
+    pub anchor: Option<Anchor>,
+}
+
+fn options() -> Options {
+    Options::ENABLE_TABLES
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_MATH
+        | Options::ENABLE_GFM
+        | Options::ENABLE_WIKILINKS
+}
+
+/// Every note link in a note's text, in order.
+pub fn parse(text: &str) -> Vec<Link> {
+    let body_start = front_matter_end(text);
+    let body = &text[body_start..];
+    let mut links = Vec::new();
+    let mut code: Vec<Range<usize>> = Vec::new();
+    for (event, range) in Parser::new_ext(body, options()).into_offset_iter() {
+        let range = range.start + body_start..range.end + body_start;
+        match event {
+            Event::Code(_) | Event::InlineMath(_) | Event::DisplayMath(_) => code.push(range),
+            Event::Start(Tag::CodeBlock(_)) => code.push(range),
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }) => {
+                if let Some(link) = link_of(link_type, &dest_url, range, false) {
+                    links.push(link);
+                }
+            }
+            Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                ..
+            }) if matches!(link_type, LinkType::WikiLink { .. }) => {
+                if let Some(link) = link_of(link_type, &dest_url, range, true) {
+                    links.push(link);
+                }
+            }
+            _ => {}
+        }
+    }
+    let comments = comments(text, body_start, &code);
+    links.retain(|link| {
+        !comments
+            .iter()
+            .any(|comment| comment.contains(&link.range.start))
+    });
+    links
+}
+
+fn link_of(link_type: LinkType, dest: &str, range: Range<usize>, embed: bool) -> Option<Link> {
+    match link_type {
+        LinkType::WikiLink { .. } => {
+            // `[[Plan\|text]]` inside a table: the `\` escaped the pipe.
+            let dest = dest.strip_suffix('\\').unwrap_or(dest);
+            let (target, anchor) = split_anchor(dest);
+            Some(Link {
+                range,
+                kind: LinkKind::Wiki,
+                embed,
+                target: target.trim().to_owned(),
+                anchor,
+            })
+        }
+        LinkType::Inline | LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
+            if has_scheme(dest) {
+                return None;
+            }
+            let (path, fragment) = match dest.split_once('#') {
+                Some((path, fragment)) => (path, Some(fragment)),
+                None => (dest, None),
+            };
+            let path = percent_decode(path)?;
+            if !path.is_empty() && !is_note_name(&path) {
+                return None;
+            }
+            if path.is_empty() && fragment.is_none() {
+                return None;
+            }
+            Some(Link {
+                range,
+                kind: LinkKind::Markdown,
+                embed,
+                target: path,
+                anchor: fragment
+                    .filter(|fragment| !fragment.is_empty())
+                    .and_then(percent_decode)
+                    .map(Anchor::Heading),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn split_anchor(dest: &str) -> (&str, Option<Anchor>) {
+    match dest.split_once('#') {
+        Some((target, anchor)) => {
+            let anchor = anchor.trim();
+            let anchor = match anchor.strip_prefix('^') {
+                Some(block) if !block.is_empty() => Some(Anchor::Block(block.to_owned())),
+                _ if anchor.is_empty() => None,
+                _ => Some(Anchor::Heading(anchor.to_owned())),
+            };
+            (target, anchor)
+        }
+        None => (dest, None),
+    }
+}
+
+/// `http:`, `javascript:`, `C:` … — anything with a scheme is not a note path.
+fn has_scheme(dest: &str) -> bool {
+    let Some((scheme, _)) = dest.split_once(':') else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// `%20` and friends; `None` for broken escapes or bytes that are not UTF-8.
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = text.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Front matter counts only at the very start: `---` on the first line up to the
+/// next line that is `---` or `...`. Returns where the body starts.
+fn front_matter_end(text: &str) -> usize {
+    let mut lines = text.split_inclusive('\n');
+    let Some(first) = lines.next() else {
+        return 0;
+    };
+    if first.trim_end_matches(['\r', '\n']) != "---" {
+        return 0;
+    }
+    let mut end = first.len();
+    for line in lines {
+        end += line.len();
+        let bare = line.trim_end_matches(['\r', '\n']);
+        if bare == "---" || bare == "..." {
+            return end;
+        }
+    }
+    0
+}
+
+/// `%%…%%` outside code, paired in order; an unpaired `%%` runs to the end.
+fn comments(text: &str, start: usize, code: &[Range<usize>]) -> Vec<Range<usize>> {
+    let mut marks = Vec::new();
+    let mut from = start;
+    while let Some(found) = text[from..].find("%%") {
+        let at = from + found;
+        if !code.iter().any(|range| range.contains(&at)) {
+            marks.push(at);
+        }
+        from = at + 2;
+    }
+    marks
+        .chunks(2)
+        .map(|pair| pair[0]..pair.get(1).map_or(text.len(), |end| end + 2))
+        .collect()
+}
+
+/// Where a link leads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    Note {
+        path: String,
+    },
+    /// More than one note fits; the user picks.
+    Ambiguous {
+        candidates: Vec<String>,
+    },
+    /// No note fits; following asks to create this one.
+    Missing {
+        path: String,
+    },
+    /// Outside the project, a protected or skipped place, a file that is no note.
+    NotNote,
+}
+
+/// The project's notes, looked up without case.
+#[derive(Debug, Default)]
+pub struct NoteSet {
+    paths: Vec<String>,
+    /// File name without its ending → paths.
+    by_name: HashMap<String, Vec<usize>>,
+    /// Path without its ending → path.
+    by_path: HashMap<String, usize>,
+}
+
+const ATTACHMENTS: [&str; 12] = [
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "mp3", "mp4", "webm", "wav", "canvas",
+];
+
+impl NoteSet {
+    pub fn new(paths: impl IntoIterator<Item = String>) -> Self {
+        let mut set = Self::default();
+        for path in paths {
+            let index = set.paths.len();
+            let bare = without_ending(&path).to_lowercase();
+            let name = bare.rsplit('/').next().unwrap_or(&bare).to_owned();
+            set.by_name.entry(name).or_default().push(index);
+            set.by_path.insert(bare, index);
+            set.paths.push(path);
+        }
+        set
+    }
+
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
+    /// The text Liurium writes inside `[[…]]` for a note: its name when that is
+    /// unique, else the shortest end of its path that is (ADR-0020).
+    pub fn link_text(&self, path: &str) -> String {
+        let bare = without_ending(path);
+        let parts: Vec<&str> = bare.split('/').collect();
+        for take in 1..=parts.len() {
+            let suffix = parts[parts.len() - take..].join("/");
+            if self.ends_with(&suffix).len() == 1 {
+                return suffix;
+            }
+        }
+        // A note at the top whose name another note shares: its full name with the
+        // ending, which resolves from the project root first.
+        path.to_owned()
+    }
+
+    fn ends_with(&self, suffix: &str) -> Vec<usize> {
+        let suffix = suffix.to_lowercase();
+        let tail = format!("/{suffix}");
+        self.by_path
+            .iter()
+            .filter(|(bare, _)| **bare == suffix || bare.ends_with(&tail))
+            .map(|(_, index)| *index)
+            .collect()
+    }
+
+    fn found(&self, mut indexes: Vec<usize>, missing: impl FnOnce() -> Target) -> Target {
+        indexes.sort_unstable();
+        indexes.dedup();
+        match indexes.as_slice() {
+            [] => missing(),
+            [one] => Target::Note {
+                path: self.paths[*one].clone(),
+            },
+            many => {
+                let mut candidates: Vec<String> = many
+                    .iter()
+                    .map(|index| self.paths[*index].clone())
+                    .collect();
+                candidates.sort_by_key(|path| path.to_lowercase());
+                Target::Ambiguous { candidates }
+            }
+        }
+    }
+}
+
+fn without_ending(path: &str) -> &str {
+    let lower = path.to_lowercase();
+    for ending in [".markdown", ".md"] {
+        if lower.ends_with(ending) {
+            return &path[..path.len() - ending.len()];
+        }
+    }
+    path
+}
+
+fn allowed(path: &RelPath) -> bool {
+    path.parts().all(|part| {
+        !part.starts_with('.') && !SKIPPED_FOLDERS.contains(&part.to_lowercase().as_str())
+    })
+}
+
+/// Where `link`, written in the note at `source`, leads.
+pub fn resolve(source: &RelPath, link: &Link, notes: &NoteSet) -> Target {
+    if link.target.is_empty() {
+        return Target::Note {
+            path: source.to_string(),
+        };
+    }
+    match link.kind {
+        LinkKind::Wiki => resolve_wiki(source, link, notes),
+        LinkKind::Markdown => resolve_markdown(source, link, notes),
+    }
+}
+
+fn resolve_wiki(source: &RelPath, link: &Link, notes: &NoteSet) -> Target {
+    let text = link.target.replace('\\', "/");
+    let Ok(path) = RelPath::parse(&text) else {
+        return Target::NotNote;
+    };
+    if !allowed(&path) {
+        return Target::NotNote;
+    }
+    let written = path.to_string();
+    let bare = without_ending(&written).to_lowercase();
+    let with_md = |folder: Option<RelPath>| {
+        let name = if is_note_name(&written) {
+            path.file_name().to_owned()
+        } else {
+            format!("{}.md", path.file_name())
+        };
+        let created = match folder {
+            Some(folder) => folder.child(&name),
+            None => RelPath::name(&name),
+        };
+        created.map_or(Target::NotNote, |created| Target::Missing {
+            path: created.to_string(),
+        })
+    };
+    let attachment = path
+        .file_name()
+        .rsplit_once('.')
+        .is_some_and(|(_, ext)| ATTACHMENTS.contains(&ext.to_lowercase().as_str()));
+    if attachment || link.embed && !is_note_name(&written) && !notes.by_name.contains_key(&bare) {
+        return Target::NotNote;
+    }
+    // A name with its ending, such as `[[Plan.md]]`, names that path from the root first.
+    if is_note_name(&written)
+        && let Some(index) = notes.by_path.get(&bare)
+        && notes.paths[*index].to_lowercase() == written.to_lowercase()
+    {
+        return Target::Note {
+            path: notes.paths[*index].clone(),
+        };
+    }
+    if path.parent().is_some() {
+        // A path: from the project root, else the end of exactly one path.
+        if let Some(index) = notes.by_path.get(&bare) {
+            return Target::Note {
+                path: notes.paths[*index].clone(),
+            };
+        }
+        return notes.found(notes.ends_with(&bare), || with_md(path.parent()));
+    }
+    let indexes = notes.by_name.get(&bare).cloned().unwrap_or_default();
+    notes.found(indexes, || with_md(source.parent()))
+}
+
+fn resolve_markdown(source: &RelPath, link: &Link, notes: &NoteSet) -> Target {
+    let joined = match source.parent() {
+        Some(folder) => format!("{folder}/{}", link.target),
+        None => link.target.clone(),
+    };
+    let Ok(path) = RelPath::parse(&joined) else {
+        return Target::NotNote;
+    };
+    if !allowed(&path) || !is_note_name(path.file_name()) {
+        return Target::NotNote;
+    }
+    let written = path.to_string();
+    match notes.by_path.get(&without_ending(&written).to_lowercase()) {
+        Some(index) if notes.paths[*index].to_lowercase() == written.to_lowercase() => {
+            Target::Note {
+                path: notes.paths[*index].clone(),
+            }
+        }
+        _ => Target::Missing { path: written },
+    }
+}
+
+/// Byte offsets to the editor's UTF-16 offsets; `offsets` must be char boundaries.
+pub fn utf16_offsets(text: &str, offsets: &[usize]) -> Vec<usize> {
+    let mut sorted: Vec<(usize, usize)> = offsets
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, o)| (o, i))
+        .collect();
+    sorted.sort_unstable();
+    let mut result = vec![0; offsets.len()];
+    let mut units = 0;
+    let mut chars = text.char_indices().peekable();
+    for (offset, index) in sorted {
+        while let Some((at, c)) = chars.peek().copied() {
+            if at >= offset {
+                break;
+            }
+            units += c.len_utf16();
+            chars.next();
+        }
+        result[index] = units;
+    }
+    result
+}
+
+#[cfg(test)]
+#[path = "links_tests.rs"]
+mod tests;

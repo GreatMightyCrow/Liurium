@@ -4,6 +4,7 @@ import type { AppDataInfo } from "./bindings/AppDataInfo";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ConflictChoice } from "./bindings/ConflictChoice";
+import type { NoteLink } from "./bindings/NoteLink";
 import type { NotesView } from "./bindings/NotesView";
 import type { OpenedNote } from "./bindings/OpenedNote";
 import type { SaveState } from "./bindings/SaveState";
@@ -20,6 +21,7 @@ export type {
   AppInfo,
   ConflictChoice,
   CurrentProject,
+  NoteLink,
   NotesView,
   OpenedNote,
   ProjectEntry,
@@ -32,6 +34,8 @@ export type {
 export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
+export type { LinkCandidate } from "./bindings/LinkCandidate";
+export type { LinkTarget } from "./bindings/LinkTarget";
 export type { NoteEntry } from "./bindings/NoteEntry";
 export type { NoteLineEnding } from "./bindings/NoteLineEnding";
 export type { NoteReadOnly } from "./bindings/NoteReadOnly";
@@ -181,6 +185,12 @@ export function moveEntry(path: string, folder: string): Promise<string> {
 /** Moves a note or folder into the project's trash (.liurium/trash). */
 export function trashEntry(path: string): Promise<void> {
   return call("trash_entry", { path });
+}
+
+/** Every link in the editor's text, with its place and where it leads. Rust only
+ *  parses the text; nothing is written. */
+export function noteLinks(path: string, text: string): Promise<NoteLink[]> {
+  return call("note_links", { path, text });
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

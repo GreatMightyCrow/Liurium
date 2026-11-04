@@ -209,6 +209,11 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
               reload();
               navigate(noteHref(path), { replace: true });
             }}
+            notes={view.notes}
+            onOpen={(path) => {
+              navigate(noteHref(path));
+            }}
+            onCreated={reload}
           />
         )}
       </div>

@@ -49,7 +49,8 @@ pub fn run() {
             commands::organize::create_folder,
             commands::organize::rename_entry,
             commands::organize::move_entry,
-            commands::organize::trash_entry
+            commands::organize::trash_entry,
+            commands::links::note_links
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

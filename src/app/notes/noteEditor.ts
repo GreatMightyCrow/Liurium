@@ -1,8 +1,25 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+  autocompletion,
+  type Completion,
+  type CompletionContext,
+} from "@codemirror/autocomplete";
+import {
+  Compartment,
+  EditorState,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+} from "@codemirror/view";
+import type { NoteLink } from "../../lib/ipc/commands";
 import { tags } from "@lezer/highlight";
 
 // The note editor (ADR-0020): CodeMirror as the engine, everything visible from
@@ -37,7 +54,135 @@ const theme = EditorView.theme({
       backgroundColor: "var(--color-accent-muted)",
     },
   ".cm-activeLine": { backgroundColor: "transparent" },
+  // Links (M3-005): the accent; missing ones dashed, ambiguous ones dotted.
+  ".cm-link-note, .cm-link-missing, .cm-link-ambiguous": {
+    color: "var(--color-accent-text)",
+    textDecorationLine: "underline",
+    textDecorationThickness: "var(--border-width)",
+    textUnderlineOffset: "var(--space-1)",
+  },
+  ".cm-link-missing": { textDecorationStyle: "dashed" },
+  ".cm-link-ambiguous": { textDecorationStyle: "dotted" },
+  // [[ suggestions
+  ".cm-tooltip": {
+    backgroundColor: "var(--color-surface-elevated)",
+    color: "var(--color-text)",
+    border: "var(--border-width) solid var(--color-border)",
+    borderRadius: "var(--radius-md)",
+  },
+  ".cm-tooltip-autocomplete ul li": {
+    padding: "var(--space-1) var(--space-2)",
+  },
+  ".cm-tooltip-autocomplete ul li[aria-selected]": {
+    backgroundColor: "var(--color-accent-muted)",
+    color: "var(--color-text)",
+  },
+  ".cm-completionDetail": {
+    marginInlineStart: "var(--space-2)",
+    color: "var(--color-text-secondary)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--font-size-sm)",
+    fontStyle: "normal",
+  },
 });
+
+/** New links from Rust; ranges already in editor positions. */
+const setLinks = StateEffect.define<readonly NoteLink[]>();
+
+const linkClass: Record<NoteLink["target"]["state"], string | null> = {
+  note: "cm-link-note",
+  missing: "cm-link-missing",
+  ambiguous: "cm-link-ambiguous",
+  other: null,
+};
+
+function decorate(links: readonly NoteLink[]): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const link of links) {
+    const className = linkClass[link.target.state];
+    if (className !== null && link.to > link.from) {
+      builder.add(
+        link.from,
+        link.to,
+        Decoration.mark({
+          class: className,
+          attributes: { title: "Ctrl + click or Ctrl + Enter to follow" },
+        }),
+      );
+    }
+  }
+  return builder.finish();
+}
+
+/** The links Rust found, moved along with every edit until Rust sends new ones. */
+const linksField = StateField.define<{
+  links: readonly NoteLink[];
+  marks: DecorationSet;
+}>({
+  create: () => ({ links: [], marks: Decoration.none }),
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLinks)) {
+        return { links: effect.value, marks: decorate(effect.value) };
+      }
+    }
+    if (!transaction.docChanged) {
+      return value;
+    }
+    const changes = transaction.changes;
+    return {
+      links: value.links.map((link) => ({
+        ...link,
+        from: changes.mapPos(link.from, 1),
+        to: changes.mapPos(link.to, -1),
+      })),
+      marks: value.marks.map(changes),
+    };
+  },
+  provide: (field) =>
+    EditorView.decorations.from(field, (value) => value.marks),
+});
+
+function linkAt(state: EditorState, pos: number): NoteLink | null {
+  return (
+    state
+      .field(linksField)
+      .links.find((link) => link.from <= pos && pos <= link.to) ?? null
+  );
+}
+
+/** A note offered after `[[`. */
+export interface Suggestion {
+  /** Shown: the file name without its ending. */
+  name: string;
+  /** Shown beside it. */
+  folder: string;
+  /** Written inside `[[…]]`. */
+  link: string;
+}
+
+/** Suggestions after `[[` up to the cursor, as long as no `]`, `|`, or `#` came. */
+export function linkCompletions(suggestions: () => readonly Suggestion[]) {
+  return (context: CompletionContext) => {
+    const before = context.matchBefore(/\[\[[^[\]|#\r\n]*/);
+    if (before === null) {
+      return null;
+    }
+    const options: Completion[] = suggestions().map((suggestion) => ({
+      label: suggestion.name,
+      detail: suggestion.folder,
+      apply: (view, _completion, from, to) => {
+        const closed = view.state.sliceDoc(to, to + 2) === "]]";
+        const insert = closed ? suggestion.link : `${suggestion.link}]]`;
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: from + insert.length + (closed ? 2 : 0) },
+        });
+      },
+    }));
+    return { from: before.from + 2, options, validFor: /^[^[\]|#\r\n]*$/ };
+  };
+}
 
 // Markdown marks stay visible but quiet; headings grow; code uses the code face.
 const markdownLook = HighlightStyle.define([
@@ -81,6 +226,10 @@ export interface NoteEditorOptions {
   onSave: () => void;
   /** Read out as the editor's name. */
   label: string;
+  /** Ctrl + click or Ctrl + Enter on a link (M3-005). */
+  onFollow: (link: NoteLink) => void;
+  /** Notes offered after `[[`. */
+  suggestions: () => readonly Suggestion[];
 }
 
 export interface NoteEditor {
@@ -88,6 +237,12 @@ export interface NoteEditor {
    *  which always joins with `\n` (ADR-0020). */
   text: () => string;
   setReadOnly: (readOnly: boolean) => void;
+  /** Links from Rust, ranges in editor positions. */
+  setLinks: (links: readonly NoteLink[]) => void;
+  /** Writes `insert` over an editor range, as if typed. */
+  replace: (from: number, to: number, insert: string) => void;
+  /** Puts the cursor at a position and scrolls it to the top. */
+  goTo: (pos: number) => void;
   focus: () => void;
   destroy: () => void;
 }
@@ -103,6 +258,17 @@ export function createNoteEditor(
     history(),
     keymap.of([
       {
+        key: "Mod-Enter",
+        run: (view) => {
+          const link = linkAt(view.state, view.state.selection.main.head);
+          if (link === null || link.target.state === "other") {
+            return false;
+          }
+          options.onFollow(link);
+          return true;
+        },
+      },
+      {
         key: "Mod-s",
         preventDefault: true,
         run: () => {
@@ -115,6 +281,26 @@ export function createNoteEditor(
     ]),
     markdown(),
     syntaxHighlighting(markdownLook),
+    linksField,
+    autocompletion({
+      override: [linkCompletions(options.suggestions)],
+      icons: false,
+    }),
+    EditorView.domEventHandlers({
+      mousedown: (event, view) => {
+        if (!(event.ctrlKey || event.metaKey) || event.button !== 0) {
+          return false;
+        }
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        const link = pos === null ? null : linkAt(view.state, pos);
+        if (link === null || link.target.state === "other") {
+          return false;
+        }
+        event.preventDefault();
+        options.onFollow(link);
+        return true;
+      },
+    }),
     theme,
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({
@@ -149,6 +335,20 @@ export function createNoteEditor(
       view.dispatch({
         effects: editable.reconfigure(readOnlyExtensions(readOnly)),
       });
+    },
+    setLinks: (links) => {
+      view.dispatch({ effects: setLinks.of(links) });
+    },
+    replace: (from, to, insert) => {
+      view.dispatch({ changes: { from, to, insert }, userEvent: "input" });
+    },
+    goTo: (pos) => {
+      const at = Math.min(pos, view.state.doc.length);
+      view.dispatch({
+        selection: { anchor: at },
+        effects: EditorView.scrollIntoView(at, { y: "start" }),
+      });
+      view.focus();
     },
     focus: () => {
       view.focus();

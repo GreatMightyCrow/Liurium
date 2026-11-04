@@ -62,7 +62,8 @@ fn the_first_refresh_builds_the_cache_from_the_files() {
         Changes {
             added: 2,
             changed: 0,
-            removed: 0
+            removed: 0,
+            parsed: 2,
         }
     );
     assert_eq!(index.notes[0].size, 2);
@@ -111,7 +112,8 @@ fn only_added_changed_and_removed_notes_are_written() {
         Changes {
             added: 1,
             changed: 2,
-            removed: 1
+            removed: 1,
+            parsed: 3,
         }
     );
     assert_eq!(
@@ -198,4 +200,50 @@ fn times_before_1970_are_negative() {
     // Windows keeps file times in steps of 100 ns.
     assert_eq!(nanos(UNIX_EPOCH + Duration::from_nanos(300)), 300);
     assert_eq!(nanos(UNIX_EPOCH - Duration::from_nanos(300)), -300);
+}
+
+fn stored(f: &Fixture, source: &str) -> Vec<String> {
+    let cache = crate::storage::db::open_cache(&f.app(), ID).expect("cache");
+    stored_links(&cache.connection, source)
+        .expect("links")
+        .into_iter()
+        .map(|link| link.target)
+        .collect()
+}
+
+#[test]
+fn links_are_stored_for_new_and_changed_notes_and_go_with_removed_ones() {
+    let f = Fixture::new();
+    f.file("a.md", "[[Plan]] and [b](b.md)");
+    f.file("b.md", "no links");
+    f.refresh();
+    assert_eq!(stored(&f, "a.md"), ["Plan", "b.md"]);
+
+    f.file("a.md", "now [[Other]] only, and longer");
+    let index = f.refresh();
+    assert_eq!(
+        index.changes.parsed, 1,
+        "only the changed note is read again"
+    );
+    assert_eq!(stored(&f, "a.md"), ["Other"]);
+
+    std::fs::remove_file(f.project.join("a.md")).expect("remove");
+    f.refresh();
+    let cache = crate::storage::db::open_cache(&f.app(), ID).expect("cache");
+    let count: i64 = cache
+        .connection
+        .query_row("SELECT count(*) FROM links", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn a_note_that_cannot_be_read_as_text_counts_but_links_nowhere() {
+    let f = Fixture::new();
+    std::fs::write(f.project.join("latin.md"), b"caf\xE9 [[Plan]]").expect("note");
+
+    let index = f.refresh();
+
+    assert_eq!(paths(&index), ["latin.md"]);
+    assert!(stored(&f, "latin.md").is_empty());
 }

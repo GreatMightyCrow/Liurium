@@ -8,6 +8,9 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   closeNote,
+  createNote,
+  type NoteLink,
+  noteLinks,
   openNote,
   type OpenedNote,
   resolveNoteConflict,
@@ -23,18 +26,42 @@ vi.mock("../../lib/ipc/commands", () => ({
   updateNote: vi.fn(),
   resolveNoteConflict: vi.fn(),
   closeNote: vi.fn(),
+  noteLinks: vi.fn(),
+  createNote: vi.fn(),
 }));
 
 // CodeMirror itself runs in the end-to-end tests (real WebView2, real CSP); here a
 // stand-in records what the pane hands it.
+const fakeEditor = {
+  text: vi.fn(() => ""),
+  setReadOnly: vi.fn(),
+  setLinks: vi.fn(),
+  replace: vi.fn(),
+  goTo: vi.fn(),
+  focus: vi.fn(),
+  destroy: vi.fn(),
+};
 vi.mock("./noteEditor", () => ({
-  createNoteEditor: vi.fn(() => ({
-    text: () => "",
-    setReadOnly: vi.fn(),
-    focus: vi.fn(),
-    destroy: vi.fn(),
-  })),
+  createNoteEditor: vi.fn(() => fakeEditor),
 }));
+
+const onOpen = vi.fn();
+const onCreated = vi.fn();
+
+function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
+  return (
+    <NotePane
+      path={path}
+      onMoved={onMoved}
+      notes={[
+        { path: "Ideas/Plan.md", size: 1, modifiedMs: 0, link: "Ideas/Plan" },
+        { path: "Unique.md", size: 1, modifiedMs: 0, link: "Unique" },
+      ]}
+      onOpen={onOpen}
+      onCreated={onCreated}
+    />
+  );
+}
 
 const openNoteMock = vi.mocked(openNote);
 const updateNoteMock = vi.mocked(updateNote);
@@ -95,6 +122,8 @@ beforeEach(() => {
   openNoteMock.mockResolvedValue(opened());
   updateNoteMock.mockResolvedValue("saved");
   vi.mocked(closeNote).mockResolvedValue(undefined);
+  vi.mocked(noteLinks).mockResolvedValue([]);
+  fakeEditor.text.mockReturnValue("# Plan\r\n");
 });
 
 afterEach(() => {
@@ -102,7 +131,7 @@ afterEach(() => {
 });
 
 test("the note opens with its name, folder, text, and line breaks", async () => {
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
 
   await noteOpened();
   expect(screen.getByRole("heading", { name: "Plan.md" })).toBeDefined();
@@ -118,7 +147,7 @@ test("the note opens with its name, folder, text, and line breaks", async () => 
 });
 
 test("typing sends a draft soon and saves a second after the last change", async () => {
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
   await noteOpened();
 
   act(() => {
@@ -154,7 +183,7 @@ test("typing sends a draft soon and saves a second after the last change", async
 });
 
 test("Ctrl + S saves at once", async () => {
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
   await noteOpened();
   act(() => {
     editor().onChange("now");
@@ -174,7 +203,7 @@ test("a change made outside shows the choices; keep both moves to the copy", asy
   updateNoteMock.mockResolvedValue("conflict");
   resolveMock.mockResolvedValue(opened({ path: "Ideas/Plan (conflict).md" }));
   const onMoved = vi.fn();
-  render(<NotePane path="Ideas/Plan.md" onMoved={onMoved} />);
+  render(pane("Ideas/Plan.md", onMoved));
   await noteOpened();
   act(() => {
     editor().onChange("mine");
@@ -195,7 +224,7 @@ test("a change made outside shows the choices; keep both moves to the copy", asy
 test("loading from disk asks first and then starts the editor over", async () => {
   updateNoteMock.mockResolvedValue("conflict");
   resolveMock.mockResolvedValue(opened({ text: "theirs" }));
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
   await noteOpened();
   act(() => {
     editor().onChange("mine");
@@ -220,7 +249,7 @@ test("mixed line endings open read-only and can be made one kind after asking", 
   openNoteMock.mockResolvedValueOnce(
     opened({ lineEnding: "mixed", readOnly: "lineEndings" }),
   );
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
 
   await noteOpened();
   expect(screen.getByText(/mixes Windows and Unix line endings/)).toBeDefined();
@@ -243,7 +272,7 @@ test("a note that cannot be opened says why", async () => {
   openNoteMock.mockRejectedValueOnce(
     new CommandFailure("open_note", { kind: "notUtf8" }),
   );
-  render(<NotePane path="Old.md" onMoved={vi.fn()} />);
+  render(pane("Old.md"));
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("The note could not be opened");
@@ -256,7 +285,7 @@ test("a failed save says so and keeps the text", async () => {
   updateNoteMock.mockRejectedValue(
     new CommandFailure("update_note", { kind: "diskFull" }),
   );
-  render(<NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />);
+  render(pane("Ideas/Plan.md"));
   await noteOpened();
   act(() => {
     editor().onChange("mine");
@@ -269,9 +298,7 @@ test("a failed save says so and keeps the text", async () => {
 });
 
 test("leaving the note and closing the window save the last text", async () => {
-  const { unmount } = render(
-    <NotePane path="Ideas/Plan.md" onMoved={vi.fn()} />,
-  );
+  const { unmount } = render(pane("Ideas/Plan.md"));
   await noteOpened();
   act(() => {
     editor().onChange("for the close button");
@@ -295,4 +322,118 @@ test("leaving the note and closing the window save the last text", async () => {
       true,
     );
   });
+});
+
+function link(target: NoteLink["target"], from = 0, to = 8): NoteLink {
+  return { from, to, target };
+}
+
+test("Rust's links reach the editor, CRLF counted as one position", async () => {
+  const text = "a\r\n[[Unique]]";
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue([
+    link(
+      { state: "note", path: "Unique.md", heading: null, block: null },
+      3,
+      13,
+    ),
+  ]);
+  render(pane());
+  await noteOpened();
+
+  await waitFor(() => {
+    expect(fakeEditor.setLinks).toHaveBeenCalledWith([
+      link(
+        { state: "note", path: "Unique.md", heading: null, block: null },
+        2,
+        12,
+      ),
+    ]);
+  });
+  expect(noteLinks).toHaveBeenCalledWith("Ideas/Plan.md", text);
+  expect(
+    editor()
+      .suggestions()
+      .map((suggestion) => suggestion.link),
+  ).toEqual(["Ideas/Plan", "Unique"]);
+});
+
+test("following a note link opens it; a heading in the same note scrolls there", async () => {
+  fakeEditor.text.mockReturnValue("# Plan\r\n\r\n## Next steps\r\n");
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(
+      link({ state: "note", path: "Unique.md", heading: null, block: null }),
+    );
+  });
+  expect(onOpen).toHaveBeenCalledWith("Unique.md");
+
+  act(() => {
+    editor().onFollow(
+      link({
+        state: "note",
+        path: "ideas/plan.md",
+        heading: "next-steps",
+        block: null,
+      }),
+    );
+  });
+  // "# Plan\r\n\r\n" is 10 units, 8 positions in the editor.
+  expect(fakeEditor.goTo).toHaveBeenCalledWith(8);
+});
+
+test("an ambiguous link asks which note and writes its path into the link", async () => {
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(
+      link(
+        {
+          state: "ambiguous",
+          candidates: [
+            { path: "Ideas/Plan.md", replacement: "[[Ideas/Plan]]" },
+            { path: "Plan.md", replacement: "[[Plan.md]]" },
+          ],
+        },
+        4,
+        12,
+      ),
+    );
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Which note does this link mean?",
+  });
+  fireEvent.click(screen.getByRole("radio", { name: "Plan.md" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use this note" }));
+
+  expect(fakeEditor.replace).toHaveBeenCalledWith(4, 12, "[[Plan.md]]");
+  expect(onOpen).toHaveBeenCalledWith("Plan.md");
+  await waitFor(() => {
+    expect(dialog.isConnected).toBe(false);
+  });
+});
+
+test("a missing note is created after asking, then opened", async () => {
+  vi.mocked(createNote).mockResolvedValue("Ideas/Neue Idee.md");
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(link({ state: "missing", path: "Ideas/Neue Idee.md" }));
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Create “Neue Idee.md”?",
+  });
+  expect(dialog.textContent).toContain("in “Ideas”");
+  expect(createNote).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Create note" }));
+
+  await waitFor(() => {
+    expect(onOpen).toHaveBeenCalledWith("Ideas/Neue Idee.md");
+  });
+  expect(createNote).toHaveBeenCalledWith("Ideas", "Neue Idee.md");
+  expect(onCreated).toHaveBeenCalled();
 });

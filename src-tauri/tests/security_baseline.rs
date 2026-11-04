@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 30] = [
+const REVIEWED_PERMISSIONS: [&str; 31] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -54,6 +54,8 @@ const REVIEWED_PERMISSIONS: [&str; 30] = [
     "allow-rename-entry",
     "allow-move-entry",
     "allow-trash-entry",
+    // Links (M3-005): the page's text is only parsed; the source path is checked.
+    "allow-note-links",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

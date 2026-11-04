@@ -1,10 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { NoteReadOnly, OpenedNote } from "../../lib/ipc/commands";
+import {
+  createNote,
+  type LinkCandidate,
+  type NoteEntry,
+  type NoteLink,
+  noteLinks,
+  type NoteReadOnly,
+  type OpenedNote,
+} from "../../lib/ipc/commands";
+import { type CommandError, CommandFailure } from "../../lib/ipc/errors";
+import { RadioGroup } from "../../ui/RadioGroup";
+import { anchorIndex, inEditor, toEditorPositions } from "./links";
 import { Button } from "../../ui/Button";
 import { Dialog, DialogClose } from "../../ui/Dialog";
 import { ErrorState, LoadingState } from "../../ui/StateView";
 import { commandErrorMessage } from "../commandErrorMessage";
-import { createNoteEditor, type NoteEditor } from "./noteEditor";
+import {
+  createNoteEditor,
+  type NoteEditor,
+  type Suggestion,
+} from "./noteEditor";
 import styles from "./NotePane.module.css";
 import { type SaveStatus, useOpenNote } from "./useOpenNote";
 
@@ -34,13 +49,142 @@ interface NotePaneProps {
   path: string;
   /** The note now lives at another path (keep both). */
   onMoved: (path: string) => void;
+  /** The project's notes, offered after `[[` (M3-005). */
+  notes: readonly NoteEntry[];
+  /** Opens another note (a followed link). */
+  onOpen: (path: string) => void;
+  /** A note was created from a missing link; the list shows it after a reload. */
+  onCreated: () => void;
+}
+
+/** While typing, the links are asked for again at most this often. */
+export const LINKS_EVERY_MS = 300;
+
+/** A heading or block to show once its note opens (a followed link). */
+let pendingAnchor: {
+  path: string;
+  heading: string | null;
+  block: string | null;
+} | null = null;
+
+type LinkQuestion =
+  | { kind: "ambiguous"; link: NoteLink; candidates: LinkCandidate[] }
+  | { kind: "missing"; path: string };
+
+function errorOf(reason: unknown): CommandError {
+  return reason instanceof CommandFailure ? reason.error : { kind: "internal" };
+}
+
+function suggestionsOf(notes: readonly NoteEntry[]): Suggestion[] {
+  return notes.map((note) => {
+    const { folder, name } = split(note.path);
+    return {
+      name: name.replace(/\.(md|markdown)$/i, ""),
+      folder,
+      link: note.link,
+    };
+  });
 }
 
 // The open note (M3-003): name, folder, save status, notices, and the editor.
 // Saving is automatic; Ctrl + S saves at once (owner decision Q1).
-export function NotePane({ path, onMoved }: NotePaneProps) {
+export function NotePane({
+  path,
+  onMoved,
+  notes,
+  onOpen,
+  onCreated,
+}: NotePaneProps) {
   const { state, changed, save, resolve, unify } = useOpenNote(path, onMoved);
   const { folder, name } = split(path);
+  const editor = useRef<NoteEditor | null>(null);
+  const linkTimer = useRef<number | null>(null);
+  const [question, setQuestion] = useState<LinkQuestion | null>(null);
+  const suggestions = useRef<Suggestion[]>([]);
+
+  useLayoutEffect(() => {
+    suggestions.current = suggestionsOf(notes);
+  }, [notes]);
+
+  useEffect(
+    () => () => {
+      if (linkTimer.current !== null) {
+        window.clearTimeout(linkTimer.current);
+      }
+    },
+    [],
+  );
+
+  /** Rust's links for this text; dropped when the text changed meanwhile. */
+  const refreshLinks = (text: string) => {
+    noteLinks(path, text).then(
+      (links) => {
+        const current = editor.current;
+        if (current !== null && current.text() === text) {
+          current.setLinks(inEditor(text, links));
+        }
+      },
+      () => {
+        // Without links the note still edits and saves; they come with the next change.
+      },
+    );
+  };
+
+  const jumpTo = (anchor: { heading: string | null; block: string | null }) => {
+    const current = editor.current;
+    if (current === null) {
+      return;
+    }
+    const text = current.text();
+    const index = anchorIndex(text, anchor);
+    if (index !== null) {
+      current.goTo(toEditorPositions(text, [index])[0]);
+    }
+  };
+
+  const follow = (link: NoteLink) => {
+    const target = link.target;
+    if (target.state === "note") {
+      const anchor = { heading: target.heading, block: target.block };
+      if (target.path.toLowerCase() === path.toLowerCase()) {
+        jumpTo(anchor);
+      } else {
+        pendingAnchor = { path: target.path, ...anchor };
+        onOpen(target.path);
+      }
+    } else if (target.state === "ambiguous") {
+      setQuestion({ kind: "ambiguous", link, candidates: target.candidates });
+    } else if (target.state === "missing") {
+      setQuestion({ kind: "missing", path: target.path });
+    }
+  };
+
+  const ready = (instance: NoteEditor | null) => {
+    editor.current = instance;
+    if (instance === null) {
+      return;
+    }
+    refreshLinks(instance.text());
+    if (
+      pendingAnchor !== null &&
+      pendingAnchor.path.toLowerCase() === path.toLowerCase()
+    ) {
+      const anchor = pendingAnchor;
+      pendingAnchor = null;
+      jumpTo(anchor);
+    }
+  };
+
+  const edited = (text: string) => {
+    changed(text);
+    linkTimer.current ??= window.setTimeout(() => {
+      linkTimer.current = null;
+      const current = editor.current;
+      if (current !== null) {
+        refreshLinks(current.text());
+      }
+    }, LINKS_EVERY_MS);
+  };
 
   return (
     <section className={styles.pane} aria-label={name}>
@@ -83,12 +227,48 @@ export function NotePane({ path, onMoved }: NotePaneProps) {
             key={`${state.note.path}:${String(state.version)}`}
             note={state.note}
             label={name}
-            onChange={changed}
+            onChange={edited}
             onSave={() => {
               void save();
             }}
+            onFollow={follow}
+            suggestions={() => suggestions.current}
+            onReady={ready}
           />
         </>
+      )}
+      {question?.kind === "ambiguous" && (
+        <AmbiguousDialog
+          candidates={question.candidates}
+          onClose={() => {
+            setQuestion(null);
+          }}
+          onChoose={(candidate) => {
+            setQuestion(null);
+            editor.current?.replace(
+              question.link.from,
+              question.link.to,
+              candidate.replacement,
+            );
+            onOpen(candidate.path);
+          }}
+        />
+      )}
+      {question?.kind === "missing" && (
+        <MissingDialog
+          path={question.path}
+          onClose={() => {
+            setQuestion(null);
+          }}
+          onCreate={() => {
+            const parts = split(question.path);
+            return createNote(parts.folder, parts.name).then((created) => {
+              setQuestion(null);
+              onCreated();
+              onOpen(created);
+            });
+          }}
+        />
       )}
     </section>
   );
@@ -205,25 +385,132 @@ function ReadOnlyNotice({
   );
 }
 
+function AmbiguousDialog({
+  candidates,
+  onChoose,
+  onClose,
+}: {
+  candidates: readonly LinkCandidate[];
+  onChoose: (candidate: LinkCandidate) => void;
+  onClose: () => void;
+}) {
+  const [chosen, setChosen] = useState(candidates[0]?.path ?? "");
+  return (
+    <Dialog
+      open
+      title="Which note does this link mean?"
+      description="Several notes have this name. Liurium writes the chosen one's path into the link, so it is clear from now on."
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      actions={
+        <>
+          <DialogClose>Cancel</DialogClose>
+          <Button
+            variant="primary"
+            onClick={() => {
+              const candidate = candidates.find((c) => c.path === chosen);
+              if (candidate !== undefined) {
+                onChoose(candidate);
+              }
+            }}
+          >
+            Use this note
+          </Button>
+        </>
+      }
+    >
+      <RadioGroup
+        label="Notes"
+        value={chosen}
+        options={candidates.map((candidate) => ({
+          value: candidate.path,
+          label: candidate.path,
+        }))}
+        onChange={setChosen}
+      />
+    </Dialog>
+  );
+}
+
+function MissingDialog({
+  path,
+  onCreate,
+  onClose,
+}: {
+  path: string;
+  onCreate: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { folder, name } = split(path);
+  return (
+    <Dialog
+      open
+      title={`Create “${name}”?`}
+      description={`No note has this name yet. Liurium creates it ${folder === "" ? "at the top of the project" : `in “${folder}”`} and opens it.`}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      actions={
+        <>
+          <DialogClose>Cancel</DialogClose>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              onCreate().catch((reason: unknown) => {
+                setBusy(false);
+                setError(commandErrorMessage(errorOf(reason)));
+              });
+            }}
+          >
+            Create note
+          </Button>
+        </>
+      }
+    >
+      {error !== null && (
+        <p className={styles.dialogError} role="alert">
+          {error}
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
 function EditorHost({
   note,
   label,
   onChange,
   onSave,
+  onFollow,
+  suggestions,
+  onReady,
 }: {
   note: OpenedNote;
   label: string;
   onChange: (text: string) => void;
   onSave: () => void;
+  onFollow: (link: NoteLink) => void;
+  suggestions: () => readonly Suggestion[];
+  onReady: (editor: NoteEditor | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const handlers = useRef({ onChange, onSave });
+  const handlers = useRef({ onChange, onSave, onFollow, suggestions, onReady });
   // The editor starts once with these; the key on this component starts a new one
   // for a new text.
   const initial = useRef({ note, label });
 
   useLayoutEffect(() => {
-    handlers.current = { onChange, onSave };
+    handlers.current = { onChange, onSave, onFollow, suggestions, onReady };
   });
 
   useEffect(() => {
@@ -248,8 +535,14 @@ function EditorHost({
       onSave: () => {
         handlers.current.onSave();
       },
+      onFollow: (link) => {
+        handlers.current.onFollow(link);
+      },
+      suggestions: () => handlers.current.suggestions(),
     });
+    handlers.current.onReady(editor);
     return () => {
+      handlers.current.onReady(null);
       editor?.destroy();
       editor = null;
     };

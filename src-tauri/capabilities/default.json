@@ -33,6 +33,7 @@
     "allow-create-folder",
     "allow-rename-entry",
     "allow-move-entry",
-    "allow-trash-entry"
+    "allow-trash-entry",
+    "allow-note-links"
   ]
 }

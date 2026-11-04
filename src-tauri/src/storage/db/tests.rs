@@ -473,7 +473,7 @@ fn a_new_cache_is_created_in_the_cache_folder_with_wal() {
         number(&cache.connection, "application_id"),
         i64::from(CACHE_ID)
     );
-    assert_eq!(tables(&cache.connection), ["notes"]);
+    assert_eq!(tables(&cache.connection), ["links", "notes"]);
 }
 
 #[test]
@@ -526,7 +526,11 @@ fn an_unusable_cache_is_deleted_and_built_again_with_nothing_else_touched() {
 
         assert!(cache.fresh, "{case}");
         assert!(cache_paths(&cache.connection).is_empty(), "{case}");
-        assert_eq!(number(&cache.connection, "user_version"), 1, "{case}");
+        assert_eq!(
+            number(&cache.connection, "user_version"),
+            i64::try_from(current(Kind::Cache)).expect("version"),
+            "{case}"
+        );
         assert!(!with_suffix(&path, "-journal").exists(), "{case}");
         assert_eq!(fs::read(&other).expect("other"), b"not ours", "{case}");
         assert!(
@@ -589,5 +593,21 @@ fn a_migration_without_backup_writes_no_copy() {
     migrate::migrate(&mut conn, &V2, &path, 1, false).expect("migrated");
 
     assert_eq!(tables(&conn), ["notes", "tags"]);
+    assert!(backups(&path).is_empty());
+}
+
+#[test]
+fn a_version_1_cache_gains_links_and_forgets_its_notes_for_one_full_read() {
+    let dir = temp_dir();
+    let path = cache_path(dir.path());
+    fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+    cache_row(&liurium_database(&path, Kind::Cache, 1));
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert!(!cache.fresh);
+    assert_eq!(number(&cache.connection, "user_version"), 2);
+    assert_eq!(tables(&cache.connection), ["links", "notes"]);
+    assert!(cache_paths(&cache.connection).is_empty());
     assert!(backups(&path).is_empty());
 }
