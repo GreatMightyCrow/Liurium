@@ -45,13 +45,15 @@ async function until(
   throw new Error(`timed out waiting for ${what}`);
 }
 
-/** Removed only after the app has stopped; WebView2 may hold files a moment longer. */
+/** Removed only after the app has stopped; WebView2 may hold files a moment longer.
+ *  On a cold CI runner its helper processes took longer than one second after the
+ *  first test (EPERM, run 41900331690), so this waits up to about ten seconds. */
 function removeFolder(folder: string): void {
   rmSync(folder, {
     recursive: true,
     force: true,
-    maxRetries: 10,
-    retryDelay: 100,
+    maxRetries: 50,
+    retryDelay: 200,
   });
 }
 
