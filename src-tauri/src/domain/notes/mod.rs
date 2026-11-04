@@ -2,8 +2,12 @@
 //! project's cache, which can be thrown away and built again at any time (ADR-0016).
 //! Only the cache is written; the project folder is only read.
 
+pub mod session;
+#[cfg(test)]
+mod session_tests;
 #[cfg(test)]
 mod tests;
+pub mod text;
 
 use std::{
     collections::HashMap,

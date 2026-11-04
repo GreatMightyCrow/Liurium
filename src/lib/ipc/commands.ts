@@ -3,7 +3,10 @@ import type { AddOutcome } from "./bindings/AddOutcome";
 import type { AppDataInfo } from "./bindings/AppDataInfo";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
+import type { ConflictChoice } from "./bindings/ConflictChoice";
 import type { NotesView } from "./bindings/NotesView";
+import type { OpenedNote } from "./bindings/OpenedNote";
+import type { SaveState } from "./bindings/SaveState";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
 import type { ProjectInfo } from "./bindings/ProjectInfo";
 import type { ProjectStatus } from "./bindings/ProjectStatus";
@@ -15,11 +18,14 @@ export type {
   AddOutcome,
   AppDataInfo,
   AppInfo,
+  ConflictChoice,
   CurrentProject,
   NotesView,
+  OpenedNote,
   ProjectEntry,
   ProjectInfo,
   ProjectStatus,
+  SaveState,
   Settings,
   SettingsView,
 };
@@ -27,6 +33,8 @@ export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
 export type { NoteEntry } from "./bindings/NoteEntry";
+export type { NoteLineEnding } from "./bindings/NoteLineEnding";
+export type { NoteReadOnly } from "./bindings/NoteReadOnly";
 export type { SettingKey } from "./bindings/SettingKey";
 export type { SkippedNotes } from "./bindings/SkippedNotes";
 export type { StartWith } from "./bindings/StartWith";
@@ -120,6 +128,34 @@ export function resetSyncWarnings(): Promise<AppDataInfo> {
 /** The notes of the open project, once Rust has walked its folder. No content. */
 export function listNotes(): Promise<NotesView> {
   return call("list_notes");
+}
+
+/** Opens a note of the open project by its path; Rust checks the path. With `unify`,
+ *  a note with mixed line endings is first made uniform (ask the user before). */
+export function openNote(path: string, unify = false): Promise<OpenedNote> {
+  return call("open_note", { path, unify });
+}
+
+/** Hands Rust the editor's text; with `save`, Rust writes it. */
+export function updateNote(
+  path: string,
+  text: string,
+  save: boolean,
+): Promise<SaveState> {
+  return call("update_note", { path, text, save });
+}
+
+/** The user's answer after the note changed outside Liurium. */
+export function resolveNoteConflict(
+  path: string,
+  choice: ConflictChoice,
+): Promise<OpenedNote> {
+  return call("resolve_note_conflict", { path, choice });
+}
+
+/** Leaves the note; refused while its text is not saved. */
+export function closeNote(path: string): Promise<void> {
+  return call("close_note", { path });
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

@@ -88,8 +88,14 @@ test("the notes are counted and listed by folder, top level first", async () => 
       .getAllByRole("listitem")
       .map((item) => item.querySelector("span")?.textContent),
   ).toEqual(["Plan.md"]);
-  const time = within(folders[0]).getByText(/2026/);
-  expect(time.getAttribute("datetime")).toBe("2026-11-04T09:30:00.000Z");
+  expect(
+    within(folders[1])
+      .getByRole("link", { name: "Plan.md" })
+      .getAttribute("href"),
+  ).toBe("/notes/Ideas/Plan.md");
+  expect(
+    screen.getByText("Choose a note on the left to open it."),
+  ).toBeDefined();
   expect(screen.queryByRole("status")).toBeNull();
 });
 

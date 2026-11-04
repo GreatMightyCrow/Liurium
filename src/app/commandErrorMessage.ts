@@ -27,6 +27,9 @@ const messages: {
   upgradeFailed: () =>
     "The data could not be updated for this version of Liurium. It was left unchanged.",
   invalidPath: () => "This name or path is not allowed on Windows.",
+  notUtf8: () =>
+    "Liurium can open only UTF-8 text files. This file uses another encoding or is not text.",
+  unsaved: () => "This note has changes that are not saved yet.",
   outsideProject: () => "This path leads outside the project.",
   protected: () =>
     "This folder is managed by Liurium or Git and cannot be changed here.",

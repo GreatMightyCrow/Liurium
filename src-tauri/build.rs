@@ -19,6 +19,10 @@ const COMMANDS: &[&str] = &[
     "prune_backups",
     "reset_sync_warnings",
     "list_notes",
+    "open_note",
+    "update_note",
+    "resolve_note_conflict",
+    "close_note",
 ];
 
 fn main() {

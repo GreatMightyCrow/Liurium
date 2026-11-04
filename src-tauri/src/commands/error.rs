@@ -50,6 +50,10 @@ pub enum CommandError {
     NoProject,
     /// A name that is empty, too long, or has control characters.
     InvalidName,
+    /// The file is not UTF-8 text (M3-003).
+    NotUtf8,
+    /// The note has changes that are not saved yet.
+    Unsaved,
     /// Nothing the user can act on.
     Internal,
 }

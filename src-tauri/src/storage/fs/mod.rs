@@ -112,6 +112,20 @@ impl ProjectRoot {
         Ok((bytes, Stamp::of(&metadata)?))
     }
 
+    /// Size and modified time of an existing file, without reading it.
+    pub fn stamp(&self, rel: &RelPath) -> Result<Stamp, FsError> {
+        let metadata = fs::metadata(self.resolve(rel)?)?;
+        if !metadata.is_file() {
+            return Err(FsError::WrongKind);
+        }
+        Ok(Stamp::of(&metadata)?)
+    }
+
+    /// Whether an existing file has the read-only attribute.
+    pub fn is_read_only(&self, rel: &RelPath) -> Result<bool, FsError> {
+        Ok(fs::metadata(self.resolve(rel)?)?.permissions().readonly())
+    }
+
     /// Replaces or creates a file in one step: the content goes to a temp file in
     /// the same folder first, then the temp file is renamed over the target.
     pub fn write(&self, rel: &RelPath, bytes: &[u8], expect: Expect) -> Result<Stamp, FsError> {

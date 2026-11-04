@@ -1,6 +1,6 @@
 import { FileText, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   listNotes,
   type NoteEntry,
@@ -12,6 +12,7 @@ import { Button } from "../ui/Button";
 import { PageHeader } from "../ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { commandErrorMessage } from "./commandErrorMessage";
+import { NotePane } from "./notes/NotePane";
 import styles from "./NotesPage.module.css";
 
 /** The list shows at most this many notes; the folder tree replaces it later. */
@@ -23,11 +24,6 @@ type Loaded =
   | { status: "failed"; error: CommandError };
 
 const count = new Intl.NumberFormat("en");
-
-const changedAt = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 function plural(n: number, one: string, many: string): string {
   return `${count.format(n)} ${n === 1 ? one : many}`;
@@ -81,8 +77,32 @@ function errorOf(reason: unknown): CommandError {
   return reason instanceof CommandFailure ? reason.error : { kind: "internal" };
 }
 
-// The notes Liurium found in the open project (M3-002): how many, and a plain
-// list by folder. Opening a note comes with the editor.
+const NOTES = "/notes";
+
+/** The page address of a note: `/notes/` and its path, each part encoded. */
+export function noteHref(path: string): string {
+  return `${NOTES}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** The note a page address names, or `null` for the list alone. */
+export function notePathOf(location: string): string | null {
+  if (!location.startsWith(`${NOTES}/`)) {
+    return null;
+  }
+  try {
+    const path = location
+      .slice(NOTES.length + 1)
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+    return path === "" ? null : path;
+  } catch {
+    return null;
+  }
+}
+
+// The notes of the open project (M3-002): how many, a list by folder on the left,
+// and the open note on the right (M3-003, owner decision Q4).
 export function NotesPage() {
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
 
@@ -106,15 +126,16 @@ export function NotesPage() {
   }, []);
 
   return (
-    <>
+    <div className={styles.page}>
       <PageHeader title="Notes" />
       <Content loaded={loaded} />
-    </>
+    </div>
   );
 }
 
 function Content({ loaded }: { loaded: Loaded }) {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const openPath = notePathOf(location);
 
   if (loaded.status === "loading") {
     return <LoadingState label="Looking for notes…" />;
@@ -171,47 +192,68 @@ function Content({ loaded }: { loaded: Loaded }) {
   const hidden = view.notes.length - shown.length;
 
   return (
-    <div className={styles.content}>
-      <p className={styles.summary}>
-        {plural(view.notes.length, "note", "notes")}
-      </p>
-      <Notices notices={notices} />
-      {byFolder(shown).map((folder) => (
-        <section
-          key={folder.path}
-          className={styles.folder}
-          aria-label={folder.path === "" ? "Project folder" : folder.path}
-        >
-          <h2
-            className={folder.path === "" ? styles.topName : styles.folderName}
-          >
-            {folder.path === "" ? "Project folder" : folder.path}
-          </h2>
-          <ul className={styles.list}>
-            {folder.notes.map(({ name, note }) => (
-              <li key={note.path} className={styles.row}>
-                <FileText
-                  className={styles.icon}
-                  strokeWidth={1.5}
-                  aria-hidden
-                />
-                <span className={styles.name}>{name}</span>
-                <time
-                  className={styles.when}
-                  dateTime={new Date(note.modifiedMs).toISOString()}
-                >
-                  {changedAt.format(note.modifiedMs)}
-                </time>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      {hidden > 0 && (
-        <p className={styles.more}>
-          {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
+    <div className={styles.split}>
+      <nav className={styles.list} aria-label="Notes in this project">
+        <p className={styles.summary}>
+          {plural(view.notes.length, "note", "notes")}
         </p>
-      )}
+        <Notices notices={notices} />
+        {byFolder(shown).map((folder) => (
+          <section
+            key={folder.path}
+            className={styles.folder}
+            aria-label={folder.path === "" ? "Project folder" : folder.path}
+          >
+            <h2
+              className={
+                folder.path === "" ? styles.topName : styles.folderName
+              }
+            >
+              {folder.path === "" ? "Project folder" : folder.path}
+            </h2>
+            <ul className={styles.rows}>
+              {folder.notes.map(({ name, note }) => {
+                const open =
+                  openPath?.toLowerCase() === note.path.toLowerCase();
+                return (
+                  <li key={note.path}>
+                    <Link
+                      href={noteHref(note.path)}
+                      className={styles.row}
+                      aria-current={open ? "page" : undefined}
+                    >
+                      <FileText
+                        className={styles.icon}
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
+                      <span className={styles.name}>{name}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+        {hidden > 0 && (
+          <p className={styles.more}>
+            {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
+          </p>
+        )}
+      </nav>
+      <div className={styles.open}>
+        {openPath === null ? (
+          <p className={styles.hint}>Choose a note on the left to open it.</p>
+        ) : (
+          <NotePane
+            key={openPath}
+            path={openPath}
+            onMoved={(path) => {
+              navigate(noteHref(path), { replace: true });
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

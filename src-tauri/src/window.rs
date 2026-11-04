@@ -1,7 +1,7 @@
 //! The main window, created from its entry in `tauri.conf.json` (`create: false`)
 //! with the stored frame style (ADR-0013), theme, and mode (ADR-0015, M2-007).
 
-use crate::commands::Preferences;
+use crate::commands::{Preferences, Workspace, editor::CloseCheck};
 use crate::domain::settings::Settings;
 use crate::frame::FrameStyle;
 use crate::theme::Theme;
@@ -41,14 +41,77 @@ pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box
     // Windows' mode can change while Liurium runs; the background follows with the
     // theme chosen by then.
     let follower = window.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::ThemeChanged(shown) = event {
+    window.on_window_event(move |event| match event {
+        WindowEvent::ThemeChanged(shown) => {
             let theme = follower.state::<Preferences>().settings().theme.theme();
             let _ = follower.set_background_color(Some(theme.background(*shown)));
         }
+        // Every way of closing (button, native frame, Alt + F4) passes here (M3-003).
+        WindowEvent::CloseRequested { api, .. } if !may_close(&follower) => {
+            api.prevent_close();
+        }
+        _ => {}
     });
     window.show()?;
     Ok(())
+}
+
+/// Saves the open note's draft before the window closes. If that fails, the user
+/// decides: keep both and close, close without saving, or stay (owner, M3-003).
+fn may_close(window: &WebviewWindow) -> bool {
+    use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+
+    let Some(workspace) = window.try_state::<Workspace>() else {
+        return true;
+    };
+    let editor = workspace.editor();
+    let CloseCheck::Unsaved { name, conflict } = editor.save_before_close() else {
+        return true;
+    };
+    const KEEP_BOTH: &str = "Keep both and close";
+    const DISCARD: &str = "Close without saving";
+    const STAY: &str = "Cancel";
+    let reason = if conflict {
+        "It was changed outside Liurium since you opened it."
+    } else {
+        "Liurium could not write the file."
+    };
+    let answer = MessageDialog::new()
+        .set_level(MessageLevel::Warning)
+        .set_title("Unsaved changes")
+        .set_description(format!(
+            "Your changes to \u{201c}{name}\u{201d} are not saved. {reason}\n\n\
+             Keep both saves your version as a separate note next to it."
+        ))
+        .set_buttons(MessageButtons::YesNoCancelCustom(
+            KEEP_BOTH.to_owned(),
+            DISCARD.to_owned(),
+            STAY.to_owned(),
+        ))
+        .set_parent(window)
+        .show();
+    match answer {
+        MessageDialogResult::Custom(choice) if choice == KEEP_BOTH => {
+            if editor.keep_both_before_close() {
+                return true;
+            }
+            MessageDialog::new()
+                .set_level(MessageLevel::Error)
+                .set_title("Not saved")
+                .set_description(
+                    "Liurium could not save a copy either. It stays open so nothing is lost.",
+                )
+                .set_buttons(MessageButtons::Ok)
+                .set_parent(window)
+                .show();
+            false
+        }
+        MessageDialogResult::Custom(choice) if choice == DISCARD => {
+            editor.discard();
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Brings the main window to the front for a second start (M2-010). A window still

@@ -10,7 +10,7 @@ use std::{
 use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
-use super::{CommandError, DataStatus, notes::NoteIndex};
+use super::{CommandError, DataStatus, editor::Editor, notes::NoteIndex};
 use crate::domain::{
     projects::{self, Project, ProjectCopy, ProjectError},
     settings::StartWith,
@@ -162,6 +162,8 @@ pub struct Workspace {
     start_with: StartWith,
     /// The background walk of the open project's notes (M3-002).
     notes: NoteIndex,
+    /// The note open in the editor (M3-003).
+    editor: Editor,
 }
 
 impl Workspace {
@@ -184,6 +186,7 @@ impl Workspace {
             copy: Arc::new(Mutex::new(None)),
             start_with,
             notes: NoteIndex::default(),
+            editor: Editor::default(),
         }
     }
 
@@ -203,6 +206,23 @@ impl Workspace {
         &self.notes
     }
 
+    pub fn editor(&self) -> &Editor {
+        &self.editor
+    }
+
+    /// Id, folder, and write protection of the open project.
+    pub(super) fn open_project_root(
+        &self,
+    ) -> Result<Option<(String, ProjectRoot, bool)>, CommandError> {
+        let app = self.app()?;
+        let mut guard = self.lock()?;
+        let current = self.restored(&mut guard, &app)?;
+        Ok(current
+            .open
+            .as_ref()
+            .map(|project| (project.id.clone(), project.root.clone(), project.read_only)))
+    }
+
     /// Id and folder of the open project, reopening the last one on the first call.
     pub(super) fn open_root(&self) -> Result<Option<(String, ProjectRoot)>, CommandError> {
         let app = self.app()?;
@@ -214,8 +234,10 @@ impl Workspace {
             .map(|project| (project.id.clone(), project.root.clone())))
     }
 
-    /// Makes a project the open one and starts walking its notes.
+    /// Makes a project the open one and starts walking its notes. The note open in
+    /// the editor is saved first.
     fn opened(&self, project: Project, info: ProjectInfo) -> Current {
+        self.editor.leave_project();
         if let Ok(dir) = self.app_dir() {
             self.notes
                 .start(dir.to_path_buf(), project.id.clone(), project.root.clone());
@@ -340,6 +362,7 @@ impl Workspace {
         if current.id() == Some(id) {
             *current = Current::none();
             self.notes.clear();
+            self.editor.leave_project();
         }
         Ok(())
     }

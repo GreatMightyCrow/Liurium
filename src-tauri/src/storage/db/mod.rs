@@ -238,15 +238,16 @@ pub fn open_cache(app_dir: &Path, project_id: &str) -> Result<CacheDb, DbError> 
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a project id").into());
     }
     let dir = app_dir.join(CACHE_DIR);
-    match fs::symlink_metadata(&dir) {
-        Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => {}
-        Ok(_) => {
-            return Err(
-                io::Error::new(io::ErrorKind::NotADirectory, "cache is not a folder").into(),
-            );
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&dir)?,
+    // Two walks may start at once (two projects opened quickly): whoever creates the
+    // folder second finds it there, which is fine as long as it is a real folder.
+    match fs::create_dir(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
         Err(error) => return Err(error.into()),
+    }
+    let metadata = fs::symlink_metadata(&dir)?;
+    if !metadata.is_dir() || metadata.is_symlink() {
+        return Err(io::Error::new(io::ErrorKind::NotADirectory, "cache is not a folder").into());
     }
     let path = dir.join(format!("{project_id}.db"));
     // A link where the cache belongs is removed, never followed.

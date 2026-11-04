@@ -75,6 +75,10 @@
     --size-preview: 144px;
     --size-section-nav: 184px;
     --size-form-max: 720px;
+    /* Notes (M3-003): the note list beside the editor, and the longest line of
+       note text before it wraps */
+    --size-notes-list: 280px;
+    --size-note-measure: 80ch;
 
     /* Controls: buttons and fields */
     --size-control-sm: 28px;

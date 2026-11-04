@@ -1,0 +1,96 @@
+@layer components {
+  /* Header, notices, then the editor filling the rest; the editor scrolls itself. */
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+  }
+
+  .header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    align-items: baseline;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .titles {
+    min-width: 0;
+  }
+
+  .name {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    overflow-wrap: anywhere;
+  }
+
+  .folder {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  /* Saved is quiet; only states that need the user stand out. */
+  .status {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+
+  .status[data-status="conflict"],
+  .status[data-status="failed"] {
+    color: var(--color-danger);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .notice,
+  .conflict {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    align-items: center;
+    margin: 0;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
+    border-inline-start: var(--border-width-mark) solid var(--color-warning);
+    color: var(--color-text-secondary);
+  }
+
+  .conflict {
+    border-inline-start-color: var(--color-danger);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .noticeText,
+  .conflictText {
+    flex: 1 1 var(--size-path-min);
+    margin: 0;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .editor {
+    flex: 1;
+    min-height: 0;
+  }
+
+  @media (forced-colors: active) {
+    .notice,
+    .conflict {
+      border-inline-start-color: CanvasText;
+    }
+  }
+}

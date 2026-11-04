@@ -32,7 +32,10 @@ export function AppRoutes() {
         {areas.map((area) => {
           const Page = pages[area.path];
           return (
-            <Route key={area.path} path={area.path}>
+            <Route
+              key={area.path}
+              path={area.nested === true ? `${area.path}/*?` : area.path}
+            >
               {Page === undefined ? (
                 <PlaceholderPage
                   title={area.label}

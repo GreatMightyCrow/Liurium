@@ -11,6 +11,7 @@ use std::{
 use ts_rs::{Config, TS};
 
 use super::data::AppDataInfo;
+use super::editor::{ConflictChoice, NoteLineEnding, NoteReadOnly, OpenedNote, SaveState};
 use super::notes::{NoteEntry, NotesView, SkippedNotes};
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::settings::SettingsView;
@@ -53,6 +54,11 @@ fn typescript_bindings_match_the_rust_types() {
         output::<NoteEntry>(&config),
         output::<SkippedNotes>(&config),
         output::<NotesView>(&config),
+        output::<OpenedNote>(&config),
+        output::<NoteLineEnding>(&config),
+        output::<NoteReadOnly>(&config),
+        output::<SaveState>(&config),
+        output::<ConflictChoice>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

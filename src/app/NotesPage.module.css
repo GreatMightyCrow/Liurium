@@ -1,14 +1,56 @@
 @layer components {
+  /* Header on top, the rest of the window for the list and the note. */
+  .page {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+  }
+
   .content {
     display: grid;
+    align-content: start;
     gap: var(--space-5);
     max-width: var(--size-page-max);
     padding: var(--space-5);
   }
 
+  /* List on the left, the open note on the right (owner decision M3-003 Q4). When
+     the window gets narrow (small window, 200 % zoom), the note wraps below the
+     list and the page scrolls. */
+  .split {
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .list {
+    display: grid;
+    flex: 0 0 var(--size-notes-list);
+    align-content: start;
+    gap: var(--space-4);
+    max-height: 100%;
+    padding: var(--space-4) var(--space-3);
+    overflow: auto;
+    border-inline-end: var(--border-width) solid var(--color-border);
+  }
+
+  .open {
+    flex: 1 1 var(--size-path-min);
+    min-width: 0;
+    height: 100%;
+  }
+
+  .hint {
+    margin: 0;
+    padding: var(--space-5);
+    color: var(--color-text-secondary);
+  }
+
   .summary {
     margin: 0;
-    font-size: var(--font-size-lg);
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
   }
@@ -24,19 +66,21 @@
   .notice {
     margin: 0;
     color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .folder {
     display: grid;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
 
   /* Folders read as paths, so they use the code face. */
   .folderName {
     margin: 0;
+    padding-inline: var(--space-2);
     color: var(--color-text-secondary);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-regular);
     overflow-wrap: anywhere;
   }
@@ -44,29 +88,45 @@
   /* Notes at the top of the project: a label, not a path. */
   .topName {
     margin: 0;
+    padding-inline: var(--space-2);
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
   }
 
-  .list {
+  .rows {
     display: grid;
     margin: 0;
     padding: 0;
-    border-top: var(--border-width) solid var(--color-border);
     list-style: none;
   }
 
-  /* Icon, name, and time on one line; when the line gets narrow (small window,
-     high zoom), the time moves below instead of squeezing the name. */
+  /* The open note has a line in the accent at its start, like the current section
+     in Settings; no fill, so the list stays calm. */
   .row {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-3);
+    gap: var(--space-2);
     align-items: center;
-    min-height: var(--size-control-md);
-    padding-inline: var(--space-3);
-    border-bottom: var(--border-width) solid var(--color-border);
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border-inline-start: var(--border-width-mark) solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .row:hover {
+    background: var(--color-surface);
+  }
+
+  .row:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  .row[aria-current="page"] {
+    border-inline-start-color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
   }
 
   .icon {
@@ -77,26 +137,24 @@
   }
 
   .name {
-    flex: 1 1 var(--size-project-name);
     min-width: 0;
     overflow-wrap: anywhere;
   }
 
-  .when {
-    margin-inline-start: auto;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
-  }
-
   .more {
     margin: 0;
+    padding-inline: var(--space-2);
     color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   @media (forced-colors: active) {
     .notices {
       border-inline-start-color: CanvasText;
+    }
+
+    .row[aria-current="page"] {
+      border-inline-start-color: var(--color-forced-selected);
     }
   }
 }

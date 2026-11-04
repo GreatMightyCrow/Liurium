@@ -25,6 +25,8 @@ const kinds: Record<CommandError["kind"], true> = {
   duplicateProject: true,
   noProject: true,
   invalidName: true,
+  notUtf8: true,
+  unsaved: true,
   internal: true,
 };
 const knownKinds = new Set<string>(Object.keys(kinds));

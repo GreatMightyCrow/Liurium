@@ -5,6 +5,7 @@ import {
   minimizeWindow,
   toggleMaximizeWindow,
 } from "../lib/ipc/window";
+import { flushOpenNote } from "./notes/useOpenNote";
 
 function report(error: unknown) {
   console.error("window action failed", error);
@@ -43,8 +44,13 @@ export function useWindowControls() {
     toggleMaximize: () => {
       toggleMaximizeWindow().catch(report);
     },
+    // The open note's last text goes to Rust first; Rust saves it while closing
+    // (M3-003) and asks only if that fails.
     close: () => {
-      closeWindow().catch(report);
+      flushOpenNote()
+        .catch(report)
+        .then(() => closeWindow())
+        .catch(report);
     },
   };
 }

@@ -16,6 +16,8 @@ export interface Area {
   summary: string;
   /** "end" areas sit at the bottom of the sidebar. */
   placement: "main" | "end";
+  /** The area has pages below its path, such as `/notes/Ideas/Plan.md`. */
+  nested?: true;
 }
 
 // The app's main areas (ADR-0014). Paths are defined here only; the sidebar and
@@ -43,6 +45,7 @@ export const areas: readonly Area[] = [
     icon: FileText,
     summary: "This page will show the Markdown notes of the open project.",
     placement: "main",
+    nested: true,
   },
   {
     path: "/tasks",

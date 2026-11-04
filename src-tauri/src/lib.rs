@@ -40,7 +40,11 @@ pub fn run() {
             commands::data::open_app_data_folder,
             commands::data::prune_backups,
             commands::data::reset_sync_warnings,
-            commands::notes::list_notes
+            commands::notes::list_notes,
+            commands::editor::open_note,
+            commands::editor::update_note,
+            commands::editor::resolve_note_conflict,
+            commands::editor::close_note
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

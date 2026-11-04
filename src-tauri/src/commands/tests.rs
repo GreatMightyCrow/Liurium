@@ -1119,3 +1119,204 @@ fn only_the_newest_walk_counts() {
     index.clear();
     assert_eq!(index.wait(&work.id), None);
 }
+
+fn opened_garden(dir: &Path) -> (Workspace, PathBuf) {
+    let garden = project(dir, "Garden", current(Kind::Project));
+    let workspace = workspace(&dir.join("app"));
+    added(&workspace, &garden.root);
+    (workspace, garden.root)
+}
+
+#[test]
+fn a_note_opens_saves_and_reports_its_state_as_json() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::create_dir(root.join("Ideas")).expect("folder");
+    std::fs::write(root.join("Ideas/Plan.md"), "a\r\nb").expect("note");
+
+    let opened = workspace.open_note("Ideas/Plan.md", false).expect("open");
+    assert_eq!(
+        to_json(&opened),
+        json!({
+            "path": "Ideas/Plan.md",
+            "text": "a\r\nb",
+            "lineEnding": "crlf",
+            "readOnly": null,
+            "unsaved": false,
+            "conflict": false,
+        })
+    );
+
+    let draft = workspace
+        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", false)
+        .expect("draft");
+    assert_eq!(to_json(&draft), json!("draft"));
+    let reopened = workspace
+        .open_note("ideas/plan.md", false)
+        .expect("same note");
+    assert_eq!(reopened.text, "a\r\nb\r\nc");
+    assert!(reopened.unsaved);
+
+    let saved = workspace
+        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", true)
+        .expect("save");
+    assert_eq!(to_json(&saved), json!("saved"));
+    assert_eq!(
+        std::fs::read(root.join("Ideas/Plan.md")).expect("note"),
+        b"a\r\nb\r\nc"
+    );
+    workspace.close_note("Ideas/Plan.md").expect("closed");
+}
+
+#[test]
+fn only_note_paths_inside_the_open_project_can_be_opened() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("secret.txt"), "x").expect("file");
+    std::fs::create_dir_all(root.join("node_modules")).expect("folder");
+    std::fs::write(root.join("node_modules/x.md"), "x").expect("file");
+    std::fs::write(dir.path().join("outside.md"), "x").expect("file");
+
+    for path in [
+        ".liurium/project.db",
+        "secret.txt",
+        "node_modules/x.md",
+        "../outside.md",
+        r"C:\Windows\win.ini",
+    ] {
+        let error = workspace.open_note(path, false).unwrap_err();
+        assert_eq!(error, CommandError::InvalidPath, "{path}");
+    }
+    assert_eq!(
+        workspace.open_note("missing.md", false).unwrap_err(),
+        CommandError::NotFound
+    );
+    assert_eq!(
+        workspace.update_note("other.md", "x", true).unwrap_err(),
+        CommandError::NotFound
+    );
+}
+
+#[test]
+fn without_a_project_no_note_opens() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+
+    assert_eq!(
+        workspace.open_note("a.md", false).unwrap_err(),
+        CommandError::NoProject
+    );
+}
+
+#[test]
+fn a_conflict_waits_for_the_choice_and_keep_both_moves_to_the_copy() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "mine").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    std::fs::write(root.join("Plan.md"), "theirs, longer").expect("outside");
+
+    let state = workspace
+        .update_note("Plan.md", "mine, edited", true)
+        .expect("save");
+    assert_eq!(state, editor::SaveState::Conflict);
+    assert_eq!(
+        workspace.close_note("Plan.md").unwrap_err(),
+        CommandError::Unsaved
+    );
+
+    let opened = workspace
+        .resolve_note_conflict("Plan.md", editor::ConflictChoice::KeepBoth)
+        .expect("keep both");
+    assert_eq!(opened.path, "Plan (conflict).md");
+    assert!(!opened.conflict);
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).expect("note"),
+        "theirs, longer"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan (conflict).md")).expect("copy"),
+        "mine, edited"
+    );
+}
+
+#[test]
+fn opening_another_note_or_project_saves_the_draft_first() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    std::fs::write(garden.root.join("a.md"), "a").expect("note");
+    std::fs::write(garden.root.join("b.md"), "b").expect("note");
+    let workspace = workspace(&app_dir);
+    added(&workspace, &work.root);
+    added(&workspace, &garden.root);
+
+    workspace.open_note("a.md", false).expect("open");
+    workspace
+        .update_note("a.md", "a, draft", false)
+        .expect("draft");
+    workspace.open_note("b.md", false).expect("other note");
+    assert_eq!(
+        std::fs::read_to_string(garden.root.join("a.md")).expect("a"),
+        "a, draft"
+    );
+
+    workspace
+        .update_note("b.md", "b, draft", false)
+        .expect("draft");
+    workspace.open(&work.id).expect("other project");
+    assert_eq!(
+        std::fs::read_to_string(garden.root.join("b.md")).expect("b"),
+        "b, draft"
+    );
+}
+
+#[test]
+fn closing_the_window_saves_the_draft_or_reports_what_is_unsaved() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "mine").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    let editor = workspace.editor();
+    assert_eq!(editor.save_before_close(), editor::CloseCheck::Clear);
+
+    workspace
+        .update_note("Plan.md", "draft", false)
+        .expect("draft");
+    assert_eq!(editor.save_before_close(), editor::CloseCheck::Clear);
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).expect("note"),
+        "draft"
+    );
+
+    workspace
+        .update_note("Plan.md", "second", false)
+        .expect("draft");
+    std::fs::write(root.join("Plan.md"), "changed outside").expect("outside");
+    assert_eq!(
+        editor.save_before_close(),
+        editor::CloseCheck::Unsaved {
+            name: "Plan.md".to_owned(),
+            conflict: true
+        }
+    );
+    assert!(editor.keep_both_before_close());
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan (conflict).md")).expect("copy"),
+        "second"
+    );
+    assert_eq!(editor.save_before_close(), editor::CloseCheck::Clear);
+}
+
+#[test]
+fn note_errors_cross_ipc_as_their_own_kinds() {
+    assert_eq!(
+        to_json(&CommandError::NotUtf8),
+        json!({ "kind": "notUtf8" })
+    );
+    assert_eq!(
+        to_json(&CommandError::Unsaved),
+        json!({ "kind": "unsaved" })
+    );
+}

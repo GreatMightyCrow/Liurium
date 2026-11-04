@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation } from "wouter";
 import styles from "./Sidebar.module.css";
 
 export interface SidebarItem {
@@ -36,7 +36,11 @@ export function Sidebar({ title, items, endItems }: SidebarProps) {
 }
 
 function SidebarLink({ item }: { item: SidebarItem }) {
-  const [isCurrent] = useRoute(item.path);
+  const [location] = useLocation();
+  // Pages below an area, such as an open note, keep the area current.
+  const isCurrent =
+    location === item.path ||
+    (item.path !== "/" && location.startsWith(`${item.path}/`));
   const Icon = item.icon;
   return (
     <li>

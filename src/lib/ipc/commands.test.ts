@@ -1,12 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
+  closeNote,
   getAppDataInfo,
   getAppInfo,
   listNotes,
   openAppDataFolder,
+  openNote,
   pruneBackups,
   resetSyncWarnings,
+  resolveNoteConflict,
+  updateNote,
   updateSettings,
 } from "./commands";
 import { CommandFailure } from "./errors";
@@ -86,4 +90,22 @@ test("a rejection from Tauri itself becomes an internal failure", async () => {
 
   expect((failure as CommandFailure).error).toEqual({ kind: "internal" });
   expect((failure as CommandFailure).reason).toBe(denied);
+});
+
+test("the note commands send the path and their arguments under Rust's names", async () => {
+  invokeMock.mockResolvedValue(undefined);
+
+  await openNote("Ideas/Plan.md");
+  await openNote("Ideas/Plan.md", true);
+  await updateNote("Ideas/Plan.md", "text", false);
+  await resolveNoteConflict("Ideas/Plan.md", "keepBoth");
+  await closeNote("Ideas/Plan.md");
+
+  expect(invokeMock.mock.calls).toEqual([
+    ["open_note", { path: "Ideas/Plan.md", unify: false }],
+    ["open_note", { path: "Ideas/Plan.md", unify: true }],
+    ["update_note", { path: "Ideas/Plan.md", text: "text", save: false }],
+    ["resolve_note_conflict", { path: "Ideas/Plan.md", choice: "keepBoth" }],
+    ["close_note", { path: "Ideas/Plan.md" }],
+  ]);
 });

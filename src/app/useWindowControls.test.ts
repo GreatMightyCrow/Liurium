@@ -31,12 +31,15 @@ test("reads the maximized state on mount and after every resize", async () => {
   });
 });
 
-test("forwards the button actions to the window API", () => {
+test("forwards the button actions to the window API", async () => {
   const { result } = renderHook(() => useWindowControls());
   result.current.minimize();
   result.current.toggleMaximize();
   result.current.close();
   expect(windowIpc.minimizeWindow).toHaveBeenCalledOnce();
   expect(windowIpc.toggleMaximizeWindow).toHaveBeenCalledOnce();
-  expect(windowIpc.closeWindow).toHaveBeenCalledOnce();
+  // Close waits for the open note to reach Rust first (M3-003).
+  await waitFor(() => {
+    expect(windowIpc.closeWindow).toHaveBeenCalledOnce();
+  });
 });
