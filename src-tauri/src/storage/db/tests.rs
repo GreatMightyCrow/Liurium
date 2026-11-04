@@ -4,7 +4,9 @@
 use std::{ffi::OsStr, fs};
 
 use super::*;
-use crate::test_support::{Snapshot, app_data, current, damage, database, project, temp_dir};
+use crate::test_support::{
+    Snapshot, app_data, current, damage, database, liurium_database, project, temp_dir,
+};
 
 const NOTES: &str = "CREATE TABLE notes (body TEXT NOT NULL) STRICT;";
 const TAGS: &str = "CREATE TABLE tags (name TEXT NOT NULL) STRICT;";
@@ -238,7 +240,7 @@ fn a_full_disk_during_a_migration_rolls_back() {
     let pages = number(&conn, "page_count");
     conn.pragma_update(None, "max_page_count", pages)
         .expect("size limit");
-    let error = migrate::migrate(&mut conn, &LARGE_V2, &path, 1).unwrap_err();
+    let error = migrate::migrate(&mut conn, &LARGE_V2, &path, 1, true).unwrap_err();
     assert!(matches!(error, DbError::DiskFull), "{error:?}");
     drop(conn);
 
@@ -430,7 +432,162 @@ fn backup_names_never_reuse_a_file() {
 
 #[test]
 fn each_kind_has_its_own_application_id() {
-    assert_ne!(APP_ID, 0);
-    assert_ne!(PROJECT_ID, 0);
-    assert_ne!(APP_ID, PROJECT_ID);
+    let ids = [APP_ID, PROJECT_ID, CACHE_ID];
+    for (i, id) in ids.iter().enumerate() {
+        assert_ne!(*id, 0);
+        assert!(!ids[i + 1..].contains(id), "{id:#x} used twice");
+    }
+}
+
+/// Writes an unusable cache file at the path.
+type MakeCache = fn(&Path);
+
+const CACHE_PROJECT: &str = "0f6c2a8e-3b1d-4c5e-9a7f-1e2d3c4b5a69";
+
+fn cache_path(app_dir: &Path) -> PathBuf {
+    app_dir.join(CACHE_DIR).join(format!("{CACHE_PROJECT}.db"))
+}
+
+fn cache_row(conn: &Connection) {
+    conn.execute(
+        "INSERT INTO notes (path, size, modified_ns) VALUES ('a.md', 1, 2)",
+        [],
+    )
+    .expect("row");
+}
+
+fn cache_paths(conn: &Connection) -> Vec<String> {
+    column(conn, "SELECT path FROM notes")
+}
+
+#[test]
+fn a_new_cache_is_created_in_the_cache_folder_with_wal() {
+    let dir = temp_dir();
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert!(cache.fresh);
+    assert!(cache_path(dir.path()).is_file());
+    assert_eq!(text(&cache.connection, "journal_mode"), "wal");
+    assert_eq!(
+        number(&cache.connection, "application_id"),
+        i64::from(CACHE_ID)
+    );
+    assert_eq!(tables(&cache.connection), ["notes"]);
+}
+
+#[test]
+fn a_cache_keeps_its_rows_when_opened_again() {
+    let dir = temp_dir();
+    cache_row(
+        &open_cache(dir.path(), CACHE_PROJECT)
+            .expect("cache")
+            .connection,
+    );
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert!(!cache.fresh);
+    assert_eq!(cache_paths(&cache.connection), ["a.md"]);
+}
+
+#[test]
+fn an_unusable_cache_is_deleted_and_built_again_with_nothing_else_touched() {
+    let dir = temp_dir();
+    let path = cache_path(dir.path());
+    let other = dir.path().join(CACHE_DIR).join("other.db");
+    let make: [(&str, MakeCache); 4] = [
+        ("damaged", |path| {
+            cache_row(&liurium_database(path, Kind::Cache, current(Kind::Cache)));
+            damage(path);
+        }),
+        ("not SQLite", |path| {
+            fs::write(path, b"plain text").expect("write")
+        }),
+        ("foreign", |path| {
+            database(path, &V1);
+        }),
+        ("newer", |path| {
+            let conn = liurium_database(path, Kind::Cache, current(Kind::Cache));
+            cache_row(&conn);
+            conn.pragma_update(None, "user_version", 99)
+                .expect("version");
+        }),
+    ];
+    for (case, make) in make {
+        let _ = fs::remove_file(&path);
+        fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+        fs::write(&other, b"not ours").expect("write");
+        make(&path);
+        fs::write(with_suffix(&path, "-journal"), b"stale").expect("write");
+
+        let cache = open_cache(dir.path(), CACHE_PROJECT)
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+
+        assert!(cache.fresh, "{case}");
+        assert!(cache_paths(&cache.connection).is_empty(), "{case}");
+        assert_eq!(number(&cache.connection, "user_version"), 1, "{case}");
+        assert!(!with_suffix(&path, "-journal").exists(), "{case}");
+        assert_eq!(fs::read(&other).expect("other"), b"not ours", "{case}");
+        assert!(
+            backups(&path).is_empty(),
+            "{case}: a cache is never backed up"
+        );
+    }
+}
+
+#[test]
+fn a_cache_folder_that_is_a_link_is_refused_and_its_target_untouched() {
+    let dir = temp_dir();
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("folder");
+    crate::test_support::junction(&dir.path().join(CACHE_DIR), &elsewhere);
+
+    let error = open_cache(dir.path(), CACHE_PROJECT).unwrap_err();
+
+    assert!(matches!(error, DbError::Io(_)), "{error:?}");
+    assert_eq!(fs::read_dir(&elsewhere).expect("folder").count(), 0);
+}
+
+#[test]
+fn a_cache_name_must_be_a_project_id() {
+    let dir = temp_dir();
+    for id in ["", "..", "a/b", r"..\app", "x.db", "CON"] {
+        let error = open_cache(dir.path(), id).unwrap_err();
+        assert!(matches!(error, DbError::Io(_)), "{id:?}: {error:?}");
+    }
+    assert!(!dir.path().join(CACHE_DIR).exists());
+}
+
+#[test]
+#[ignore = "needs the right to create symbolic links; runs in CI"]
+fn a_link_in_place_of_the_cache_is_removed_and_its_target_untouched() {
+    let dir = temp_dir();
+    let target = dir.path().join("target.db");
+    fs::write(&target, b"someone else's").expect("write");
+    fs::create_dir(dir.path().join(CACHE_DIR)).expect("folder");
+    std::os::windows::fs::symlink_file(&target, cache_path(dir.path())).expect("link");
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert!(cache.fresh);
+    assert!(
+        !fs::symlink_metadata(cache_path(dir.path()))
+            .expect("cache")
+            .is_symlink()
+    );
+    assert_eq!(fs::read(&target).expect("target"), b"someone else's");
+}
+
+#[test]
+fn a_migration_without_backup_writes_no_copy() {
+    let dir = temp_dir();
+    let path = dir.path().join("cache.db");
+    v1_with_a_note(&path);
+
+    let mut conn = Connection::open(&path).expect("database");
+    migrate::migrate(&mut conn, &V2, &path, 1, false).expect("migrated");
+
+    assert_eq!(tables(&conn), ["notes", "tags"]);
+    assert!(backups(&path).is_empty());
 }

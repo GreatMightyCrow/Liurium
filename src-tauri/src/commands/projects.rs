@@ -10,13 +10,16 @@ use std::{
 use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
-use super::{CommandError, DataStatus};
+use super::{CommandError, DataStatus, notes::NoteIndex};
 use crate::domain::{
     projects::{self, Project, ProjectCopy, ProjectError},
     settings::StartWith,
     sync::{self, SyncRoot, SyncTool},
 };
-use crate::storage::db::{self, APP_DB, Kind, OpenMode};
+use crate::storage::{
+    db::{self, APP_DB, Kind, OpenMode},
+    fs::ProjectRoot,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -157,6 +160,8 @@ pub struct Workspace {
     copy: Arc<Mutex<Option<ProjectCopy>>>,
     /// The startup setting read at start (M3-009): whether the last project reopens.
     start_with: StartWith,
+    /// The background walk of the open project's notes (M3-002).
+    notes: NoteIndex,
 }
 
 impl Workspace {
@@ -178,6 +183,7 @@ impl Workspace {
             sync_roots: sync_roots.into(),
             copy: Arc::new(Mutex::new(None)),
             start_with,
+            notes: NoteIndex::default(),
         }
     }
 
@@ -191,6 +197,30 @@ impl Workspace {
             Kind::App,
             OpenMode::Existing,
         )?)
+    }
+
+    pub(super) fn note_index(&self) -> &NoteIndex {
+        &self.notes
+    }
+
+    /// Id and folder of the open project, reopening the last one on the first call.
+    pub(super) fn open_root(&self) -> Result<Option<(String, ProjectRoot)>, CommandError> {
+        let app = self.app()?;
+        let mut guard = self.lock()?;
+        let current = self.restored(&mut guard, &app)?;
+        Ok(current
+            .open
+            .as_ref()
+            .map(|project| (project.id.clone(), project.root.clone())))
+    }
+
+    /// Makes a project the open one and starts walking its notes.
+    fn opened(&self, project: Project, info: ProjectInfo) -> Current {
+        if let Ok(dir) = self.app_dir() {
+            self.notes
+                .start(dir.to_path_buf(), project.id.clone(), project.root.clone());
+        }
+        Current::open(project, info)
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Option<Current>>, CommandError> {
@@ -228,7 +258,7 @@ impl Workspace {
             Err(error) => return Err(error.into()),
         };
         let info = self.info(&app, &project);
-        *self.lock()? = Some(Current::open(project, info.clone()));
+        *self.lock()? = Some(self.opened(project, info.clone()));
         Ok(AddOutcome::Added { project: info })
     }
 
@@ -240,7 +270,7 @@ impl Workspace {
         let mut guard = self.lock()?;
         let project = projects::separate(&app, &copy)?;
         let info = self.info(&app, &project);
-        *guard = Some(Current::open(project, info.clone()));
+        *guard = Some(self.opened(project, info.clone()));
         Ok(info)
     }
 
@@ -279,7 +309,7 @@ impl Workspace {
         let mut guard = self.lock()?;
         let project = projects::open(&app, id)?;
         let info = self.info(&app, &project);
-        *guard = Some(Current::open(project, info.clone()));
+        *guard = Some(self.opened(project, info.clone()));
         Ok(info)
     }
 
@@ -309,6 +339,7 @@ impl Workspace {
         projects::remove(&app, id)?;
         if current.id() == Some(id) {
             *current = Current::none();
+            self.notes.clear();
         }
         Ok(())
     }
@@ -319,7 +350,7 @@ impl Workspace {
         let mut guard = self.lock()?;
         let project = projects::locate(&app, id, folder)?;
         let info = self.info(&app, &project);
-        *guard = Some(Current::open(project, info.clone()));
+        *guard = Some(self.opened(project, info.clone()));
         Ok(info)
     }
 
@@ -357,7 +388,7 @@ impl Workspace {
         Ok(match projects::open(app, &id) {
             Ok(project) => {
                 let info = self.info(app, &project);
-                Current::open(project, info)
+                self.opened(project, info)
             }
             Err(error) => Current::shown(CurrentProject::Unavailable {
                 id,

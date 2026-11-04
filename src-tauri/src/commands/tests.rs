@@ -985,3 +985,137 @@ fn explorer_is_started_by_its_full_path_with_the_folder_quoted() {
     );
     assert_eq!(super::data::quoted(Path::new("C:\\a\"b")), None);
 }
+
+fn note_paths(view: &notes::NotesView) -> Vec<String> {
+    match view {
+        notes::NotesView::Ready { notes, .. } => {
+            notes.iter().map(|note| note.path.clone()).collect()
+        }
+        notes::NotesView::NoProject => panic!("no project"),
+    }
+}
+
+fn write_note(root: &Path, rel: &str) {
+    let path = root.join(rel);
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("folders");
+    std::fs::write(path, rel).expect("note");
+}
+
+#[test]
+fn without_an_open_project_the_notes_say_so() {
+    let dir = temp_dir();
+
+    let view = workspace(&dir.path().join("app")).notes().expect("notes");
+
+    assert_eq!(to_json(&view), json!({ "state": "noProject" }));
+}
+
+#[test]
+fn the_open_projects_notes_are_listed_with_size_time_and_skips() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    write_note(&garden.root, "Ideas/Plan.md");
+    write_note(&garden.root, "README.md");
+    write_note(&garden.root, "node_modules/pkg/README.md");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &garden.root);
+
+    let view = workspace.notes().expect("notes");
+
+    let modified = std::fs::metadata(garden.root.join("README.md"))
+        .and_then(|metadata| metadata.modified())
+        .expect("time")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after 1970")
+        .as_millis();
+    let json = to_json(&view);
+    assert_eq!(json["state"], "ready");
+    assert_eq!(
+        json["notes"][1],
+        json!({ "path": "README.md", "size": 9, "modifiedMs": modified as u64 })
+    );
+    assert_eq!(note_paths(&view), ["Ideas/Plan.md", "README.md"]);
+    assert_eq!(
+        json["skipped"],
+        json!({
+            "linksOutside": 0,
+            "brokenLinks": 0,
+            "badNames": 0,
+            "unreadable": 0,
+            "tooDeep": 0,
+            "depthLimit": 64,
+        })
+    );
+    assert_eq!(json["truncated"], false);
+    assert_eq!(json["noteLimit"], 100_000);
+}
+
+#[test]
+fn the_notes_follow_the_open_project() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    write_note(&garden.root, "garden.md");
+    write_note(&work.root, "work.md");
+    let workspace = workspace(&app_dir);
+    added(&workspace, &garden.root);
+    added(&workspace, &work.root);
+    assert_eq!(note_paths(&workspace.notes().expect("notes")), ["work.md"]);
+
+    workspace.open(&garden.id).expect("opened");
+    assert_eq!(
+        note_paths(&workspace.notes().expect("notes")),
+        ["garden.md"]
+    );
+
+    workspace.remove(&garden.id).expect("removed");
+    assert_eq!(
+        workspace.notes().expect("notes"),
+        notes::NotesView::NoProject
+    );
+}
+
+#[test]
+fn after_a_restart_the_reopened_projects_notes_are_listed_from_its_cache() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    write_note(&garden.root, "a.md");
+    let first = workspace(&app_dir);
+    added(&first, &garden.root);
+    first.notes().expect("notes");
+    drop(first);
+    write_note(&garden.root, "b.md");
+
+    let view = workspace(&app_dir).notes().expect("notes");
+
+    assert_eq!(note_paths(&view), ["a.md", "b.md"]);
+    assert!(
+        app_dir
+            .join("cache")
+            .join(format!("{}.db", garden.id))
+            .is_file()
+    );
+}
+
+#[test]
+fn only_the_newest_walk_counts() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    std::fs::create_dir(&app_dir).expect("app");
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    let work = project(dir.path(), "Work", current(Kind::Project));
+    write_note(&work.root, "work.md");
+    let root = |folder: &Path| crate::storage::fs::ProjectRoot::open(folder).expect("root");
+    let index = notes::NoteIndex::default();
+
+    index.start(app_dir.clone(), garden.id.clone(), root(&garden.root));
+    index.start(app_dir.clone(), work.id.clone(), root(&work.root));
+
+    assert_eq!(index.wait(&garden.id), None);
+    let view = index.wait(&work.id).expect("work's walk").expect("view");
+    assert_eq!(note_paths(&view), ["work.md"]);
+    index.clear();
+    assert_eq!(index.wait(&work.id), None);
+}

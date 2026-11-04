@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 20] = [
+const REVIEWED_PERMISSIONS: [&str; 21] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -39,6 +39,8 @@ const REVIEWED_PERMISSIONS: [&str; 20] = [
     "allow-open-app-data-folder",
     "allow-prune-backups",
     "allow-reset-sync-warnings",
+    // Notes (M3-002): no arguments; paths below the open project only, no content.
+    "allow-list-notes",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

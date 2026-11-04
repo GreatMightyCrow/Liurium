@@ -4,11 +4,11 @@ import { Router } from "wouter";
 import { navigate, useHashLocation } from "wouter/use-hash-location";
 import { AppRoutes } from "./AppRoutes";
 
-// The Notes page breaks while rendering; every other page shows its title.
+// The Search page breaks while rendering; every other page shows its title.
 vi.mock("./PlaceholderPage", () => ({
   PlaceholderPage: function FakePage({ title }: { title: string }) {
-    if (title === "Notes") {
-      throw new Error("broken notes page");
+    if (title === "Search") {
+      throw new Error("broken search page");
     }
     return <h1>{title}</h1>;
   },
@@ -31,7 +31,7 @@ test("a page that fails to render leaves the other pages working", () => {
     </Router>,
   );
   act(() => {
-    navigate("/notes");
+    navigate("/search");
   });
   expect(screen.getByRole("alert").textContent).toContain(
     "This page could not be shown",

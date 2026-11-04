@@ -97,6 +97,8 @@
 
     /* Lines and focus */
     --border-width: 1px;
+    /* A line that marks a block, such as the notices on the Notes page */
+    --border-width-mark: 2px;
     --focus-ring-width: 2px;
     --focus-ring-offset: 2px;
 

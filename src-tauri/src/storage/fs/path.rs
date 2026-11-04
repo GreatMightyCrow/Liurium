@@ -85,6 +85,23 @@ impl RelPath {
         Ok(Self { parts })
     }
 
+    /// One name as found in a folder; refused unless it is exactly one acceptable
+    /// part (no separators, `.`, or `..`).
+    pub fn name(name: &str) -> Result<Self, FsError> {
+        match Self::check(name) {
+            Ok(path) if path.parts.len() == 1 && path.parts[0] == name => Ok(path),
+            Ok(_) => Err(FsError::InvalidPath(PathRule::Character)),
+            Err(rule) => Err(FsError::InvalidPath(rule)),
+        }
+    }
+
+    /// This path with one more name below it, checked like `name`.
+    pub fn child(&self, name: &str) -> Result<Self, FsError> {
+        let mut path = self.clone();
+        path.parts.extend(Self::name(name)?.parts);
+        Ok(path)
+    }
+
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         self.parts.iter().map(String::as_str)
     }
@@ -259,6 +276,19 @@ mod tests {
         assert_eq!(rule(&"a".repeat(256)), PathRule::TooLong);
         // 128 characters outside the BMP take two UTF-16 units each.
         assert_eq!(rule(&"😀".repeat(128)), PathRule::TooLong);
+    }
+
+    #[test]
+    fn a_child_takes_exactly_one_acceptable_name() {
+        let notes = RelPath::name("notes").expect("name");
+        assert_eq!(
+            notes.child("idea.md").expect("child").to_string(),
+            "notes/idea.md"
+        );
+        for name in ["", ".", "..", "a/b", r"a\b", "CON", "note.", "a:b", "a?b"] {
+            assert!(RelPath::name(name).is_err(), "{name:?}");
+            assert!(notes.child(name).is_err(), "{name:?}");
+        }
     }
 
     #[test]

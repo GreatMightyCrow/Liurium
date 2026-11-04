@@ -18,6 +18,7 @@ const COMMANDS: &[&str] = &[
     "open_app_data_folder",
     "prune_backups",
     "reset_sync_warnings",
+    "list_notes",
 ];
 
 fn main() {

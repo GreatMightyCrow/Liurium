@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import {
   getAppDataInfo,
   getAppInfo,
+  listNotes,
   openAppDataFolder,
   pruneBackups,
   resetSyncWarnings,
@@ -51,8 +52,9 @@ test.each([
   [openAppDataFolder, "open_app_data_folder"],
   [pruneBackups, "prune_backups"],
   [resetSyncWarnings, "reset_sync_warnings"],
+  [listNotes, "list_notes"],
 ] as const)(
-  "the app data commands send no arguments",
+  "the app data and notes commands send no arguments",
   async (command, name) => {
     invokeMock.mockResolvedValue(undefined);
 

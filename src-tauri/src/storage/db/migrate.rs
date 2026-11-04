@@ -33,20 +33,21 @@ pub fn user_version(conn: &Connection) -> Result<u32, DbError> {
     u32::try_from(version).map_err(|_| DbError::NotLiurium)
 }
 
-/// Brings the database from version `found` to the schema's version. An existing
-/// database is copied to `backups/` first. All pending migrations run in one
+/// Brings the database from version `found` to the schema's version. With
+/// `backup_first`, an existing database is copied to `backups/` first. All pending migrations run in one
 /// transaction, so the file ends either fully upgraded or unchanged.
 pub fn migrate(
     conn: &mut Connection,
     schema: &Schema,
     path: &Path,
     found: u32,
+    backup_first: bool,
 ) -> Result<(), DbError> {
     let supported = schema.version();
     if found == supported {
         return Ok(());
     }
-    if found > 0 {
+    if found > 0 && backup_first {
         backup(conn, path, found)?;
     }
 

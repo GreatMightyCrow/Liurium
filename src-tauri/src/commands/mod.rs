@@ -6,6 +6,7 @@
 mod bindings;
 pub mod data;
 mod error;
+pub mod notes;
 pub mod projects;
 pub mod settings;
 #[cfg(test)]

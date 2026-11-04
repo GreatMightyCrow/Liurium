@@ -3,6 +3,7 @@ import type { AddOutcome } from "./bindings/AddOutcome";
 import type { AppDataInfo } from "./bindings/AppDataInfo";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
+import type { NotesView } from "./bindings/NotesView";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
 import type { ProjectInfo } from "./bindings/ProjectInfo";
 import type { ProjectStatus } from "./bindings/ProjectStatus";
@@ -15,6 +16,7 @@ export type {
   AppDataInfo,
   AppInfo,
   CurrentProject,
+  NotesView,
   ProjectEntry,
   ProjectInfo,
   ProjectStatus,
@@ -24,7 +26,9 @@ export type {
 export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
+export type { NoteEntry } from "./bindings/NoteEntry";
 export type { SettingKey } from "./bindings/SettingKey";
+export type { SkippedNotes } from "./bindings/SkippedNotes";
 export type { StartWith } from "./bindings/StartWith";
 export type { SyncTool } from "./bindings/SyncTool";
 export type { ThemeChoice } from "./bindings/ThemeChoice";
@@ -111,6 +115,11 @@ export function pruneBackups(): Promise<AppDataInfo> {
 /** Every project shows its sync-folder warning once more. */
 export function resetSyncWarnings(): Promise<AppDataInfo> {
   return call("reset_sync_warnings");
+}
+
+/** The notes of the open project, once Rust has walked its folder. No content. */
+export function listNotes(): Promise<NotesView> {
+  return call("list_notes");
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

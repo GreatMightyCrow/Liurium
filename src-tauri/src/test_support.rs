@@ -198,7 +198,11 @@ impl TreeSnapshot {
             for entry in fs::read_dir(&dir).expect("folder") {
                 let path = entry.expect("entry").path();
                 let rel = path.strip_prefix(root).expect("below the root").to_owned();
-                if fs::symlink_metadata(&path).expect("metadata").is_dir() {
+                let metadata = fs::symlink_metadata(&path).expect("metadata");
+                if metadata.is_symlink() {
+                    // Junctions and links: listed, never read or entered.
+                    entries.insert(rel, None);
+                } else if metadata.is_dir() {
                     entries.insert(rel, None);
                     pending.push(path);
                 } else {

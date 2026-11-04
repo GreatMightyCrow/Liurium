@@ -39,7 +39,8 @@ pub fn run() {
             commands::data::app_data_info,
             commands::data::open_app_data_folder,
             commands::data::prune_backups,
-            commands::data::reset_sync_warnings
+            commands::data::reset_sync_warnings,
+            commands::notes::list_notes
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

@@ -9,6 +9,9 @@ mod error;
 mod path;
 #[cfg(test)]
 mod tests;
+mod walk;
+#[cfg(test)]
+mod walk_tests;
 
 use std::{
     ffi::OsStr,
@@ -21,6 +24,7 @@ use std::{
 
 pub use error::FsError;
 pub use path::{PathRule, RelPath};
+pub use walk::{FoundNote, Limits, NOTE_ENDINGS, SKIPPED_FOLDERS, Skipped, Walk};
 
 /// Liurium's own folder in every project (ADR-0016).
 pub const LIURIUM_DIR: &str = ".liurium";

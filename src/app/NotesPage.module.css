@@ -1,0 +1,102 @@
+@layer components {
+  .content {
+    display: grid;
+    gap: var(--space-5);
+    max-width: var(--size-page-max);
+    padding: var(--space-5);
+  }
+
+  .summary {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  /* What the walk left out: quiet, but not easy to miss. */
+  .notices {
+    display: grid;
+    gap: var(--space-1);
+    padding-inline-start: var(--space-3);
+    border-inline-start: var(--border-width-mark) solid var(--color-warning);
+  }
+
+  .notice {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .folder {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  /* Folders read as paths, so they use the code face. */
+  .folderName {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
+  }
+
+  /* Notes at the top of the project: a label, not a path. */
+  .topName {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    border-top: var(--border-width) solid var(--color-border);
+    list-style: none;
+  }
+
+  /* Icon, name, and time on one line; when the line gets narrow (small window,
+     high zoom), the time moves below instead of squeezing the name. */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    align-items: center;
+    min-height: var(--size-control-md);
+    padding-inline: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .name {
+    flex: 1 1 var(--size-project-name);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .when {
+    margin-inline-start: auto;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+
+  .more {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  @media (forced-colors: active) {
+    .notices {
+      border-inline-start-color: CanvasText;
+    }
+  }
+}

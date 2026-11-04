@@ -23,6 +23,7 @@
     "allow-app-data-info",
     "allow-open-app-data-folder",
     "allow-prune-backups",
-    "allow-reset-sync-warnings"
+    "allow-reset-sync-warnings",
+    "allow-list-notes"
   ]
 }
