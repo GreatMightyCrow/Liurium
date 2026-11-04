@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
+  type AddOutcome,
   addProject,
   type CurrentProject,
   getCurrentProject,
@@ -17,6 +18,7 @@ import {
   type ProjectInfo,
   removeProject,
   renameProject,
+  separateProjectCopy,
 } from "../lib/ipc/commands";
 import { CommandFailure } from "../lib/ipc/errors";
 import { ProjectsPage } from "./ProjectsPage";
@@ -29,6 +31,7 @@ vi.mock("../lib/ipc/commands", () => ({
   renameProject: vi.fn(),
   removeProject: vi.fn(),
   locateProject: vi.fn(),
+  separateProjectCopy: vi.fn(),
 }));
 
 const mocks = {
@@ -39,6 +42,7 @@ const mocks = {
   rename: vi.mocked(renameProject),
   remove: vi.mocked(removeProject),
   locate: vi.mocked(locateProject),
+  separate: vi.mocked(separateProjectCopy),
 };
 
 const garden: ProjectInfo = {
@@ -439,7 +443,7 @@ test("a failed load shows an error state", async () => {
 
 test("adding a folder shows it in the list", async () => {
   showWith([], { state: "none" });
-  let finish: (project: ProjectInfo | null) => void = () => undefined;
+  let finish: (outcome: AddOutcome | null) => void = () => undefined;
   mocks.add.mockReturnValue(
     new Promise((resolve) => {
       finish = resolve;
@@ -452,7 +456,7 @@ test("adding a folder shows it in the list", async () => {
   expect(busy.hasAttribute("disabled")).toBe(true);
   mocks.list.mockResolvedValue([gardenEntry]);
   mocks.current.mockResolvedValue({ state: "open", project: garden });
-  finish(garden);
+  finish({ state: "added", project: garden });
 
   expect(await screen.findByRole("heading", { name: "Garden" })).toBeDefined();
   expect(addButton().hasAttribute("disabled")).toBe(false);
@@ -486,4 +490,93 @@ test("a folder that cannot be added says why and keeps the list", async () => {
     "The folder could not be added. This file or folder is write-protected. Nothing was changed.",
   );
   expect(screen.getByRole("heading", { name: "Garden" })).toBeDefined();
+});
+
+const gardenCopy: AddOutcome = {
+  state: "copy",
+  folder: "D:\\Notes\\Garden - Copy",
+  originalName: "Garden",
+  originalFolder: garden.folder,
+};
+
+async function addCopy(): Promise<HTMLElement> {
+  showAll();
+  mocks.add.mockResolvedValue(gardenCopy);
+  await screen.findByRole("heading", { name: "Garden" });
+  fireEvent.click(addButton());
+  return screen.findByRole("dialog", {
+    name: "This folder looks like a copy of “Garden”",
+  });
+}
+
+test("adding a copy asks first and names both folders", async () => {
+  const dialog = await addCopy();
+
+  expect(dialog.textContent).toContain("Both folders hold the same project.");
+  expect(dialog.textContent).toContain("Nothing in the original changes.");
+  const folders = within(dialog)
+    .getAllByRole("definition")
+    .map((folder) => folder.textContent);
+  expect(folders).toEqual(["D:\\Notes\\Garden - Copy", garden.folder]);
+  expect(mocks.separate).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("cancelling the copy question sends nothing", async () => {
+  const dialog = await addCopy();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(mocks.separate).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(addButton());
+});
+
+test("making the copy separate shows it in the new list", async () => {
+  const dialog = await addCopy();
+  const copy: ProjectInfo = {
+    ...garden,
+    id: "00000000-0000-4000-8000-000000000009",
+    name: "Garden - Copy",
+    folder: "D:\\Notes\\Garden - Copy",
+  };
+  mocks.separate.mockResolvedValue(copy);
+  mocks.list.mockResolvedValue([
+    { ...gardenEntry, ...copy, status: "open" },
+    { ...gardenEntry, status: "available" },
+  ]);
+  mocks.current.mockResolvedValue({ state: "open", project: copy });
+
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Make separate project" }),
+  );
+
+  expect(
+    await screen.findByRole("heading", { name: "Garden - Copy" }),
+  ).toBeDefined();
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(mocks.separate).toHaveBeenCalledOnce();
+});
+
+test("a copy that cannot be made separate says why", async () => {
+  const dialog = await addCopy();
+  mocks.separate.mockRejectedValue(
+    new CommandFailure("separate_project_copy", { kind: "readOnly" }),
+  );
+
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Make separate project" }),
+  );
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe(
+    "The copy could not be made a separate project. This file or folder is write-protected. Nothing was changed.",
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });

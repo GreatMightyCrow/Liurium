@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import {
+  type AddOutcome,
   addProject,
   type CurrentProject,
   getCurrentProject,
@@ -19,6 +20,7 @@ import {
   type ProjectEntry,
   removeProject,
   renameProject,
+  separateProjectCopy,
   type SyncTool,
 } from "../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../lib/ipc/errors";
@@ -43,15 +45,20 @@ interface Problem {
   text: string;
 }
 
+/** A folder that holds the same project as a listed one (M2-011). */
+type FoundCopy = Extract<AddOutcome, { state: "copy" }>;
+
+type Question =
+  | { action: "rename" | "remove"; project: ProjectEntry }
+  | { action: "copy"; copy: FoundCopy };
+
 /** The dialog stays mounted after it closes, so Base UI moves focus only once the
  *  page shows the new list (the button for `finalFocus` may be a new one). */
-interface Asking {
-  action: "rename" | "remove";
-  project: ProjectEntry;
+type Asking = Question & {
   open: boolean;
   /** New for each question, so a dialog starts fresh. */
   key: number;
-}
+};
 
 function errorOf(reason: unknown): CommandError {
   return reason instanceof CommandFailure ? reason.error : { kind: "internal" };
@@ -77,9 +84,9 @@ export function ProjectsPage() {
   const addRef = useRef<HTMLButtonElement>(null);
   const busy = working !== null;
 
-  const ask = (action: Asking["action"], project: ProjectEntry) => {
+  const ask = (question: Question) => {
     asked.current += 1;
-    setAsking({ action, project, open: true, key: asked.current });
+    setAsking({ ...question, open: true, key: asked.current });
   };
   const closeDialog = () => {
     setAsking((last) => (last === null ? null : { ...last, open: false }));
@@ -108,11 +115,12 @@ export function ProjectsPage() {
 
   // Runs one action at a time, then shows the list as Rust now has it. A dialog
   // closes only together with the new list, when the button that takes focus
-  // back is enabled again.
+  // back is enabled again; `then` may ask the next question after that.
   function run(
     action: () => Promise<unknown>,
     onError: (reason: unknown) => void,
     kind: "add" | "other" = "other",
+    then?: () => void,
   ) {
     setWorking(kind);
     setProblem(null);
@@ -123,17 +131,37 @@ export function ProjectsPage() {
         setLoaded(next);
         setWorking(null);
         closeDialog();
+        then?.();
       });
   }
 
   const add = () => {
+    let copy: FoundCopy | null = null;
     run(
-      addProject,
+      async () => {
+        const outcome = await addProject();
+        if (outcome?.state === "copy") {
+          copy = outcome;
+        }
+      },
       (reason) => {
         setProblem(failed(null, "The folder could not be added.", reason));
       },
       "add",
+      () => {
+        if (copy !== null) {
+          ask({ action: "copy", copy });
+        }
+      },
     );
+  };
+
+  const separate = () => {
+    run(separateProjectCopy, (reason) => {
+      setProblem(
+        failed(null, "The copy could not be made a separate project.", reason),
+      );
+    });
   };
 
   const open = (project: ProjectEntry) => {
@@ -203,10 +231,10 @@ export function ProjectsPage() {
             open,
             locate,
             rename: (project) => {
-              ask("rename", project);
+              ask({ action: "rename", project });
             },
             remove: (project) => {
-              ask("remove", project);
+              ask({ action: "remove", project });
             },
           }}
         />
@@ -234,6 +262,17 @@ export function ProjectsPage() {
           finalFocus={addRef}
           onClose={closeDialog}
           onConfirm={remove}
+        />
+      )}
+      {asking?.action === "copy" && (
+        <CopyDialog
+          key={asking.key}
+          copy={asking.copy}
+          open={asking.open}
+          busy={busy}
+          finalFocus={addRef}
+          onClose={closeDialog}
+          onConfirm={separate}
         />
       )}
     </>
@@ -717,5 +756,61 @@ function RemoveDialog({
         </>
       }
     />
+  );
+}
+
+interface CopyDialogProps {
+  copy: FoundCopy;
+  open: boolean;
+  busy: boolean;
+  finalFocus: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+// Asked after adding a folder that holds the same project as a listed folder
+// (M2-011). Cancel sends nothing; the folder stays as it is.
+function CopyDialog({
+  copy,
+  open,
+  busy,
+  finalFocus,
+  onClose,
+  onConfirm,
+}: CopyDialogProps) {
+  return (
+    <Dialog
+      open={open}
+      title={`This folder looks like a copy of “${copy.originalName}”`}
+      description="Both folders hold the same project. To use them side by side, make this folder a separate project: it gets its own identity and the name of its folder. Nothing in the original changes."
+      finalFocus={finalFocus}
+      onOpenChange={(next) => {
+        if (!next) {
+          onClose();
+        }
+      }}
+      actions={
+        <>
+          <DialogClose>Cancel</DialogClose>
+          <Button variant="primary" disabled={busy} onClick={onConfirm}>
+            Make separate project
+          </Button>
+        </>
+      }
+    >
+      <dl className={styles.copyFolders}>
+        <dt>This folder</dt>
+        <dd>
+          <FolderPath folder={copy.folder} className={styles.copyPath} />
+        </dd>
+        <dt>Original</dt>
+        <dd>
+          <FolderPath
+            folder={copy.originalFolder}
+            className={styles.copyPath}
+          />
+        </dd>
+      </dl>
+    </Dialog>
   );
 }

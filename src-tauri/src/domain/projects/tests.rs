@@ -5,7 +5,8 @@ use rusqlite::Connection;
 use super::*;
 use crate::storage::{db::DbError, fs::FsError};
 use crate::test_support::{
-    Snapshot, TreeSnapshot, current, deny_writes, junction, project, read_only, temp_dir,
+    ProjectFixture, Snapshot, TreeSnapshot, current, deny_writes, junction, project, read_only,
+    temp_dir,
 };
 
 /// A fresh `app.db` in its own temp folder.
@@ -306,19 +307,134 @@ fn a_moved_project_gets_its_new_path() {
     assert_eq!(registered(&app), [(id, moved.root.display())]);
 }
 
-#[test]
-fn a_copied_project_is_refused() {
-    let dir = temp_dir();
-    let app = app(dir.path());
-    let fixture = project(dir.path(), "Original", current(Kind::Project));
-    add(&app, &fixture.root).expect("added");
-    let copy = dir.path().join("Copy");
+/// A registered project "Original" and a folder "Copy" with a copy of its `project.db`.
+fn original_and_copy(dir: &Path, app: &Connection) -> (ProjectFixture, PathBuf) {
+    let fixture = project(dir, "Original", current(Kind::Project));
+    add(app, &fixture.root).expect("added");
+    let copy = dir.join("Copy");
     fs::create_dir_all(copy.join(LIURIUM_DIR)).expect("folders");
     fs::copy(fixture.database(), copy.join(LIURIUM_DIR).join(PROJECT_DB)).expect("copy");
+    fs::write(copy.join("notes.md"), "# Notes\n").expect("note");
+    (fixture, copy)
+}
 
-    let error = add(&app, &copy).unwrap_err();
+/// What adding the copy reports.
+fn asked_about(app: &Connection, copy: &Path) -> ProjectCopy {
+    match add(app, copy).unwrap_err() {
+        ProjectError::Duplicate(copy) => *copy,
+        error => panic!("{error:?}"),
+    }
+}
 
-    assert!(matches!(error, ProjectError::Duplicate), "{error:?}");
+#[test]
+fn adding_a_copy_asks_and_writes_nothing() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let (fixture, copy) = original_and_copy(dir.path(), &app);
+    let original_before = TreeSnapshot::of(&fixture.root);
+    let copy_before = TreeSnapshot::of(&copy);
+
+    let asked = asked_about(&app, &copy);
+
+    assert_eq!(asked.id, fixture.id);
+    assert!(asked.display.ends_with(r"\Copy"), "{}", asked.display);
+    assert!(storage_fs::same_path(&asked.folder, &copy).unwrap());
+    assert_eq!(asked.original_name, "Original");
+    assert_eq!(
+        (asked.id.clone(), asked.original_folder.clone()),
+        registered(&app)[0]
+    );
+    original_before.assert_unchanged(&fixture.root);
+    copy_before.assert_unchanged(&copy);
+    assert_eq!(registered(&app).len(), 1);
+}
+
+#[test]
+fn a_separated_copy_gets_a_new_id_and_both_projects_open() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let (fixture, copy) = original_and_copy(dir.path(), &app);
+    let original_before = TreeSnapshot::of(&fixture.root);
+    let asked = asked_about(&app, &copy);
+
+    let separated = separate(&app, &asked).expect("separated");
+
+    assert!(is_project_id(&separated.id), "{}", separated.id);
+    assert_ne!(separated.id, fixture.id);
+    assert_eq!(separated.name, "Copy");
+    drop(separated);
+    original_before.assert_unchanged(&fixture.root);
+    assert_eq!(name_in(&copy.join(LIURIUM_DIR).join(PROJECT_DB)), "Copy");
+    assert_eq!(
+        fs::read_to_string(copy.join("notes.md")).unwrap(),
+        "# Notes\n"
+    );
+    assert_eq!(registered(&app).len(), 2);
+    let entries = list(&app).expect("list");
+    let new_id = entries
+        .iter()
+        .find(|entry| entry.name == "Copy")
+        .expect("listed")
+        .id
+        .clone();
+    assert_eq!(open(&app, &fixture.id).expect("original").name, "Original");
+    let reopened = open(&app, &new_id).expect("copy");
+    assert!(storage_fs::same_path(reopened.root.path(), &copy).unwrap());
+    assert!(entries.iter().all(|entry| entry.present));
+}
+
+#[test]
+fn a_copy_that_changed_after_the_question_is_left_alone() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let (_fixture, copy) = original_and_copy(dir.path(), &app);
+    let asked = asked_about(&app, &copy);
+    let other = project(dir.path(), "Other", current(Kind::Project));
+    let database = copy.join(LIURIUM_DIR).join(PROJECT_DB);
+    fs::copy(other.database(), &database).expect("replaced");
+    let before = TreeSnapshot::of(&copy);
+
+    let error = separate(&app, &asked).unwrap_err();
+
+    assert!(matches!(error, ProjectError::Changed), "{error:?}");
+    before.assert_unchanged(&copy);
+    assert_eq!(registered(&app).len(), 1);
+}
+
+#[test]
+fn a_write_protected_copy_is_not_separated() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let (_fixture, copy) = original_and_copy(dir.path(), &app);
+    let database = copy.join(LIURIUM_DIR).join(PROJECT_DB);
+    read_only(&database);
+    let asked = asked_about(&app, &copy);
+    let before = TreeSnapshot::of(&copy);
+
+    let error = separate(&app, &asked).unwrap_err();
+
+    assert!(
+        matches!(error, ProjectError::Db(DbError::ReadOnly)),
+        "{error:?}"
+    );
+    before.assert_unchanged(&copy);
+    assert_eq!(registered(&app).len(), 1);
+}
+
+#[test]
+fn a_copy_whose_folder_is_gone_is_reported() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let (_fixture, copy) = original_and_copy(dir.path(), &app);
+    let asked = asked_about(&app, &copy);
+    fs::remove_dir_all(&copy).expect("removed");
+
+    let error = separate(&app, &asked).unwrap_err();
+
+    assert!(
+        matches!(error, ProjectError::Fs(FsError::NotFound)),
+        "{error:?}"
+    );
     assert_eq!(registered(&app).len(), 1);
 }
 
@@ -668,7 +784,7 @@ fn locating_a_copy_while_the_original_is_present_is_refused() {
 
     let error = locate(&app, &fixture.id, &copy).unwrap_err();
 
-    assert!(matches!(error, ProjectError::Duplicate), "{error:?}");
+    assert!(matches!(error, ProjectError::Duplicate(_)), "{error:?}");
 }
 
 #[test]

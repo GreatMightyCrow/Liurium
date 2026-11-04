@@ -81,6 +81,63 @@ pub fn find(app: &Connection, id: &str) -> Result<Project, ProjectError> {
     Ok(project)
 }
 
+/// A folder that holds the same project as a registered folder that still holds it:
+/// one of them was copied (ADR-0016). Found when a folder is added; nothing is written
+/// until the user decides (M2-011).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectCopy {
+    /// The folder that was added.
+    pub folder: PathBuf,
+    /// The same folder, as Windows shows it.
+    pub display: String,
+    /// The id the copy shares with the original.
+    pub id: String,
+    /// The original's name and folder, as the registry has them.
+    pub original_name: String,
+    pub original_folder: String,
+}
+
+/// Gives a copied project folder its own identity, once the user has agreed (M2-011):
+/// a new id and the folder's name, in one transaction in the copy's `project.db`. The
+/// copy must still hold the id it was asked about. The original is not touched.
+pub fn separate(app: &Connection, copy: &ProjectCopy) -> Result<Project, ProjectError> {
+    let root = ProjectRoot::open(&copy.folder)?;
+    if !root.suitable() {
+        return Err(ProjectError::Unsuitable);
+    }
+    let mut project = load(root)?;
+    if project.id != copy.id {
+        return Err(ProjectError::Changed);
+    }
+    if project.read_only {
+        return Err(DbError::ReadOnly.into());
+    }
+    let id = new_id(&project.connection)?;
+    let name = default_name(&project.root);
+    let transaction = project.connection.transaction()?;
+    let changed = transaction.execute(
+        "UPDATE meta SET value = ?1 WHERE key = 'id' AND value = ?2",
+        params![id, copy.id],
+    )?;
+    if changed != 1 {
+        // Dropping the transaction rolls it back.
+        return Err(ProjectError::Changed);
+    }
+    transaction.execute(
+        "INSERT INTO meta (key, value) VALUES ('name', ?1)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        [&name],
+    )?;
+    transaction.commit()?;
+    project.id = id;
+    project.name = name;
+    // If the registry write fails now, the copy is a new project that is not listed
+    // yet; adding it again lists it.
+    register(app, &project)?;
+    opened(app, &project)?;
+    Ok(project)
+}
+
 /// A registry entry as the project list shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -306,18 +363,24 @@ impl Drop for Created {
 /// Records where the project is. A moved project (old folder gone) gets its new
 /// path; a project still present in another folder is a copy and is refused.
 fn register(app: &Connection, project: &Project) -> Result<(), ProjectError> {
-    let known: Option<String> = app
+    let known: Option<(String, String)> = app
         .query_row(
-            "SELECT path FROM projects WHERE id = ?1",
+            "SELECT path, name FROM projects WHERE id = ?1",
             [&project.id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
-    if let Some(old) = known {
-        let old = Path::new(&old);
-        let same = storage_fs::same_path(old, project.root.path()).unwrap_or(false);
-        if !same && old.join(LIURIUM_DIR).join(PROJECT_DB).try_exists()? {
-            return Err(ProjectError::Duplicate);
+    if let Some((old, name)) = known {
+        let path = Path::new(&old);
+        let same = storage_fs::same_path(path, project.root.path()).unwrap_or(false);
+        if !same && path.join(LIURIUM_DIR).join(PROJECT_DB).try_exists()? {
+            return Err(ProjectError::Duplicate(Box::new(ProjectCopy {
+                folder: project.root.path().to_owned(),
+                display: project.root.display(),
+                id: project.id.clone(),
+                original_name: name,
+                original_folder: old,
+            })));
         }
     }
     app.execute(

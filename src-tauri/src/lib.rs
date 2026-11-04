@@ -32,6 +32,7 @@ pub fn run() {
             commands::projects::rename_project,
             commands::projects::remove_project,
             commands::projects::locate_project,
+            commands::projects::separate_project_copy,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::restart_app

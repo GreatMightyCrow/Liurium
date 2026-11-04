@@ -10,6 +10,7 @@ const COMMANDS: &[&str] = &[
     "rename_project",
     "remove_project",
     "locate_project",
+    "separate_project_copy",
     "get_settings",
     "update_settings",
     "restart_app",

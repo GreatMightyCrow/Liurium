@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 15] = [
+const REVIEWED_PERMISSIONS: [&str; 16] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -27,6 +27,8 @@ const REVIEWED_PERMISSIONS: [&str; 15] = [
     "allow-rename-project",
     "allow-remove-project",
     "allow-locate-project",
+    // Copied projects (M2-011): no arguments; only the copy found by the last add.
+    "allow-separate-project-copy",
     // Settings (M2-007): only the allowed values pass; Rust changes the window itself.
     "allow-get-settings",
     "allow-update-settings",

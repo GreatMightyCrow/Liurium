@@ -1,6 +1,6 @@
-//! Projects: add, open, list, rename, remove, locate (M2-005, M2-006). The page never
-//! sends a path: folders come from the native dialog that Rust shows, and projects
-//! are named by their id.
+//! Projects: add, open, list, rename, remove, locate (M2-005, M2-006), separate a copy
+//! (M2-011). The page never sends a path: folders come from the native dialog that Rust
+//! shows, and projects are named by their id.
 
 use std::{
     path::{Path, PathBuf},
@@ -12,7 +12,7 @@ use tauri::{State, WebviewWindow};
 
 use super::{CommandError, DataStatus};
 use crate::domain::{
-    projects::{self, Project},
+    projects::{self, Project, ProjectCopy, ProjectError},
     sync::{self, SyncRoot, SyncTool},
 };
 use crate::storage::db::{self, APP_DB, Kind, OpenMode};
@@ -42,6 +42,27 @@ impl ProjectInfo {
             synced_by,
         }
     }
+}
+
+/// What adding a folder gave.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "AddOutcome.ts"))]
+pub enum AddOutcome {
+    /// The folder is a project now, and the open one.
+    Added { project: ProjectInfo },
+    /// The folder holds the same project as a registered folder that still holds it.
+    /// Nothing was written; `separate_project_copy` gives it its own identity (M2-011).
+    Copy {
+        /// The folder that was added, as Windows shows it.
+        folder: String,
+        original_name: String,
+        original_folder: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -130,6 +151,9 @@ pub struct Workspace {
     current: Arc<Mutex<Option<Current>>>,
     /// Folders of sync tools, found at start.
     sync_roots: Arc<[SyncRoot]>,
+    /// The copy found by the last add, until the user answers (M2-011). Kept here
+    /// because the page never sends a path.
+    copy: Arc<Mutex<Option<ProjectCopy>>>,
 }
 
 impl Workspace {
@@ -144,6 +168,7 @@ impl Workspace {
             app_dir,
             current: Arc::new(Mutex::new(None)),
             sync_roots: sync_roots.into(),
+            copy: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -156,6 +181,10 @@ impl Workspace {
         self.current.lock().map_err(|_| CommandError::Internal)
     }
 
+    fn copy(&self) -> Result<MutexGuard<'_, Option<ProjectCopy>>, CommandError> {
+        self.copy.lock().map_err(|_| CommandError::Internal)
+    }
+
     /// The open project; on the first call, the one open at the last run.
     pub fn current(&self) -> Result<CurrentProject, CommandError> {
         let app = self.app()?;
@@ -163,12 +192,39 @@ impl Workspace {
         Ok(self.restored(&mut guard, &app)?.view.clone())
     }
 
-    /// Adds the folder as a project and makes it the open one.
-    pub fn add(&self, folder: &Path) -> Result<ProjectInfo, CommandError> {
+    /// Adds the folder as a project and makes it the open one. A copy of a registered
+    /// project is kept for the user's answer instead; the open project stays open.
+    pub fn add(&self, folder: &Path) -> Result<AddOutcome, CommandError> {
         let app = self.app()?;
-        let project = projects::add(&app, folder)?;
+        // A new add replaces an unanswered question.
+        *self.copy()? = None;
+        let project = match projects::add(&app, folder) {
+            Ok(project) => project,
+            Err(ProjectError::Duplicate(copy)) => {
+                let outcome = AddOutcome::Copy {
+                    folder: copy.display.clone(),
+                    original_name: copy.original_name.clone(),
+                    original_folder: copy.original_folder.clone(),
+                };
+                *self.copy()? = Some(*copy);
+                return Ok(outcome);
+            }
+            Err(error) => return Err(error.into()),
+        };
         let info = self.info(&app, &project);
         *self.lock()? = Some(Current::open(project, info.clone()));
+        Ok(AddOutcome::Added { project: info })
+    }
+
+    /// Gives the copy found by the last add its own identity and makes it the open
+    /// project. The question is answered once, whatever the result.
+    pub fn separate_copy(&self) -> Result<ProjectInfo, CommandError> {
+        let app = self.app()?;
+        let copy = self.copy()?.take().ok_or(CommandError::NotFound)?;
+        let mut guard = self.lock()?;
+        let project = projects::separate(&app, &copy)?;
+        let info = self.info(&app, &project);
+        *guard = Some(Current::open(project, info.clone()));
         Ok(info)
     }
 
@@ -325,12 +381,22 @@ pub async fn current_project(
 pub async fn add_project(
     window: WebviewWindow,
     workspace: State<'_, Workspace>,
-) -> Result<Option<ProjectInfo>, CommandError> {
+) -> Result<Option<AddOutcome>, CommandError> {
     let Some(folder) = choose_folder(window).await? else {
         return Ok(None);
     };
     let workspace = workspace.inner().clone();
     blocking(move || workspace.add(&folder)).await.map(Some)
+}
+
+/// The user agreed to make the copy found by the last add a separate project. Takes no
+/// path: only that folder can be changed, and only its `project.db`.
+#[tauri::command]
+pub async fn separate_project_copy(
+    workspace: State<'_, Workspace>,
+) -> Result<ProjectInfo, CommandError> {
+    let workspace = workspace.inner().clone();
+    blocking(move || workspace.separate_copy()).await
 }
 
 #[tauri::command]

@@ -97,7 +97,8 @@ impl From<ProjectError> for CommandError {
             ProjectError::Damaged => Self::Damaged,
             ProjectError::Unknown => Self::NotFound,
             ProjectError::OtherProject => Self::OtherProject,
-            ProjectError::Duplicate => Self::DuplicateProject,
+            ProjectError::Duplicate(_) => Self::DuplicateProject,
+            ProjectError::Changed => Self::Changed,
             ProjectError::NoProject => Self::NoProject,
             ProjectError::InvalidName => Self::InvalidName,
         }

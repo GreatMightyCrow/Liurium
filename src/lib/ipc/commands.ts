@@ -1,4 +1,5 @@
 import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
+import type { AddOutcome } from "./bindings/AddOutcome";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
@@ -9,6 +10,7 @@ import type { SettingsView } from "./bindings/SettingsView";
 import { toCommandFailure } from "./errors";
 
 export type {
+  AddOutcome,
   AppInfo,
   CurrentProject,
   ProjectEntry,
@@ -37,9 +39,15 @@ export function getCurrentProject(): Promise<CurrentProject> {
   return call("current_project");
 }
 
-/** Rust shows the folder dialog; `null` when the user cancels it. */
-export function addProject(): Promise<ProjectInfo | null> {
+/** Rust shows the folder dialog; `null` when the user cancels it. A copy of a listed
+ *  project is not added: Rust keeps it for `separateProjectCopy` (M2-011). */
+export function addProject(): Promise<AddOutcome | null> {
   return call("add_project");
+}
+
+/** Gives the copy found by the last `addProject` its own identity and opens it. */
+export function separateProjectCopy(): Promise<ProjectInfo> {
+  return call("separate_project_copy");
 }
 
 /** All known projects, the most recently opened first. */

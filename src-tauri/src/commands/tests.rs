@@ -3,10 +3,10 @@ use std::{io, path::PathBuf};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use super::projects::{CurrentProject, ProjectStatus, Workspace, checked};
+use super::projects::{AddOutcome, CurrentProject, ProjectInfo, ProjectStatus, Workspace, checked};
 use super::settings::SettingsView;
 use super::*;
-use crate::domain::projects::ProjectError;
+use crate::domain::projects::{ProjectCopy, ProjectError};
 use crate::domain::settings::{SettingKey, Settings};
 use crate::domain::sync::{SyncRoot, SyncTool};
 use crate::frame::FrameStyle;
@@ -186,7 +186,17 @@ fn project_errors_map_to_what_the_user_can_act_on() {
         (ProjectError::Damaged, CommandError::Damaged),
         (ProjectError::Unknown, CommandError::NotFound),
         (ProjectError::OtherProject, CommandError::OtherProject),
-        (ProjectError::Duplicate, CommandError::DuplicateProject),
+        (
+            ProjectError::Duplicate(Box::new(ProjectCopy {
+                folder: PathBuf::from(r"C:\Notes - Copy"),
+                display: r"C:\Notes - Copy".to_owned(),
+                id: "00000000-0000-4000-8000-000000000001".to_owned(),
+                original_name: "Notes".to_owned(),
+                original_folder: r"C:\Notes".to_owned(),
+            })),
+            CommandError::DuplicateProject,
+        ),
+        (ProjectError::Changed, CommandError::Changed),
         (ProjectError::NoProject, CommandError::NoProject),
         (ProjectError::InvalidName, CommandError::InvalidName),
     ];
@@ -199,6 +209,15 @@ fn project_errors_map_to_what_the_user_can_act_on() {
 fn workspace(app_dir: &Path) -> Workspace {
     let startup = Startup::open(Some(app_dir));
     Workspace::new(Some(app_dir.to_owned()), &startup.data, Vec::new())
+}
+
+/// Adds a folder that is no copy.
+#[track_caller]
+fn added(workspace: &Workspace, folder: &Path) -> ProjectInfo {
+    match workspace.add(folder).expect("added") {
+        AddOutcome::Added { project } => project,
+        outcome => panic!("{outcome:?}"),
+    }
 }
 
 #[test]
@@ -217,7 +236,7 @@ fn the_added_project_opens_again_after_a_restart() {
     let dir = temp_dir();
     let app_dir = dir.path().join("app");
     let fixture = project(dir.path(), "Garden", current(Kind::Project));
-    let added = workspace(&app_dir).add(&fixture.root).expect("added");
+    let added = added(&workspace(&app_dir), &fixture.root);
 
     let restarted = workspace(&app_dir).current().expect("current");
 
@@ -242,7 +261,7 @@ fn a_project_that_cannot_be_reopened_is_named_with_the_reason() {
     let dir = temp_dir();
     let app_dir = dir.path().join("app");
     let fixture = project(dir.path(), "Garden", current(Kind::Project));
-    workspace(&app_dir).add(&fixture.root).expect("added");
+    added(&workspace(&app_dir), &fixture.root);
     std::fs::remove_dir_all(&fixture.root).expect("folder gone");
 
     let restarted = workspace(&app_dir).current().expect("current");
@@ -277,7 +296,7 @@ fn the_list_marks_the_open_and_the_missing_projects() {
     let old = project(dir.path(), "Old", current(Kind::Project));
     let workspace = workspace(&app_dir);
     for fixture in [&old, &notes, &garden] {
-        workspace.add(&fixture.root).expect("added");
+        added(&workspace, &fixture.root);
     }
     std::fs::rename(&old.root, dir.path().join("Moved")).expect("move");
 
@@ -315,8 +334,8 @@ fn opening_another_project_makes_it_the_open_one() {
     let garden = project(dir.path(), "Garden", current(Kind::Project));
     let work = project(dir.path(), "Work", current(Kind::Project));
     let workspace = workspace(&app_dir);
-    workspace.add(&garden.root).expect("added");
-    workspace.add(&work.root).expect("added");
+    added(&workspace, &garden.root);
+    added(&workspace, &work.root);
 
     let opened = workspace.open(&garden.id).expect("opened");
 
@@ -338,8 +357,8 @@ fn a_project_that_fails_to_open_leaves_the_open_one_open() {
     let garden = project(dir.path(), "Garden", current(Kind::Project));
     let work = project(dir.path(), "Work", current(Kind::Project));
     let workspace = workspace(&app_dir);
-    workspace.add(&garden.root).expect("added");
-    let open = workspace.add(&work.root).expect("added");
+    added(&workspace, &garden.root);
+    let open = added(&workspace, &work.root);
     std::fs::remove_dir_all(&garden.root).expect("gone");
 
     assert_eq!(workspace.open(&garden.id), Err(CommandError::NotFound));
@@ -356,8 +375,8 @@ fn renaming_the_open_project_updates_what_the_page_is_shown() {
     let garden = project(dir.path(), "Garden", current(Kind::Project));
     let work = project(dir.path(), "Work", current(Kind::Project));
     let workspace = workspace(&app_dir);
-    workspace.add(&work.root).expect("added");
-    workspace.add(&garden.root).expect("added");
+    added(&workspace, &work.root);
+    added(&workspace, &garden.root);
 
     workspace
         .rename(&garden.id, "Kitchen")
@@ -390,8 +409,8 @@ fn removing_the_open_project_closes_it_and_keeps_its_folder() {
     let garden = project(dir.path(), "Garden", current(Kind::Project));
     let work = project(dir.path(), "Work", current(Kind::Project));
     let workspace = workspace(&app_dir);
-    workspace.add(&work.root).expect("added");
-    workspace.add(&garden.root).expect("added");
+    added(&workspace, &work.root);
+    added(&workspace, &garden.root);
 
     workspace.remove(&work.id).expect("removed closed");
     assert!(matches!(
@@ -412,7 +431,7 @@ fn a_located_project_becomes_the_open_one() {
     let dir = temp_dir();
     let app_dir = dir.path().join("app");
     let garden = project(dir.path(), "Garden", current(Kind::Project));
-    workspace(&app_dir).add(&garden.root).expect("added");
+    added(&workspace(&app_dir), &garden.root);
     let moved = dir.path().join("Moved");
     std::fs::rename(&garden.root, &moved).expect("move");
     let workspace = workspace(&app_dir);
@@ -623,7 +642,7 @@ fn a_project_in_a_sync_folder_is_warned_about_once() {
     let fixture = project(&onedrive, "Garden", current(Kind::Project));
     let workspace = synced_workspace(&app_dir, &onedrive);
 
-    let added = workspace.add(&fixture.root).expect("added");
+    let added = added(&workspace, &fixture.root);
     assert_eq!(added.synced_by, Some(SyncTool::OneDrive));
     assert_eq!(to_json(&added)["syncedBy"], json!("oneDrive"));
     // The page asks again while the project stays open: still shown in this session.
@@ -643,7 +662,7 @@ fn a_project_reopened_at_start_gets_its_first_warning_then() {
     let onedrive = dir.path().join("OneDrive");
     let fixture = project(&onedrive, "Garden", current(Kind::Project));
     // Added before Liurium knew the folder was synced.
-    workspace(&app_dir).add(&fixture.root).expect("added");
+    added(&workspace(&app_dir), &fixture.root);
 
     let restarted = synced_workspace(&app_dir, &onedrive);
     assert_eq!(
@@ -667,8 +686,113 @@ fn a_project_outside_sync_folders_is_not_warned_about() {
     let fixture = project(dir.path(), "Garden", current(Kind::Project));
     let workspace = synced_workspace(&app_dir, &onedrive);
 
-    let added = workspace.add(&fixture.root).expect("added");
+    let added = added(&workspace, &fixture.root);
 
     assert_eq!(added.synced_by, None);
     assert_eq!(to_json(&added)["syncedBy"], json!(null));
+}
+
+/// A registered and open project "Original" and a folder "Copy" with a copy of its
+/// `project.db`.
+fn original_and_copy(dir: &Path, workspace: &Workspace) -> (ProjectInfo, PathBuf) {
+    let fixture = project(dir, "Original", current(Kind::Project));
+    let original = added(workspace, &fixture.root);
+    let copy = dir.join("Copy");
+    std::fs::create_dir_all(copy.join(".liurium")).expect("folders");
+    std::fs::copy(fixture.database(), copy.join(".liurium").join("project.db")).expect("copy");
+    (original, copy)
+}
+
+#[test]
+fn adding_a_copy_asks_and_keeps_the_open_project_open() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+    let (original, copy) = original_and_copy(dir.path(), &workspace);
+    let before = TreeSnapshot::of(&copy);
+
+    let outcome = workspace.add(&copy).expect("asked");
+
+    let long = std::fs::canonicalize(&copy).expect("folder");
+    assert_eq!(
+        to_json(&outcome),
+        json!({
+            "state": "copy",
+            "folder": long.to_string_lossy().trim_start_matches(r"\\?\"),
+            "originalName": "Original",
+            "originalFolder": original.folder,
+        })
+    );
+    before.assert_unchanged(&copy);
+    assert_eq!(
+        workspace.current().expect("current"),
+        CurrentProject::Open { project: original }
+    );
+    assert_eq!(workspace.list().expect("list").len(), 1);
+}
+
+#[test]
+fn separating_the_copy_opens_it_as_its_own_project() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+    let (original, copy) = original_and_copy(dir.path(), &workspace);
+    workspace.add(&copy).expect("asked");
+
+    let separated = workspace.separate_copy().expect("separated");
+
+    assert_ne!(separated.id, original.id);
+    assert_eq!(separated.name, "Copy");
+    assert_eq!(
+        workspace.current().expect("current"),
+        CurrentProject::Open {
+            project: separated.clone()
+        }
+    );
+    assert_eq!(
+        statuses(&workspace),
+        [
+            ("Copy".to_owned(), ProjectStatus::Open),
+            ("Original".to_owned(), ProjectStatus::Available),
+        ]
+    );
+    assert_eq!(
+        workspace.open(&original.id).expect("opened").name,
+        "Original"
+    );
+    assert_eq!(workspace.open(&separated.id).expect("opened").name, "Copy");
+}
+
+#[test]
+fn the_question_about_a_copy_is_answered_once() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+    let (_original, copy) = original_and_copy(dir.path(), &workspace);
+    workspace.add(&copy).expect("asked");
+    workspace.separate_copy().expect("separated");
+    let before = TreeSnapshot::of(&copy);
+
+    assert_eq!(workspace.separate_copy(), Err(CommandError::NotFound));
+    before.assert_unchanged(&copy);
+}
+
+#[test]
+fn a_new_add_drops_the_unanswered_question() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+    let (_original, copy) = original_and_copy(dir.path(), &workspace);
+    workspace.add(&copy).expect("asked");
+    let other = project(dir.path(), "Other", current(Kind::Project));
+    added(&workspace, &other.root);
+    let before = TreeSnapshot::of(&copy);
+
+    assert_eq!(workspace.separate_copy(), Err(CommandError::NotFound));
+    before.assert_unchanged(&copy);
+    assert_eq!(workspace.list().expect("list").len(), 2);
+}
+
+#[test]
+fn without_a_question_nothing_is_separated() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+
+    assert_eq!(workspace.separate_copy(), Err(CommandError::NotFound));
 }

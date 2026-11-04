@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  cpSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -132,4 +133,51 @@ test("a moved project is located, and removing it from the list leaves its folde
   await app.stop();
   expect(snapshot(after)).toEqual(files);
   expect(readFileSync(join(after, "readme.md"), "utf8")).toBe("# Moved\n");
+});
+
+test("a copied project folder becomes a separate project only when asked to", async ({
+  app,
+}) => {
+  const original = app.folder("Notes-");
+  writeFileSync(join(original, "readme.md"), "# Notes\n");
+  const name = basename(original);
+  let page = await app.launch({ pick: original });
+  await openProjects(page);
+  await page.getByRole("button", { name: "Add project folder" }).click();
+  await expect(page.getByRole("region", { name })).toContainText("Open now");
+  await app.stop();
+
+  const copy = join(app.folder("Copies-"), "Notes - Copy");
+  cpSync(original, copy, { recursive: true });
+  const originalFiles = snapshot(original);
+  const copyFiles = snapshot(copy);
+
+  page = await app.launch({ pick: copy });
+  await openProjects(page);
+  const add = page.getByRole("button", { name: "Add project folder" });
+  const question = page.getByRole("dialog", {
+    name: `This folder looks like a copy of “${name}”`,
+  });
+  await add.click();
+  await expect(question).toContainText(copy);
+  await expect(question).toContainText(original);
+  await question.getByRole("button", { name: "Cancel" }).click();
+  await expect(question).toHaveCount(0);
+  await expect(page.getByRole("region", { name })).toContainText("Open now");
+  expect(snapshot(copy)).toEqual(copyFiles);
+
+  await add.click();
+  await question.getByRole("button", { name: "Make separate project" }).click();
+  const separated = page.getByRole("region", { name: "Notes - Copy" });
+  await expect(separated).toContainText("Open now");
+  await expect(separated).toContainText(copy);
+  expect(snapshot(original)).toEqual(originalFiles);
+
+  await page.getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("region", { name })).toContainText("Open now");
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Notes - Copy" }),
+  ).toBeVisible();
+  await app.stop();
+  expect(readFileSync(join(copy, "readme.md"), "utf8")).toBe("# Notes\n");
 });

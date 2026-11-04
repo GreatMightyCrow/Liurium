@@ -10,7 +10,7 @@ use std::{
 
 use ts_rs::{Config, TS};
 
-use super::projects::{CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
+use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
 use crate::domain::settings::{SettingKey, Settings};
@@ -35,6 +35,7 @@ fn typescript_bindings_match_the_rust_types() {
         output::<CommandError>(&config),
         output::<SyncTool>(&config),
         output::<ProjectInfo>(&config),
+        output::<AddOutcome>(&config),
         output::<CurrentProject>(&config),
         output::<ProjectStatus>(&config),
         output::<ProjectEntry>(&config),

@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+use super::ProjectCopy;
 use crate::storage::{db::DbError, fs::FsError};
 
 /// Why a project could not be added, opened, renamed, removed, or located. The folder is left as it was; only
@@ -16,8 +17,11 @@ pub enum ProjectError {
     Unknown,
     /// The registered folder now holds a different project.
     OtherProject,
-    /// Another folder still holds this project: the folder was copied (ADR-0016).
-    Duplicate,
+    /// Another folder still holds this project: the folder was copied (ADR-0016). Nothing
+    /// was written; the copy can be given its own identity (M2-011).
+    Duplicate(Box<ProjectCopy>),
+    /// The folder changed between a question and the answer (M2-011).
+    Changed,
     /// The chosen folder holds no project (locating a moved project).
     NoProject,
     /// Empty, too long, or with control characters.
@@ -33,7 +37,8 @@ impl fmt::Display for ProjectError {
             Self::Damaged => write!(f, "the project has no valid identity"),
             Self::Unknown => write!(f, "no project with this id"),
             Self::OtherProject => write!(f, "the folder holds another project"),
-            Self::Duplicate => write!(f, "another folder holds the same project"),
+            Self::Duplicate(_) => write!(f, "another folder holds the same project"),
+            Self::Changed => write!(f, "the folder changed in the meantime"),
             Self::NoProject => write!(f, "the folder holds no project"),
             Self::InvalidName => {
                 write!(f, "the name is empty, too long, or has control characters")
