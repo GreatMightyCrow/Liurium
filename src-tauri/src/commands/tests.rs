@@ -7,7 +7,7 @@ use super::projects::{AddOutcome, CurrentProject, ProjectInfo, ProjectStatus, Wo
 use super::settings::SettingsView;
 use super::*;
 use crate::domain::projects::{ProjectCopy, ProjectError};
-use crate::domain::settings::{SettingKey, Settings};
+use crate::domain::settings::{SettingKey, Settings, StartWith, Zoom};
 use crate::domain::sync::{SyncRoot, SyncTool};
 use crate::frame::FrameStyle;
 use crate::storage::db::Kind;
@@ -206,9 +206,15 @@ fn project_errors_map_to_what_the_user_can_act_on() {
     }
 }
 
+/// Like the app's start: the stored settings decide whether the last project reopens.
 fn workspace(app_dir: &Path) -> Workspace {
     let startup = Startup::open(Some(app_dir));
-    Workspace::new(Some(app_dir.to_owned()), &startup.data, Vec::new())
+    Workspace::new(
+        Some(app_dir.to_owned()),
+        &startup.data,
+        Vec::new(),
+        startup.settings.settings.startup,
+    )
 }
 
 /// Adds a folder that is no copy.
@@ -479,6 +485,9 @@ const CHOSEN: Settings = Settings {
     theme: ThemeChoice::Mint,
     mode: Mode::Dark,
     frame: FrameStyle::Native,
+    startup: StartWith::ProjectList,
+    // Other steps: domain/settings/tests.rs; the field stays private to keep them valid.
+    zoom: Zoom::DEFAULT,
 };
 
 #[test]
@@ -536,6 +545,7 @@ fn updating_saves_applies_and_forgets_old_fallbacks() {
             settings: CHOSEN,
             frame_at_start: FrameStyle::Liurium,
             fell_back: Vec::new(),
+            zoom_steps: Zoom::STEPS.to_vec(),
         }
     );
     assert_eq!(preferences.settings(), CHOSEN);
@@ -547,7 +557,12 @@ fn a_failed_save_applies_nothing() {
     let failed = DataStatus::Failed {
         error: CommandError::NewerVersion,
     };
-    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed, Vec::new());
+    let workspace = Workspace::new(
+        Some(PathBuf::from("unused")),
+        &failed,
+        Vec::new(),
+        StartWith::default(),
+    );
     let preferences = Preferences::new(Loaded::default());
     let mut applied = false;
 
@@ -560,14 +575,28 @@ fn a_failed_save_applies_nothing() {
 
 #[test]
 fn settings_from_the_page_must_be_allowed_values() {
-    let valid = json!({ "theme": "mint-graphite", "mode": "light", "frame": "hidden" });
-    assert!(serde_json::from_value::<Settings>(valid).is_ok());
+    let valid = json!({
+        "theme": "mint-graphite", "mode": "light", "frame": "hidden",
+        "startup": "projectList", "zoom": 125
+    });
+    assert!(serde_json::from_value::<Settings>(valid.clone()).is_ok());
+    let with = |key: &str, value: Value| {
+        let mut changed = valid.clone();
+        changed[key] = value;
+        changed
+    };
+    let mut missing = valid.clone();
+    missing.as_object_mut().expect("object").remove("zoom");
     for invalid in [
-        json!({ "theme": "violet", "mode": "light", "frame": "hidden" }),
-        json!({ "theme": "mint", "mode": "auto", "frame": "hidden" }),
-        json!({ "theme": "mint", "mode": "light", "frame": "frameless" }),
-        json!({ "theme": "mint", "mode": "light" }),
-        json!({ "theme": "mint", "mode": "light", "frame": "hidden", "path": "C:\\" }),
+        with("theme", json!("violet")),
+        with("mode", json!("auto")),
+        with("frame", json!("frameless")),
+        with("startup", json!("dashboard")),
+        with("zoom", json!(130)),
+        with("zoom", json!(-100)),
+        with("zoom", json!("125")),
+        with("path", json!("C:\\")),
+        missing,
     ] {
         assert!(
             serde_json::from_value::<Settings>(invalid.clone()).is_err(),
@@ -588,9 +617,13 @@ fn the_settings_view_uses_camel_case_names() {
     assert_eq!(
         to_json(&view),
         json!({
-            "settings": { "theme": "mint", "mode": "dark", "frame": "native" },
+            "settings": {
+                "theme": "mint", "mode": "dark", "frame": "native",
+                "startup": "projectList", "zoom": 100
+            },
             "frameAtStart": "native",
             "fellBack": ["mode"],
+            "zoomSteps": [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200],
         })
     );
 }
@@ -600,7 +633,12 @@ fn without_app_data_project_commands_report_why() {
     let failed = DataStatus::Failed {
         error: CommandError::NewerVersion,
     };
-    let workspace = Workspace::new(Some(PathBuf::from("unused")), &failed, Vec::new());
+    let workspace = Workspace::new(
+        Some(PathBuf::from("unused")),
+        &failed,
+        Vec::new(),
+        StartWith::default(),
+    );
 
     assert_eq!(workspace.current(), Err(CommandError::NewerVersion));
     assert_eq!(
@@ -616,6 +654,12 @@ fn without_app_data_project_commands_report_why() {
         workspace.locate(id, Path::new("unused")),
         Err(CommandError::NewerVersion)
     );
+    assert_eq!(workspace.data_info(), Err(CommandError::NewerVersion));
+    assert_eq!(workspace.prune_backups(), Err(CommandError::NewerVersion));
+    assert_eq!(
+        workspace.reset_sync_warnings(),
+        Err(CommandError::NewerVersion)
+    );
 }
 
 fn synced_workspace(app_dir: &Path, onedrive: &Path) -> Workspace {
@@ -624,7 +668,12 @@ fn synced_workspace(app_dir: &Path, onedrive: &Path) -> Workspace {
         tool: SyncTool::OneDrive,
         folder: onedrive.to_owned(),
     }];
-    Workspace::new(Some(app_dir.to_owned()), &startup.data, roots)
+    Workspace::new(
+        Some(app_dir.to_owned()),
+        &startup.data,
+        roots,
+        startup.settings.settings.startup,
+    )
 }
 
 fn synced_by(current: &CurrentProject) -> Option<SyncTool> {
@@ -795,4 +844,144 @@ fn without_a_question_nothing_is_separated() {
     let workspace = workspace(&dir.path().join("app"));
 
     assert_eq!(workspace.separate_copy(), Err(CommandError::NotFound));
+}
+
+fn save_startup(app_dir: &Path, startup: StartWith) {
+    let mut conn =
+        db::open(&app_dir.join("app.db"), Kind::App, db::OpenMode::Existing).expect("app.db");
+    let settings = Settings {
+        startup,
+        ..stored::load(&conn).expect("settings").settings
+    };
+    stored::save(&mut conn, &settings).expect("save");
+}
+
+#[test]
+fn with_the_project_list_at_start_no_project_reopens() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let fixture = project(dir.path(), "Garden", current(Kind::Project));
+    added(&workspace(&app_dir), &fixture.root);
+    save_startup(&app_dir, StartWith::ProjectList);
+    let before = TreeSnapshot::of(&fixture.root);
+
+    let restarted = workspace(&app_dir);
+
+    assert_eq!(restarted.current(), Ok(CurrentProject::None));
+    assert_eq!(
+        statuses(&restarted),
+        [("Garden".to_owned(), ProjectStatus::Available)]
+    );
+    before.assert_unchanged(&fixture.root);
+    // Opening it by hand still works, and the next start with the default reopens it.
+    restarted.open(&fixture.id).expect("opened");
+    save_startup(&app_dir, StartWith::LastProject);
+    assert!(matches!(
+        workspace(&app_dir).current(),
+        Ok(CurrentProject::Open { .. })
+    ));
+}
+
+fn backup(app_dir: &Path, name: &str) {
+    let dir = app_dir.join(db::BACKUP_DIR);
+    std::fs::create_dir_all(&dir).expect("backups");
+    std::fs::write(dir.join(name), b"copy").expect("backup");
+}
+
+#[test]
+fn app_data_info_names_the_folder_backups_and_sync_warnings() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let onedrive = dir.path().join("OneDrive");
+    let fixture = project(&onedrive, "Garden", current(Kind::Project));
+    let workspace = synced_workspace(&app_dir, &onedrive);
+    added(&workspace, &fixture.root);
+    for day in 1..=5 {
+        backup(&app_dir, &format!("app-v1-2026110{day}T080000Z.db"));
+    }
+    backup(&app_dir, "notes.txt");
+
+    let info = workspace.data_info().expect("info");
+
+    assert_eq!(
+        to_json(&info),
+        json!({
+            "folder": app_dir.to_string_lossy(),
+            "backups": 5,
+            "backupBytes": 20,
+            "keptBackups": 3,
+            "syncWarned": 1,
+        })
+    );
+}
+
+#[test]
+fn pruning_keeps_the_newest_three_backups_and_reports_the_rest() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let workspace = workspace(&app_dir);
+    workspace.current().expect("app.db exists");
+    for day in 1..=5 {
+        backup(&app_dir, &format!("app-v1-2026110{day}T080000Z.db"));
+    }
+    let app_db = Snapshot::of(&app_dir.join("app.db"));
+
+    let info = workspace.prune_backups().expect("pruned");
+
+    assert_eq!(info.backups, 3);
+    let mut left: Vec<String> = std::fs::read_dir(app_dir.join(db::BACKUP_DIR))
+        .expect("backups")
+        .map(|entry| {
+            entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            "app-v1-20261103T080000Z.db",
+            "app-v1-20261104T080000Z.db",
+            "app-v1-20261105T080000Z.db",
+        ]
+    );
+    app_db.assert_unchanged(&app_dir.join("app.db"));
+    assert_eq!(workspace.prune_backups().expect("again").backups, 3);
+}
+
+#[test]
+fn resetting_sync_warnings_warns_again_at_the_next_open() {
+    let dir = temp_dir();
+    let app_dir = dir.path().join("app");
+    let onedrive = dir.path().join("OneDrive");
+    let fixture = project(&onedrive, "Garden", current(Kind::Project));
+    let workspace = synced_workspace(&app_dir, &onedrive);
+    added(&workspace, &fixture.root);
+
+    let info = workspace.reset_sync_warnings().expect("reset");
+
+    assert_eq!(info.sync_warned, 0);
+    let reopened = synced_workspace(&app_dir, &onedrive);
+    assert_eq!(
+        synced_by(&reopened.current().expect("current")),
+        Some(SyncTool::OneDrive)
+    );
+}
+
+#[test]
+fn explorer_is_started_by_its_full_path_with_the_folder_quoted() {
+    let folder = Path::new(r"C:\Users\A, B\AppData\Local\io.github.greatmightycrow.liurium");
+    let command = super::data::explorer(folder).expect("command");
+
+    let program = PathBuf::from(command.get_program());
+    assert!(program.is_absolute(), "{}", program.display());
+    assert!(program.ends_with("explorer.exe"));
+    assert_eq!(
+        super::data::quoted(folder),
+        Some(format!("\"{}\"", folder.display()))
+    );
+    assert_eq!(super::data::quoted(Path::new("C:\\a\"b")), None);
 }

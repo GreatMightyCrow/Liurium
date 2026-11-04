@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import { getAppInfo, updateSettings } from "./commands";
+import {
+  getAppDataInfo,
+  getAppInfo,
+  openAppDataFolder,
+  pruneBackups,
+  resetSyncWarnings,
+  updateSettings,
+} from "./commands";
 import { CommandFailure } from "./errors";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -20,17 +27,40 @@ test("getAppInfo calls app_info and returns its result", async () => {
 });
 
 test("updateSettings sends the settings under the name Rust expects", async () => {
-  const settings = { theme: "mint", mode: "light", frame: "hidden" } as const;
+  const settings = {
+    theme: "mint",
+    mode: "light",
+    frame: "hidden",
+    startup: "projectList",
+    zoom: 125,
+  } as const;
   invokeMock.mockResolvedValue({
     settings,
     frameAtStart: "liurium",
     fellBack: [],
+    zoomSteps: [100, 125],
   });
 
   await updateSettings(settings);
 
   expect(invokeMock).toHaveBeenCalledWith("update_settings", { settings });
 });
+
+test.each([
+  [getAppDataInfo, "app_data_info"],
+  [openAppDataFolder, "open_app_data_folder"],
+  [pruneBackups, "prune_backups"],
+  [resetSyncWarnings, "reset_sync_warnings"],
+] as const)(
+  "the app data commands send no arguments",
+  async (command, name) => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await command();
+
+    expect(invokeMock).toHaveBeenCalledWith(name, undefined);
+  },
+);
 
 test("an error from Rust becomes a typed CommandFailure", async () => {
   invokeMock.mockRejectedValue({ kind: "tooLarge", maxBytes: 10 });

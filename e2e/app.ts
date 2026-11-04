@@ -255,6 +255,8 @@ interface App {
   window: () => WindowState;
   /** A new empty folder, removed after the app has stopped. */
   folder: (prefix: string) => string;
+  /** This test's app data folder (M3-009: the Data section names it). */
+  dataDir: string;
 }
 
 /**
@@ -295,6 +297,7 @@ export const test = base.extend<{ app: App }>({
           folders.push(folder);
           return folder;
         },
+        dataDir,
       });
     } finally {
       if (running !== undefined) {

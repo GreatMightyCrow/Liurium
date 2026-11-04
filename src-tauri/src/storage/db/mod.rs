@@ -3,6 +3,7 @@
 //! to it: integrity, owner, and schema version come first, then journal mode and
 //! migrations. Project databases are untrusted input (Security Model).
 
+pub mod backups;
 mod error;
 mod migrate;
 #[cfg(test)]

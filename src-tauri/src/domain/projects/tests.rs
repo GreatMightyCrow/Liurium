@@ -832,6 +832,31 @@ fn the_sync_warning_is_due_once_per_project() {
 }
 
 #[test]
+fn reset_sync_warnings_lets_each_project_warn_once_more() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let garden = dir.path().join("Garden");
+    let notes = dir.path().join("Notes");
+    fs::create_dir(&garden).expect("folder");
+    fs::create_dir(&notes).expect("folder");
+    let garden = add(&app, &garden).expect("added");
+    let notes = add(&app, &notes).expect("added");
+    assert_eq!(sync_warned(&app).expect("count"), 0);
+    first_sync_warning(&app, &garden.id).expect("warned");
+    first_sync_warning(&app, &notes.id).expect("warned");
+    let before = registered(&app);
+
+    assert_eq!(sync_warned(&app).expect("count"), 2);
+    assert_eq!(reset_sync_warnings(&app).expect("reset"), 2);
+
+    assert_eq!(sync_warned(&app).expect("count"), 0);
+    assert_eq!(registered(&app), before, "nothing else changes");
+    assert!(first_sync_warning(&app, &garden.id).expect("again"));
+    assert_eq!(reset_sync_warnings(&app).expect("reset"), 1);
+    assert_eq!(reset_sync_warnings(&app).expect("nothing to reset"), 0);
+}
+
+#[test]
 fn a_registry_from_before_the_sync_warning_keeps_its_projects() {
     let dir = temp_dir();
     let app_dir = dir.path().join("app");

@@ -6,6 +6,7 @@ import styles from "./App.module.css";
 import { AppRoutes } from "./app/AppRoutes";
 import { areas } from "./app/areas";
 import { frameStyleFrom } from "./app/frameStyle";
+import { SettingsProvider } from "./app/settingsState";
 import { ShowTheme } from "./app/showTheme";
 import { appIconFor, applyTheme, type Theme, themeFrom } from "./app/theme";
 import { useWindowControls } from "./app/useWindowControls";
@@ -32,22 +33,24 @@ function App() {
         <TooltipProvider>
           <NotificationProvider>
             <Router hook={useHashLocation}>
-              <AppShell
-                frame={frame}
-                title="Liurium"
-                icon={appIconFor(theme)}
-                windowControls={frame === "native" ? null : <FrameButtons />}
-                sidebar={
-                  <Sidebar
-                    title="Liurium"
-                    items={mainAreas}
-                    endItems={endAreas}
-                  />
-                }
-                statusBar={<span className={styles.release}>Pre-alpha</span>}
-              >
-                <AppRoutes />
-              </AppShell>
+              <SettingsProvider>
+                <AppShell
+                  frame={frame}
+                  title="Liurium"
+                  icon={appIconFor(theme)}
+                  windowControls={frame === "native" ? null : <FrameButtons />}
+                  sidebar={
+                    <Sidebar
+                      title="Liurium"
+                      items={mainAreas}
+                      endItems={endAreas}
+                    />
+                  }
+                  statusBar={<span className={styles.release}>Pre-alpha</span>}
+                >
+                  <AppRoutes />
+                </AppShell>
+              </SettingsProvider>
             </Router>
           </NotificationProvider>
         </TooltipProvider>

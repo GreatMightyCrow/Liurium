@@ -23,7 +23,7 @@
         "preventOverflow": true,
         "theme": "Dark",
         "backgroundColor": "#131211",
-        "zoomHotkeysEnabled": true
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {

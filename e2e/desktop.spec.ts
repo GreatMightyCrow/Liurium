@@ -30,7 +30,8 @@ test("the page refuses the browser's context menu and shortcuts", async ({
   await page.keyboard.press("Control+P");
   await page.keyboard.press("Control+Equal");
 
-  // Playwright sends Control+P with the key "P".
+  // Playwright sends Control+P with the key "P". Ctrl + = is Liurium's own zoom
+  // since M3-009, so the browser's default is stopped there too.
   await expect
     .poll(seen)
     .toEqual([
@@ -39,6 +40,6 @@ test("the page refuses the browser's context menu and shortcuts", async ({
       "Control allowed",
       "P blocked",
       "Control allowed",
-      "= allowed",
+      "= blocked",
     ]);
 });

@@ -13,6 +13,7 @@ use tauri::{State, WebviewWindow};
 use super::{CommandError, DataStatus};
 use crate::domain::{
     projects::{self, Project, ProjectCopy, ProjectError},
+    settings::StartWith,
     sync::{self, SyncRoot, SyncTool},
 };
 use crate::storage::db::{self, APP_DB, Kind, OpenMode};
@@ -154,11 +155,18 @@ pub struct Workspace {
     /// The copy found by the last add, until the user answers (M2-011). Kept here
     /// because the page never sends a path.
     copy: Arc<Mutex<Option<ProjectCopy>>>,
+    /// The startup setting read at start (M3-009): whether the last project reopens.
+    start_with: StartWith,
 }
 
 impl Workspace {
     /// Without a usable `app.db` (see `Startup`), every project command reports why.
-    pub fn new(app_dir: Option<PathBuf>, data: &DataStatus, sync_roots: Vec<SyncRoot>) -> Self {
+    pub fn new(
+        app_dir: Option<PathBuf>,
+        data: &DataStatus,
+        sync_roots: Vec<SyncRoot>,
+        start_with: StartWith,
+    ) -> Self {
         let app_dir = match (app_dir, data) {
             (_, DataStatus::Failed { error }) => Err(error.clone()),
             (None, _) => Err(CommandError::Internal),
@@ -169,12 +177,20 @@ impl Workspace {
             current: Arc::new(Mutex::new(None)),
             sync_roots: sync_roots.into(),
             copy: Arc::new(Mutex::new(None)),
+            start_with,
         }
     }
 
+    pub(super) fn app_dir(&self) -> Result<&Path, CommandError> {
+        self.app_dir.as_deref().map_err(|error| error.clone())
+    }
+
     pub(super) fn app(&self) -> Result<rusqlite::Connection, CommandError> {
-        let dir = self.app_dir.as_ref().map_err(Clone::clone)?;
-        Ok(db::open(&dir.join(APP_DB), Kind::App, OpenMode::Existing)?)
+        Ok(db::open(
+            &self.app_dir()?.join(APP_DB),
+            Kind::App,
+            OpenMode::Existing,
+        )?)
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Option<Current>>, CommandError> {
@@ -332,6 +348,9 @@ impl Workspace {
     }
 
     fn restore(&self, app: &rusqlite::Connection) -> Result<Current, CommandError> {
+        if self.start_with == StartWith::ProjectList {
+            return Ok(Current::none());
+        }
         let Some((id, name)) = projects::last_opened(app)? else {
             return Ok(Current::none());
         };
@@ -360,7 +379,7 @@ pub(crate) fn checked(id: &str) -> Result<&str, CommandError> {
 
 /// Disk work and the dialog block; they run on a thread meant for that, not on the
 /// main thread or an async worker (ADR-0018).
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, CommandError> + Send + 'static,
 ) -> Result<T, CommandError> {
     tauri::async_runtime::spawn_blocking(work)

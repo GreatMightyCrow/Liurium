@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 16] = [
+const REVIEWED_PERMISSIONS: [&str; 20] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -33,6 +33,12 @@ const REVIEWED_PERMISSIONS: [&str; 16] = [
     "allow-get-settings",
     "allow-update-settings",
     "allow-restart-app",
+    // App data folder (M3-009): no arguments; the folder is the one Rust chose at start.
+    // Pruning deletes only Liurium's backup names there and keeps the newest three.
+    "allow-app-data-info",
+    "allow-open-app-data-folder",
+    "allow-prune-backups",
+    "allow-reset-sync-warnings",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

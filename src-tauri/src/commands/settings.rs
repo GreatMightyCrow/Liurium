@@ -1,5 +1,6 @@
-//! Settings commands (M2-007). The page sends whole `Settings`; serde rejects any
-//! value outside the allowed themes, modes, and frame styles before Rust sees it.
+//! Settings commands (M2-007, M3-009). The page sends whole `Settings`; serde rejects
+//! any value outside the allowed themes, modes, frame styles, startup choices, and
+//! zoom steps before Rust sees it.
 
 use std::sync::{Mutex, MutexGuard};
 
@@ -7,7 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State, WebviewWindow};
 
 use super::{CommandError, Workspace};
-use crate::domain::settings::{self, Loaded, SettingKey, Settings};
+use crate::domain::settings::{self, Loaded, SettingKey, Settings, Zoom};
 use crate::frame::FrameStyle;
 use crate::window;
 
@@ -21,6 +22,8 @@ pub struct SettingsView {
     pub frame_at_start: FrameStyle,
     /// Stored values that could not be read at start; the defaults replace them.
     pub fell_back: Vec<SettingKey>,
+    /// The zoom steps Rust accepts, smallest first, so the page never guesses them.
+    pub zoom_steps: Vec<u16>,
 }
 
 /// The settings in use: read at start, before the window exists, and changed by
@@ -55,6 +58,7 @@ impl Preferences {
             settings: current.settings,
             frame_at_start: self.frame_at_start,
             fell_back: current.fell_back.clone(),
+            zoom_steps: Zoom::STEPS.to_vec(),
         })
     }
 

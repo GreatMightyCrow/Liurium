@@ -270,6 +270,25 @@ pub fn first_sync_warning(app: &Connection, id: &str) -> Result<bool, DbError> {
     Ok(changed == 1)
 }
 
+/// How many projects have shown their sync-folder warning (M3-009).
+pub fn sync_warned(app: &Connection) -> Result<usize, DbError> {
+    let count: i64 = app.query_row(
+        "SELECT count(*) FROM projects WHERE sync_warned_at IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(usize::try_from(count).unwrap_or(0))
+}
+
+/// Lets every project show its sync-folder warning once more (M3-009). Returns how
+/// many projects were reset.
+pub fn reset_sync_warnings(app: &Connection) -> Result<usize, DbError> {
+    Ok(app.execute(
+        "UPDATE projects SET sync_warned_at = NULL WHERE sync_warned_at IS NOT NULL",
+        [],
+    )?)
+}
+
 fn load(root: ProjectRoot) -> Result<Project, ProjectError> {
     let dir = root
         .liurium_dir()?

@@ -14,6 +14,10 @@ const COMMANDS: &[&str] = &[
     "get_settings",
     "update_settings",
     "restart_app",
+    "app_data_info",
+    "open_app_data_folder",
+    "prune_backups",
+    "reset_sync_warnings",
 ];
 
 fn main() {

@@ -19,6 +19,10 @@
     "allow-separate-project-copy",
     "allow-get-settings",
     "allow-update-settings",
-    "allow-restart-app"
+    "allow-restart-app",
+    "allow-app-data-info",
+    "allow-open-app-data-folder",
+    "allow-prune-backups",
+    "allow-reset-sync-warnings"
   ]
 }

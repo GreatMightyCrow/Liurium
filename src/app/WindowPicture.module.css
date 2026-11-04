@@ -1,0 +1,130 @@
+@layer components {
+  /* 16:10 like the default window; the tile sets the width. */
+  .frame {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: var(--radius-md);
+  }
+
+  /* "Same as Windows": the other mode over the right half. */
+  .half {
+    position: absolute;
+    inset: 0;
+    clip-path: inset(0 0 0 50%);
+  }
+
+  .window {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: var(--space-3) 1fr;
+    background: var(--color-canvas);
+  }
+
+  .window[data-frame="hidden"] {
+    grid-template-rows: 1fr;
+  }
+
+  .bar {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+    padding-inline: var(--space-1);
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  /* Windows draws its own title bar; the picture only shows it is not Liurium's. */
+  .window[data-frame="native"] .bar {
+    border-bottom-color: transparent;
+    background: var(--color-surface-elevated);
+  }
+
+  .icon {
+    width: calc(var(--space-1) * 1.5);
+    height: calc(var(--space-1) * 1.5);
+    border-radius: var(--border-width);
+    background: var(--color-accent);
+  }
+
+  .buttons {
+    display: flex;
+    gap: calc(var(--space-1) * 0.75);
+    margin-inline-start: auto;
+  }
+
+  .buttons span {
+    width: var(--space-1);
+    height: var(--space-1);
+    border: var(--border-width) solid var(--color-text-secondary);
+  }
+
+  .body {
+    display: grid;
+    grid-template-columns: 28% 1fr;
+    min-height: 0;
+  }
+
+  .side {
+    display: grid;
+    gap: var(--space-1);
+    align-content: start;
+    padding: calc(var(--space-1) * 1.5) var(--space-1);
+    border-inline-end: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .nav {
+    height: var(--space-1);
+    border-radius: var(--border-width);
+    background: var(--color-border-control);
+  }
+
+  .current {
+    background: var(--color-accent);
+  }
+
+  .main {
+    display: grid;
+    gap: calc(var(--space-1) * 1.25);
+    align-content: start;
+    padding: calc(var(--space-1) * 1.75) var(--space-2);
+  }
+
+  .heading {
+    width: 45%;
+    height: calc(var(--space-1) * 1.5);
+    border-radius: var(--border-width);
+    background: var(--color-text);
+  }
+
+  .line {
+    width: 85%;
+    height: calc(var(--space-1) * 0.75);
+    border-radius: var(--border-width);
+    background: var(--color-text-secondary);
+  }
+
+  .short {
+    width: 60%;
+  }
+
+  .button {
+    width: 30%;
+    height: var(--space-2);
+    margin-top: calc(var(--space-1) * 0.75);
+    border-radius: var(--border-width);
+    background: var(--color-accent);
+  }
+
+  /* The pictures show what a theme looks like, so they keep their colors in
+     contrast themes too. */
+  @media (forced-colors: active) {
+    .frame {
+      forced-color-adjust: none;
+    }
+  }
+}

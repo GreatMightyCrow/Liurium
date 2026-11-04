@@ -14,4 +14,8 @@ frameAtStart: FrameStyle,
 /**
  * Stored values that could not be read at start; the defaults replace them.
  */
-fellBack: Array<SettingKey>, };
+fellBack: Array<SettingKey>, 
+/**
+ * The zoom steps Rust accepts, smallest first, so the page never guesses them.
+ */
+zoomSteps: Array<number>, };

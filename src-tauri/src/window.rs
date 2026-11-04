@@ -37,6 +37,7 @@ pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box
     };
     let window = builder.build()?;
     paint(&window, theme);
+    zoom(&window, &settings);
     // Windows' mode can change while Liurium runs; the background follows with the
     // theme chosen by then.
     let follower = window.clone();
@@ -63,7 +64,8 @@ pub fn focus(app: &AppHandle) {
     }
 }
 
-/// A changed theme and mode take effect at once; the frame style needs a restart.
+/// A changed theme, mode, and zoom take effect at once; the frame style needs a
+/// restart.
 pub fn apply(window: &WebviewWindow, settings: &Settings) {
     let theme = settings.theme.theme();
     // Icon and background are looks only; a failure keeps the old ones, the saved
@@ -71,6 +73,14 @@ pub fn apply(window: &WebviewWindow, settings: &Settings) {
     let _ = window.set_icon(theme.window_icon());
     let _ = window.set_theme(settings.mode.window_theme());
     paint(window, theme);
+    zoom(window, settings);
+}
+
+/// WebView2's own zoom keys are off (`zoomHotkeysEnabled: false`, M3-009): the page
+/// sends a new step through `update_settings`, so the stored zoom is always the one
+/// shown. A failure leaves the old zoom; the saved one applies at the next start.
+fn zoom(window: &WebviewWindow, settings: &Settings) {
+    let _ = window.set_zoom(settings.zoom.factor());
 }
 
 /// The background only prevents a flash; the window must work even if setting it

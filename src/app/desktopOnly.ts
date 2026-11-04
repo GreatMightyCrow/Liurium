@@ -1,8 +1,9 @@
 // Liurium is a desktop app, not a web page (M2-013). WebView2's own context menu
 // (Back, Refresh, Save as, Print) and its browser shortcuts are turned off here,
 // because Tauri does not pass WebView2's switches for them through. Text fields
-// keep their menu for cut, copy, and paste. Zoom (Ctrl + Plus/Minus/0), back and
-// forward (Alt + arrows), and the developer tools of a debug build stay as they are.
+// keep their menu for cut, copy, and paste. Back and forward (Alt + arrows) and the
+// developer tools of a debug build stay as they are. Zoom keys are Liurium's own
+// (zoom.ts, M3-009).
 
 /** Keys that reload, print, save, or search the page, or turn on caret browsing. */
 const BROWSER_KEYS = new Set(["F3", "F5", "F7"]);

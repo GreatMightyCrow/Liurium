@@ -1,13 +1,18 @@
-﻿/*
+/*
  * Design tokens. The only file allowed to contain raw colors and lengths
  * (ADR-0006). Names and reasons are documented in the vault's Design System note.
  *
  * Themes (ADR-0015) are an accent plus a base, in dark or light mode. `:root` holds
  * the default, orange on warm in dark; the `data-base`, `data-accent`, and
  * `data-mode` blocks below each replace whole groups.
+ *
+ * Every theme block also applies to `[data-preview]` (M3-009): a small picture in
+ * Settings that sets its own `data-accent`, `data-base`, and `data-mode` shows another
+ * theme with these same values. tokens.test.ts checks that no block misses it.
  */
 @layer tokens {
-  :root {
+  :root,
+  [data-preview] {
     /* Base: warm. Surfaces */
     --color-canvas: #131211;
     --color-surface: #1d1b19;
@@ -43,10 +48,6 @@
     --color-forced-selected: Highlight;
     --color-forced-on-selected: HighlightText;
 
-    /* Color: theme swatches in Settings, the accent of each theme in every theme */
-    --color-swatch-orange: #ff8c42;
-    --color-swatch-mint: #4fd1a1;
-
     /* Spacing, 4px grid */
     --space-1: 4px;
     --space-2: 8px;
@@ -69,6 +70,11 @@
     --size-page-max: 1120px;
     --size-project-name: 200px;
     --size-path-min: 240px;
+    /* Settings (M3-009): a theme or frame picture, the section list, and the
+       widest section, which fits four pictures in a row */
+    --size-preview: 144px;
+    --size-section-nav: 184px;
+    --size-form-max: 720px;
 
     /* Controls: buttons and fields */
     --size-control-sm: 28px;
@@ -125,7 +131,8 @@
   }
 
   /* Base: cool, a slightly green graphite for the mint accent */
-  :root[data-base="cool"] {
+  :root[data-base="cool"],
+  [data-preview][data-base="cool"] {
     --color-canvas: #101413;
     --color-surface: #19201e;
     --color-surface-elevated: #222a27;
@@ -139,7 +146,8 @@
   }
 
   /* Base: graphite, neutral, for either accent */
-  :root[data-base="graphite"] {
+  :root[data-base="graphite"],
+  [data-preview][data-base="graphite"] {
     --color-canvas: #121212;
     --color-surface: #1c1c1c;
     --color-surface-elevated: #252525;
@@ -153,7 +161,8 @@
   }
 
   /* Accent: mint */
-  :root[data-accent="mint"] {
+  :root[data-accent="mint"],
+  [data-preview][data-accent="mint"] {
     --color-accent: #4fd1a1;
     --color-accent-hover: #7addb8;
     --color-accent-muted: #163029;
@@ -163,7 +172,8 @@
   /* Light mode: warm base, orange accent, status, and shadows. The buttons keep the
      brand fill with dark text; accent-text is a darker tone that reads on white.
      The blocks with two attributes below replace the base or accent in light. */
-  :root[data-mode="light"] {
+  :root[data-mode="light"],
+  [data-preview][data-mode="light"] {
     --color-canvas: #ffffff;
     --color-surface: #f6f3ef;
     --color-surface-elevated: #ffffff;
@@ -190,7 +200,8 @@
     --shadow-dialog: 0 12px 32px rgb(0 0 0 / 0.16);
   }
 
-  :root[data-mode="light"][data-base="cool"] {
+  :root[data-mode="light"][data-base="cool"],
+  [data-preview][data-mode="light"][data-base="cool"] {
     --color-canvas: #ffffff;
     --color-surface: #f1f5f3;
     --color-surface-elevated: #ffffff;
@@ -202,7 +213,8 @@
     --color-on-danger: #ffffff;
   }
 
-  :root[data-mode="light"][data-base="graphite"] {
+  :root[data-mode="light"][data-base="graphite"],
+  [data-preview][data-mode="light"][data-base="graphite"] {
     --color-canvas: #ffffff;
     --color-surface: #f4f4f4;
     --color-surface-elevated: #ffffff;
@@ -214,7 +226,8 @@
     --color-on-danger: #ffffff;
   }
 
-  :root[data-mode="light"][data-accent="mint"] {
+  :root[data-mode="light"][data-accent="mint"],
+  [data-preview][data-mode="light"][data-accent="mint"] {
     --color-accent: #4fd1a1;
     --color-accent-hover: #3cbf8e;
     --color-accent-muted: #dcf5ec;

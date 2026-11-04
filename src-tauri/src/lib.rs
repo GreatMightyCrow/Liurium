@@ -35,13 +35,22 @@ pub fn run() {
             commands::projects::separate_project_copy,
             commands::settings::get_settings,
             commands::settings::update_settings,
-            commands::settings::restart_app
+            commands::settings::restart_app,
+            commands::data::app_data_info,
+            commands::data::open_app_data_folder,
+            commands::data::prune_backups,
+            commands::data::reset_sync_warnings
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);
             let startup = Startup::open(app_dir.as_deref());
             let settings = startup.settings.settings;
-            app.manage(Workspace::new(app_dir, &startup.data, sync_roots()));
+            app.manage(Workspace::new(
+                app_dir,
+                &startup.data,
+                sync_roots(),
+                settings.startup,
+            ));
             app.manage(Preferences::new(startup.settings.clone()));
             app.manage(startup);
             window::create_main_window(app.handle(), settings)

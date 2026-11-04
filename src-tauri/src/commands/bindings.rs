@@ -10,10 +10,11 @@ use std::{
 
 use ts_rs::{Config, TS};
 
+use super::data::AppDataInfo;
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
-use crate::domain::settings::{SettingKey, Settings};
+use crate::domain::settings::{SettingKey, Settings, StartWith, Zoom};
 use crate::domain::sync::SyncTool;
 use crate::frame::FrameStyle;
 use crate::theme::{Mode, ThemeChoice};
@@ -45,6 +46,9 @@ fn typescript_bindings_match_the_rust_types() {
         output::<Settings>(&config),
         output::<SettingKey>(&config),
         output::<SettingsView>(&config),
+        output::<StartWith>(&config),
+        output::<Zoom>(&config),
+        output::<AppDataInfo>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

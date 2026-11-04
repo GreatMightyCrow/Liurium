@@ -1,5 +1,6 @@
 import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type { AddOutcome } from "./bindings/AddOutcome";
+import type { AppDataInfo } from "./bindings/AppDataInfo";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
@@ -11,6 +12,7 @@ import { toCommandFailure } from "./errors";
 
 export type {
   AddOutcome,
+  AppDataInfo,
   AppInfo,
   CurrentProject,
   ProjectEntry,
@@ -23,8 +25,10 @@ export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
 export type { Mode } from "./bindings/Mode";
 export type { SettingKey } from "./bindings/SettingKey";
+export type { StartWith } from "./bindings/StartWith";
 export type { SyncTool } from "./bindings/SyncTool";
 export type { ThemeChoice } from "./bindings/ThemeChoice";
+export type { Zoom } from "./bindings/Zoom";
 
 // One function per Rust command (src-tauri/src/commands). Each command also needs
 // its permission in src-tauri/capabilities/default.json (Security Model, ADR-0018).
@@ -79,7 +83,7 @@ export function getSettings(): Promise<SettingsView> {
   return call("get_settings");
 }
 
-/** Saves, then Rust changes the window's icon, background, and mode at once. */
+/** Saves, then Rust changes the window's icon, background, mode, and zoom at once. */
 export function updateSettings(settings: Settings): Promise<SettingsView> {
   return call("update_settings", { settings });
 }
@@ -87,6 +91,26 @@ export function updateSettings(settings: Settings): Promise<SettingsView> {
 /** Closes Liurium and starts it again, so a new window frame applies. */
 export function restartApp(): Promise<void> {
   return call("restart_app");
+}
+
+/** Where Liurium keeps its own data, its backup copies, and the sync warnings. */
+export function getAppDataInfo(): Promise<AppDataInfo> {
+  return call("app_data_info");
+}
+
+/** Rust opens the app data folder in Explorer; the page cannot name another path. */
+export function openAppDataFolder(): Promise<void> {
+  return call("open_app_data_folder");
+}
+
+/** Deletes all but the newest backup copies; ask the user first. */
+export function pruneBackups(): Promise<AppDataInfo> {
+  return call("prune_backups");
+}
+
+/** Every project shows its sync-folder warning once more. */
+export function resetSyncWarnings(): Promise<AppDataInfo> {
+  return call("reset_sync_warnings");
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {

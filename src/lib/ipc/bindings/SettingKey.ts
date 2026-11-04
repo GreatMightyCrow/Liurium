@@ -3,4 +3,4 @@
 /**
  * One stored value, named as in the `settings` table.
  */
-export type SettingKey = "theme" | "mode" | "frame";
+export type SettingKey = "theme" | "mode" | "frame" | "startup" | "zoom";

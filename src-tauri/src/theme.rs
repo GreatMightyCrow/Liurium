@@ -279,8 +279,9 @@ mod tests {
             for base in [Base::Warm, Base::Cool, Base::Graphite] {
                 // The default block comes first; the others are marked by their attributes.
                 let marker = match (shown, base) {
+                    // Each block also names `[data-preview]` after a comma (M3-009).
                     (WindowTheme::Light, Base::Warm) => {
-                        Some(":root[data-mode=\"light\"] {".to_string())
+                        Some(":root[data-mode=\"light\"],".to_string())
                     }
                     (WindowTheme::Light, _) => Some(format!(
                         ":root[data-mode=\"light\"][data-base=\"{}\"]",

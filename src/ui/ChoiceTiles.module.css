@@ -1,0 +1,100 @@
+@layer components {
+  .group {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .hint {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--size-preview));
+    gap: var(--space-4) var(--space-5);
+    margin-top: var(--space-2);
+  }
+
+  .tile {
+    display: grid;
+    gap: var(--space-2);
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .tile:hover {
+    color: var(--color-text);
+  }
+
+  .tile[data-checked] {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .tiles[data-disabled] .tile {
+    opacity: var(--opacity-disabled);
+    cursor: default;
+  }
+
+  .picture {
+    display: block;
+    border-radius: var(--radius-md);
+  }
+
+  /* The chosen picture: a ring in the accent, the same as the focus ring's shape. */
+  .tile[data-checked] .picture {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  /* Focus: the ring moves to the name, so chosen and focused stay apart. */
+  .tile:focus-visible {
+    outline: none;
+  }
+
+  .tile:focus-visible .name {
+    outline: var(--focus-ring-width) solid var(--color-accent);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-sm);
+  }
+
+  .name {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+    font-size: var(--font-size-sm);
+  }
+
+  .check {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-accent-text);
+    visibility: hidden;
+  }
+
+  .tile[data-checked] .check {
+    visibility: visible;
+  }
+
+  /* Contrast themes: the system's selection color marks the chosen picture. */
+  @media (forced-colors: active) {
+    .tile[data-checked] .picture {
+      outline-color: var(--color-forced-selected);
+    }
+
+    .check {
+      color: var(--color-forced-selected);
+    }
+  }
+}

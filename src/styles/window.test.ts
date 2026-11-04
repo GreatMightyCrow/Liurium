@@ -23,8 +23,9 @@ test("the main window is created by Rust, with the dark theme for the native fra
   expect(mainWindow.theme).toBe("Dark");
 });
 
-// Ctrl + Plus / Minus / 0 enlarge the whole window content (M1-008). On Windows this is
-// WebView2's own zoom control and needs no Tauri permission.
-test("the main window can be zoomed from the keyboard", () => {
-  expect(mainWindow.zoomHotkeysEnabled).toBe(true);
+// Ctrl + Plus / Minus / 0 enlarge the whole window content (M1-008). Since M3-009 the
+// page catches the keys and saves the step, and Rust zooms the window; WebView2's own
+// zoom keys are off, or they would change the zoom without Liurium knowing it.
+test("WebView2's own zoom keys are off; Liurium zooms and remembers it", () => {
+  expect(mainWindow.zoomHotkeysEnabled).toBe(false);
 });

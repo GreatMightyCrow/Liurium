@@ -1,9 +1,158 @@
 @layer components {
-  .content {
-    display: grid;
-    gap: var(--space-4);
-    max-width: var(--size-text-measure);
+  /* Section list and the chosen section side by side. When the window gets narrow
+     (small window, high zoom), the section moves below the list through wrapping. */
+  .layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5) var(--space-6);
+    align-items: flex-start;
     padding: var(--space-5);
+  }
+
+  .nav {
+    flex: 0 0 var(--size-section-nav);
+  }
+
+  .navList {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The current section has a line in the accent, not a fill, so this list does not
+     look like a second sidebar. Weight and the line mark it, never color alone. */
+  .navItem {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    width: 100%;
+    min-height: var(--size-control-md);
+    padding-inline: var(--space-3);
+    border: none;
+    border-inline-start: var(--focus-ring-width) solid transparent;
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .navItem:hover {
+    color: var(--color-text);
+  }
+
+  .navItem[aria-current="true"] {
+    border-inline-start-color: var(--color-accent-text);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .navIcon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .pane {
+    flex: 1 1 var(--size-dialog);
+    min-width: 0;
+    max-width: var(--size-form-max);
+  }
+
+  .section {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .sectionTitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .intro {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .rows {
+    display: grid;
+    margin-top: var(--space-2);
+  }
+
+  /* Name and hint at the start, the control at the end; the control moves below
+     when there is no room. */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-5);
+    align-items: center;
+    justify-content: space-between;
+    padding-block: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .stacked {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .rowText {
+    display: grid;
+    flex: 1 1 var(--size-path-min);
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .rowLabel {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .rowHint {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .rowControl {
+    min-width: 0;
+  }
+
+  .path {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+
+  .zoom {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .zoomValue {
+    min-width: var(--space-8);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .restart {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    align-items: center;
+  }
+
+  .notice {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .problem {
+    margin: 0;
+    color: var(--color-danger);
   }
 
   /* Label column sized by the longest label, values wrap in the second column. */
@@ -12,6 +161,8 @@
     grid-template-columns: max-content 1fr;
     gap: var(--space-2) var(--space-5);
     margin: 0;
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   .facts dt {
@@ -22,43 +173,17 @@
     margin: 0;
   }
 
-  /* The accent of each theme, next to its name. */
-  .swatch {
-    width: var(--space-3);
-    height: var(--space-3);
-    border-radius: var(--radius-sm);
-  }
-
-  .swatch[data-accent="orange"] {
-    background: var(--color-swatch-orange);
-  }
-
-  .swatch[data-accent="mint"] {
-    background: var(--color-swatch-mint);
-  }
-
-  .notice {
-    margin: 0;
-    color: var(--color-text-secondary);
-  }
-
-  .restart {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
-    align-items: center;
-  }
-
-  .problem {
-    margin: 0;
-    color: var(--color-danger);
-  }
-
-  /* The swatches show what a theme looks like, so they keep their colors in
-     contrast themes too. */
+  /* Contrast themes draw even a transparent border in the text color, so only the
+     current section keeps its line, in the selection color; the others make up for
+     its width with padding. */
   @media (forced-colors: active) {
-    .swatch {
-      forced-color-adjust: none;
+    .navItem:not([aria-current="true"]) {
+      padding-inline-start: calc(var(--space-3) + var(--focus-ring-width));
+      border-inline-start-style: none;
+    }
+
+    .navItem[aria-current="true"] {
+      border-inline-start-color: var(--color-forced-selected);
     }
   }
 }

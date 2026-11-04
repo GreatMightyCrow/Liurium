@@ -26,20 +26,43 @@ const statusTokens = ["--color-success", "--color-warning", "--color-danger"];
 interface Block {
   /** The block's attribute selectors, for example `{ mode: "light", base: "cool" }`. */
   attributes: Record<string, string>;
+  /** The other selectors of the block, e.g. `[data-preview][data-mode="light"]`. */
+  others: string[];
   body: string;
 }
 
-const blocks: Block[] = Array.from(
-  tokensCss.matchAll(/:root((?:\[data-[a-z]+="[a-z]+"\])*)\s*\{([^}]*)\}/g),
-  (match) => ({
-    attributes: Object.fromEntries(
-      Array.from(match[1].matchAll(/\[data-([a-z]+)="([a-z]+)"\]/g), (m) => [
-        m[1],
-        m[2],
-      ]),
-    ),
-    body: match[2],
-  }),
+const attribute = String.raw`\[data-[a-z]+="[a-z]+"\]`;
+const selector = String.raw`(?::root|\[data-preview\])(?:${attribute})*`;
+const blockPattern = new RegExp(
+  String.raw`(${selector}(?:\s*,\s*${selector})*)\s*\{([^}]*)\}`,
+  "g",
+);
+
+function attributesOf(text: string): Record<string, string> {
+  return Object.fromEntries(
+    Array.from(text.matchAll(/\[data-([a-z]+)="([a-z]+)"\]/g), (m) => [
+      m[1],
+      m[2],
+    ]),
+  );
+}
+
+// Each block is named by its `:root` selector; a block without one is not a theme.
+const blocks: Block[] = Array.from(tokensCss.matchAll(blockPattern)).flatMap(
+  (match) => {
+    const selectors = match[1].split(",").map((part) => part.trim());
+    const root = selectors.find((part) => part.startsWith(":root"));
+    if (root === undefined) {
+      return [];
+    }
+    return [
+      {
+        attributes: attributesOf(root),
+        others: selectors.filter((part) => part !== root),
+        body: match[2],
+      },
+    ];
+  },
 );
 
 function hexColors(body: string): Map<string, string> {
@@ -129,6 +152,22 @@ describe("theme blocks", () => {
     expect([...hexColors(block(attributes).body).keys()].sort()).toEqual(
       [...tokens].sort(),
     );
+  });
+
+  // Settings shows each theme in a small picture with the same values (M3-009).
+  test("every theme block also applies to previews with the same attributes", () => {
+    const themed = blocks.filter((b) => hexColors(b.body).size > 0);
+    expect(themed.length).toBeGreaterThanOrEqual(8);
+    for (const b of themed) {
+      const expected = ":root".concat(
+        ...Object.entries(b.attributes).map(
+          ([name, value]) => `[data-${name}="${value}"]`,
+        ),
+      );
+      expect(b.others, expected).toEqual([
+        expected.replace(":root", "[data-preview]"),
+      ]);
+    }
   });
 
   // The backdrop is not a hex value, so the contrast tests cannot see it.
