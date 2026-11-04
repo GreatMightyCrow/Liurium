@@ -6,6 +6,9 @@
 //! process. Closing it needs handle-based Windows calls (`unsafe` or a new crate).
 
 mod error;
+mod organize;
+#[cfg(test)]
+mod organize_tests;
 mod path;
 #[cfg(test)]
 mod tests;
@@ -23,6 +26,7 @@ use std::{
 };
 
 pub use error::FsError;
+pub use organize::{TRASH_DIR, utc_stamp};
 pub use path::{PathRule, RelPath};
 pub use walk::{FoundNote, Limits, NOTE_ENDINGS, SKIPPED_FOLDERS, Skipped, Walk};
 

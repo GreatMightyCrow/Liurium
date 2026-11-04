@@ -158,6 +158,31 @@ export function closeNote(path: string): Promise<void> {
   return call("close_note", { path });
 }
 
+/** Creates an empty note in a folder ("" for the top). Returns its path. */
+export function createNote(folder: string, name: string): Promise<string> {
+  return call("create_note", { folder, name });
+}
+
+/** Creates a folder inside another ("" for the top). Returns its path. */
+export function createFolder(parent: string, name: string): Promise<string> {
+  return call("create_folder", { parent, name });
+}
+
+/** Renames a note or folder in place. Returns its new path. */
+export function renameEntry(path: string, name: string): Promise<string> {
+  return call("rename_entry", { path, name });
+}
+
+/** Moves a note or folder into a folder ("" for the top). Returns its new path. */
+export function moveEntry(path: string, folder: string): Promise<string> {
+  return call("move_entry", { path, folder });
+}
+
+/** Moves a note or folder into the project's trash (.liurium/trash). */
+export function trashEntry(path: string): Promise<void> {
+  return call("trash_entry", { path });
+}
+
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {
   try {
     return await invoke<T>(command, args);

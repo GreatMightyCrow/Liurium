@@ -28,6 +28,11 @@
     "allow-open-note",
     "allow-update-note",
     "allow-resolve-note-conflict",
-    "allow-close-note"
+    "allow-close-note",
+    "allow-create-note",
+    "allow-create-folder",
+    "allow-rename-entry",
+    "allow-move-entry",
+    "allow-trash-entry"
   ]
 }

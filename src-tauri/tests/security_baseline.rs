@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 25] = [
+const REVIEWED_PERMISSIONS: [&str; 30] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -47,6 +47,13 @@ const REVIEWED_PERMISSIONS: [&str; 25] = [
     "allow-update-note",
     "allow-resolve-note-conflict",
     "allow-close-note",
+    // Organizing notes (M3-004): names and paths checked in Rust by the tree rules;
+    // never replaces, never deletes for good (trash in .liurium), never touches links.
+    "allow-create-note",
+    "allow-create-folder",
+    "allow-rename-entry",
+    "allow-move-entry",
+    "allow-trash-entry",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

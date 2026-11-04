@@ -74,6 +74,8 @@ pub enum NotesView {
         /// The project holds more notes than the limit; only that many are listed.
         truncated: bool,
         note_limit: usize,
+        /// Folders with nothing in them, so a new folder shows in the tree (M3-004).
+        empty_folders: Vec<String>,
     },
 }
 
@@ -92,6 +94,7 @@ impl NotesView {
             skipped: SkippedNotes::new(index.skipped),
             truncated: index.truncated,
             note_limit: Limits::DEFAULT.notes,
+            empty_folders: index.empty_folders,
         }
     }
 }

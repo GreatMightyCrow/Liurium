@@ -1,0 +1,152 @@
+@layer components {
+  .tree {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  /* New note and New folder: quiet, above the list they add to. */
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  /* The whole list area takes drops onto the top of the project. */
+  .list {
+    min-height: var(--size-header);
+    border-radius: var(--radius-sm);
+  }
+
+  .list[data-drop] {
+    outline: var(--border-width) dashed var(--color-accent-text);
+  }
+
+  .group {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Each level inside a folder steps in by one icon width. */
+  .group .group {
+    padding-inline-start: var(--space-4);
+  }
+
+  .item {
+    margin: 0;
+  }
+
+  /* Entry and its "…" button side by side; the button shows on hover or focus. */
+  .row {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-sm);
+  }
+
+  .row:hover,
+  .row:focus-within {
+    background: var(--color-surface);
+  }
+
+  .row[data-drop] {
+    outline: var(--border-width) dashed var(--color-accent-text);
+    outline-offset: calc(var(--border-width) * -1);
+    background: var(--color-accent-muted);
+  }
+
+  .entry {
+    display: flex;
+    flex: 1;
+    gap: var(--space-2);
+    align-items: center;
+    min-width: 0;
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border: none;
+    border-inline-start: var(--border-width-mark) solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text);
+    font: inherit;
+    text-align: start;
+    text-decoration: none;
+    cursor: default;
+  }
+
+  .entry:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  /* The open note: a line in the accent at its start, semibold, no fill. */
+  .entry[aria-current="page"] {
+    border-inline-start-color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .chevron {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .chevron[data-open] {
+    transform: rotate(90deg);
+  }
+
+  .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .more {
+    flex: none;
+    opacity: 0;
+  }
+
+  .row:hover .more,
+  .row:focus-within .more,
+  .more[data-popup-open] {
+    opacity: 1;
+  }
+
+  .moveList {
+    max-height: var(--size-dialog);
+    overflow: auto;
+  }
+
+  .dialogError {
+    margin: 0;
+    color: var(--color-danger);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .entry[aria-current="page"] {
+      border-inline-start-color: var(--color-forced-selected);
+    }
+
+    .row[data-drop],
+    .list[data-drop] {
+      outline-color: Highlight;
+    }
+
+    .more {
+      opacity: 1;
+    }
+  }
+}

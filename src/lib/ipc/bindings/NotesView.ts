@@ -6,4 +6,8 @@ export type NotesView = { "state": "noProject" } | { "state": "ready", notes: Ar
 /**
  * The project holds more notes than the limit; only that many are listed.
  */
-truncated: boolean, noteLimit: number, };
+truncated: boolean, noteLimit: number, 
+/**
+ * Folders with nothing in them, so a new folder shows in the tree (M3-004).
+ */
+emptyFolders: Array<string>, };

@@ -13,7 +13,7 @@ use crate::domain::notes::{
     session::{Choice, MAX_NOTE_BYTES, NoteError, ReadOnly, Resolved, Saved, Session, note_path},
     text::LineEnding,
 };
-use crate::storage::fs::{FsError, ProjectRoot};
+use crate::storage::fs::{FsError, ProjectRoot, RelPath};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +109,48 @@ struct Slot {
     root: ProjectRoot,
     project_read_only: bool,
     session: Session,
+}
+
+/// What an organize action (M3-004) does to the open note.
+impl Editor {
+    /// Saves the open note if `affected` is it or a folder above it. An unsolved
+    /// conflict refuses the action, so no draft is lost.
+    pub fn save_if_under(&self, affected: &RelPath) -> Result<(), CommandError> {
+        let mut slot = self.lock()?;
+        let Some(open) = slot.as_mut() else {
+            return Ok(());
+        };
+        if !open.session.path().starts_with(affected) {
+            return Ok(());
+        }
+        if open.session.in_conflict() {
+            return Err(CommandError::Unsaved);
+        }
+        match open.session.save(&open.root)? {
+            Saved::Saved => Ok(()),
+            Saved::Conflict | Saved::Draft => Err(CommandError::Unsaved),
+        }
+    }
+
+    /// The open note follows a rename or move.
+    pub fn moved(&self, from: &RelPath, to: &RelPath) {
+        if let Ok(mut slot) = self.slot.lock()
+            && let Some(open) = slot.as_mut()
+        {
+            open.session.rebase(from, to);
+        }
+    }
+
+    /// The open note, or a folder above it, went to the trash: the editor closes.
+    pub fn trashed(&self, path: &RelPath) {
+        if let Ok(mut slot) = self.slot.lock()
+            && slot
+                .as_ref()
+                .is_some_and(|open| open.session.path().starts_with(path))
+        {
+            *slot = None;
+        }
+    }
 }
 
 /// What a close found (`window.rs`).

@@ -9,7 +9,13 @@ import {
   type SkippedNotes,
 } from "../lib/ipc/commands";
 import { CommandFailure } from "../lib/ipc/errors";
-import { byFolder, NotesPage, SHOWN_NOTES, skippedText } from "./NotesPage";
+import {
+  NotesPage,
+  noteHref,
+  notePathOf,
+  SHOWN_NOTES,
+  skippedText,
+} from "./NotesPage";
 
 vi.mock("../lib/ipc/commands", () => ({ listNotes: vi.fn() }));
 
@@ -38,6 +44,7 @@ function ready(
     skipped: NOTHING_SKIPPED,
     truncated: false,
     noteLimit: 100_000,
+    emptyFolders: [],
     ...extra,
   };
 }
@@ -47,14 +54,18 @@ function Location() {
   return <p data-testid="location">{location}</p>;
 }
 
-function renderPage() {
-  const { hook } = memoryLocation({ path: "/notes" });
+function renderPage(path = "/notes") {
+  const { hook } = memoryLocation({ path });
   return render(
     <Router hook={hook}>
       <NotesPage />
       <Location />
     </Router>,
   );
+}
+
+function tree() {
+  return screen.getByRole("navigation", { name: "Notes in this project" });
 }
 
 beforeEach(() => {
@@ -69,34 +80,52 @@ test("while Rust walks the project, the page says it is looking", () => {
   expect(screen.getByRole("status").textContent).toBe("Looking for notes…");
 });
 
-test("the notes are counted and listed by folder, top level first", async () => {
+test("the notes are counted and shown as a tree, folders first and closed", async () => {
   listNotesMock.mockResolvedValue(
-    ready([note("Ideas/Plan.md"), note("README.md"), note("ideas/b/x.md")]),
+    ready([note("Ideas/Plan.md"), note("README.md"), note("Ideas/Deep/x.md")]),
   );
 
   renderPage();
 
   expect(await screen.findByText("3 notes")).toBeDefined();
-  const folders = screen.getAllByRole("region");
-  expect(folders.map((folder) => folder.getAttribute("aria-label"))).toEqual([
-    "Project folder",
-    "Ideas",
-    "ideas/b",
-  ]);
+  const ideas = within(tree()).getByRole("button", { name: "Ideas" });
+  expect(ideas.getAttribute("aria-expanded")).toBe("false");
   expect(
-    within(folders[1])
-      .getAllByRole("listitem")
-      .map((item) => item.querySelector("span")?.textContent),
-  ).toEqual(["Plan.md"]);
-  expect(
-    within(folders[1])
-      .getByRole("link", { name: "Plan.md" })
+    within(tree())
+      .getByRole("link", { name: "README.md" })
       .getAttribute("href"),
+  ).toBe("/notes/README.md");
+  expect(within(tree()).queryByRole("link", { name: "Plan.md" })).toBeNull();
+
+  fireEvent.click(ideas);
+  expect(ideas.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    within(tree()).getByRole("link", { name: "Plan.md" }).getAttribute("href"),
   ).toBe("/notes/Ideas/Plan.md");
+  expect(within(tree()).getByRole("button", { name: "Deep" })).toBeDefined();
   expect(
     screen.getByText("Choose a note on the left to open it."),
   ).toBeDefined();
-  expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("the folders above the open note start open, and the note is marked", async () => {
+  listNotesMock.mockResolvedValue(ready([note("Ideas/Deep/x.md")]));
+
+  renderPage("/notes/Ideas/Deep/x.md");
+
+  await screen.findByText("1 note");
+  const link = within(tree()).getByRole("link", { name: "x.md" });
+  expect(link.getAttribute("aria-current")).toBe("page");
+});
+
+test("empty folders show up too", async () => {
+  listNotesMock.mockResolvedValue(ready([], { emptyFolders: ["New"] }));
+
+  renderPage();
+
+  expect(await screen.findByText("No notes yet")).toBeDefined();
+  expect(within(tree()).getByRole("button", { name: "New" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "New note" })).toBeDefined();
 });
 
 test("one note is counted in the singular", async () => {
@@ -152,21 +181,8 @@ test(`only the first ${String(SHOWN_NOTES)} notes are listed, the rest are count
   renderPage();
 
   expect(await screen.findByText("1,005 notes")).toBeDefined();
-  expect(screen.getAllByRole("listitem")).toHaveLength(SHOWN_NOTES);
+  expect(within(tree()).getAllByRole("link")).toHaveLength(SHOWN_NOTES);
   expect(screen.getByText("And 5 more notes not shown here.")).toBeDefined();
-});
-
-test("a project without notes says where Liurium looked", async () => {
-  listNotesMock.mockResolvedValue(ready([]));
-
-  renderPage();
-
-  expect(
-    await screen.findByRole("heading", {
-      name: "No notes in this project yet",
-    }),
-  ).toBeDefined();
-  expect(screen.queryByRole("list")).toBeNull();
 });
 
 test("without an open project the page leads to Projects", async () => {
@@ -192,9 +208,13 @@ test("a failure is explained without raw error text", async () => {
   expect(alert.textContent).toContain("Another program is using this data.");
 });
 
-test("folders group by their exact path, the top level first", () => {
-  const folders = byFolder([note("b/x.md"), note("y.md"), note("A/z.md")]);
-
-  expect(folders.map((folder) => folder.path)).toEqual(["", "A", "b"]);
-  expect(folders[0].notes[0].name).toBe("y.md");
+test("note addresses encode each part and decode back", () => {
+  expect(noteHref("My Notes/Plan v2.md")).toBe(
+    "/notes/My%20Notes/Plan%20v2.md",
+  );
+  expect(notePathOf("/notes/My%20Notes/Plan%20v2.md")).toBe(
+    "My Notes/Plan v2.md",
+  );
+  expect(notePathOf("/notes")).toBeNull();
+  expect(notePathOf("/notes/%E0%A4%A")).toBeNull();
 });

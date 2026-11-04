@@ -44,7 +44,12 @@ pub fn run() {
             commands::editor::open_note,
             commands::editor::update_note,
             commands::editor::resolve_note_conflict,
-            commands::editor::close_note
+            commands::editor::close_note,
+            commands::organize::create_note,
+            commands::organize::create_folder,
+            commands::organize::rename_entry,
+            commands::organize::move_entry,
+            commands::organize::trash_entry
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

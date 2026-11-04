@@ -29,6 +29,9 @@ pub enum PathRule {
     TooLong,
     /// `..` would leave the project.
     Escapes,
+    /// A name Liurium skips in the notes tree: starting with `.`, or a package or
+    /// build folder such as `node_modules` (M3-004).
+    Skipped,
 }
 
 /// A path below a project root, checked part by part. Holds no `.`, `..`, or empty
@@ -100,6 +103,40 @@ impl RelPath {
         let mut path = self.clone();
         path.parts.extend(Self::name(name)?.parts);
         Ok(path)
+    }
+
+    /// The folder this path is in; `None` at the top of the project.
+    pub fn parent(&self) -> Option<Self> {
+        (self.parts.len() > 1).then(|| Self {
+            parts: self.parts[..self.parts.len() - 1].to_vec(),
+        })
+    }
+
+    /// The last part.
+    pub fn file_name(&self) -> &str {
+        self.parts.last().map_or("", String::as_str)
+    }
+
+    /// Whether `self` is `other` or lies inside it, without case as on Windows.
+    pub fn starts_with(&self, other: &Self) -> bool {
+        self.parts.len() >= other.parts.len()
+            && self
+                .parts
+                .iter()
+                .zip(&other.parts)
+                .all(|(a, b)| a.to_lowercase() == b.to_lowercase())
+    }
+
+    /// `self` with the leading `from` replaced by `to`.
+    pub fn rebase(&self, from: &Self, to: &Self) -> Option<Self> {
+        self.starts_with(from).then(|| Self {
+            parts: to
+                .parts
+                .iter()
+                .chain(&self.parts[from.parts.len()..])
+                .cloned()
+                .collect(),
+        })
     }
 
     pub fn parts(&self) -> impl Iterator<Item = &str> {

@@ -27,6 +27,10 @@ const messages: {
   upgradeFailed: () =>
     "The data could not be updated for this version of Liurium. It was left unchanged.",
   invalidPath: () => "This name or path is not allowed on Windows.",
+  skippedName: () =>
+    "Liurium leaves out names that start with a dot and folders such as node_modules or build, so this would not show up. Choose another name.",
+  isLink: () =>
+    "This is a link to another place. Liurium does not rename, move, or delete links; use Explorer for that.",
   notUtf8: () =>
     "Liurium can open only UTF-8 text files. This file uses another encoding or is not text.",
   unsaved: () => "This note has changes that are not saved yet.",

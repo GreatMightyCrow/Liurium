@@ -1320,3 +1320,218 @@ fn note_errors_cross_ipc_as_their_own_kinds() {
         json!({ "kind": "unsaved" })
     );
 }
+
+fn tree_paths(workspace: &Workspace) -> (Vec<String>, Vec<String>) {
+    match workspace.notes().expect("notes") {
+        notes::NotesView::Ready {
+            notes,
+            empty_folders,
+            ..
+        } => (
+            notes.into_iter().map(|note| note.path).collect(),
+            empty_folders,
+        ),
+        notes::NotesView::NoProject => panic!("no project"),
+    }
+}
+
+#[test]
+fn notes_and_folders_are_created_renamed_moved_and_listed_again() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+
+    assert_eq!(
+        workspace.create_folder("", "Ideas").expect("folder"),
+        "Ideas"
+    );
+    assert_eq!(tree_paths(&workspace).1, ["Ideas"]);
+    assert_eq!(
+        workspace.create_note("Ideas", "Plan").expect("note"),
+        "Ideas/Plan.md"
+    );
+    assert_eq!(
+        std::fs::read(root.join("Ideas/Plan.md")).expect("note"),
+        b""
+    );
+    assert_eq!(
+        workspace
+            .rename_entry("Ideas/Plan.md", "Roadmap")
+            .expect("rename"),
+        "Ideas/Roadmap.md"
+    );
+    workspace.create_folder("", "Archive").expect("folder");
+    assert_eq!(
+        workspace
+            .move_entry("Ideas/Roadmap.md", "Archive")
+            .expect("move"),
+        "Archive/Roadmap.md"
+    );
+    assert_eq!(
+        workspace
+            .rename_entry("Archive", "Old")
+            .expect("rename folder"),
+        "Old"
+    );
+
+    let (notes, empty) = tree_paths(&workspace);
+    assert_eq!(notes, ["Old/Roadmap.md"]);
+    assert_eq!(empty, ["Ideas"]);
+}
+
+#[test]
+fn nothing_is_created_or_renamed_over_an_existing_item() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "plan").expect("note");
+    std::fs::write(root.join("Other.md"), "other").expect("note");
+
+    assert_eq!(
+        workspace.create_note("", "Plan").unwrap_err(),
+        CommandError::AlreadyExists
+    );
+    assert_eq!(
+        workspace.rename_entry("Plan.md", "Other").unwrap_err(),
+        CommandError::AlreadyExists
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).expect("note"),
+        "plan"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Other.md")).expect("note"),
+        "other"
+    );
+}
+
+#[test]
+fn names_and_paths_from_the_page_follow_the_tree_rules() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "plan").expect("note");
+    std::fs::write(root.join("code.rs"), "fn main() {}").expect("file");
+
+    for (result, expected) in [
+        (
+            workspace.create_folder("", "node_modules"),
+            CommandError::SkippedName,
+        ),
+        (
+            workspace.create_folder("", ".hidden"),
+            CommandError::SkippedName,
+        ),
+        (
+            workspace.create_note(".liurium", "x"),
+            CommandError::SkippedName,
+        ),
+        (
+            workspace.create_note("../outside", "x"),
+            CommandError::InvalidPath,
+        ),
+        (
+            workspace.rename_entry("Plan.md", "a/b"),
+            CommandError::InvalidPath,
+        ),
+        (
+            workspace.rename_entry("code.rs", "code2"),
+            CommandError::InvalidPath,
+        ),
+        (
+            workspace.move_entry("Plan.md", "missing"),
+            CommandError::NotFound,
+        ),
+    ] {
+        assert_eq!(result.unwrap_err(), expected);
+    }
+    assert!(workspace.trash_entry("code.rs").is_err());
+    assert!(root.join("code.rs").exists());
+}
+
+#[test]
+fn trashing_moves_into_the_projects_trash_and_closes_the_open_note() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::create_dir(root.join("Ideas")).expect("folder");
+    std::fs::write(root.join("Ideas/Plan.md"), "plan").expect("note");
+    workspace.open_note("Ideas/Plan.md", false).expect("open");
+    workspace
+        .update_note("Ideas/Plan.md", "plan, draft", false)
+        .expect("draft");
+
+    workspace.trash_entry("Ideas").expect("trash");
+
+    assert!(!root.join("Ideas").exists());
+    let trash = root.join(".liurium").join("trash");
+    let batch = std::fs::read_dir(&trash)
+        .expect("trash")
+        .next()
+        .expect("one batch")
+        .expect("entry")
+        .path();
+    assert_eq!(
+        std::fs::read_to_string(batch.join("Ideas").join("Plan.md")).expect("trashed"),
+        "plan, draft",
+        "the draft was saved before the move"
+    );
+    assert_eq!(
+        workspace
+            .update_note("Ideas/Plan.md", "x", true)
+            .unwrap_err(),
+        CommandError::NotFound
+    );
+    assert_eq!(tree_paths(&workspace).0, Vec::<String>::new());
+}
+
+#[test]
+fn the_open_note_follows_a_rename_of_its_folder_and_keeps_its_draft() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::create_dir(root.join("Ideas")).expect("folder");
+    std::fs::write(root.join("Ideas/Plan.md"), "plan").expect("note");
+    workspace.open_note("Ideas/Plan.md", false).expect("open");
+    workspace
+        .update_note("Ideas/Plan.md", "plan, draft", false)
+        .expect("draft");
+
+    workspace.rename_entry("Ideas", "Thoughts").expect("rename");
+
+    assert_eq!(
+        std::fs::read_to_string(root.join("Thoughts/Plan.md")).expect("moved"),
+        "plan, draft"
+    );
+    let opened = workspace
+        .open_note("Thoughts/Plan.md", false)
+        .expect("same note");
+    assert_eq!(opened.text, "plan, draft");
+    workspace
+        .update_note("Thoughts/Plan.md", "plan, edited", true)
+        .expect("save at the new place");
+    assert_eq!(
+        std::fs::read_to_string(root.join("Thoughts/Plan.md")).expect("note"),
+        "plan, edited"
+    );
+}
+
+#[test]
+fn an_unsolved_conflict_blocks_moving_the_open_note() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "mine").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    std::fs::write(root.join("Plan.md"), "theirs, longer").expect("outside");
+    workspace
+        .update_note("Plan.md", "mine, edited", true)
+        .expect("conflict");
+
+    assert_eq!(
+        workspace.rename_entry("Plan.md", "Renamed").unwrap_err(),
+        CommandError::Unsaved
+    );
+    assert_eq!(
+        workspace.trash_entry("Plan.md").unwrap_err(),
+        CommandError::Unsaved
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).expect("note"),
+        "theirs, longer"
+    );
+}

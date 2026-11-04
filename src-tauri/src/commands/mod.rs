@@ -8,6 +8,7 @@ pub mod data;
 pub mod editor;
 mod error;
 pub mod notes;
+pub mod organize;
 pub mod projects;
 pub mod settings;
 #[cfg(test)]

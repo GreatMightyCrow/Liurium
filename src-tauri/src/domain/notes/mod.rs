@@ -2,6 +2,7 @@
 //! project's cache, which can be thrown away and built again at any time (ADR-0016).
 //! Only the cache is written; the project folder is only read.
 
+pub mod organize;
 pub mod session;
 #[cfg(test)]
 mod session_tests;
@@ -49,6 +50,8 @@ pub struct Index {
     pub skipped: Skipped,
     /// The walk stopped at the note limit.
     pub truncated: bool,
+    /// Folders with nothing in them, parts joined with `/` (M3-004).
+    pub empty_folders: Vec<String>,
 }
 
 /// Walks the project and brings its cache up to date: new notes added, notes with
@@ -72,6 +75,7 @@ pub fn refresh_with(
         rebuilt: cache.fresh,
         skipped: walk.skipped,
         truncated: walk.truncated,
+        empty_folders: walk.empty_folders.iter().map(ToString::to_string).collect(),
     })
 }
 

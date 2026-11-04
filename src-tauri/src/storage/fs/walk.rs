@@ -80,6 +80,8 @@ pub struct Walk {
     pub skipped: Skipped,
     /// The note limit was reached; the project holds more notes than listed.
     pub truncated: bool,
+    /// Folders with nothing in them at all, so a new folder shows up (M3-004).
+    pub empty_folders: Vec<RelPath>,
 }
 
 /// A folder still to read: where it really is, and its path below the root.
@@ -106,6 +108,7 @@ struct Walker<'a> {
     /// Real paths already walked, folders and notes, in lower case.
     seen: HashSet<String>,
     links: VecDeque<Link>,
+    empty_folders: Vec<RelPath>,
 }
 
 impl ProjectRoot {
@@ -119,6 +122,7 @@ impl ProjectRoot {
             truncated: false,
             seen: HashSet::new(),
             links: VecDeque::new(),
+            empty_folders: Vec::new(),
         };
         walker.seen.insert(key(self.path()));
         walker.walk(Folder {
@@ -136,10 +140,14 @@ impl ProjectRoot {
             let (a, b) = (a.path.to_string(), b.path.to_string());
             a.to_lowercase().cmp(&b.to_lowercase()).then(a.cmp(&b))
         });
+        walker
+            .empty_folders
+            .sort_by_cached_key(|path| (path.to_string().to_lowercase(), path.to_string()));
         Walk {
             notes: walker.notes,
             skipped: walker.skipped,
             truncated: walker.truncated,
+            empty_folders: walker.empty_folders,
         }
     }
 }
@@ -152,6 +160,11 @@ impl Walker<'_> {
             let Some(entries) = self.entries(&folder.real) else {
                 continue;
             };
+            if entries.is_empty()
+                && let Some(rel) = &folder.rel
+            {
+                self.empty_folders.push(rel.clone());
+            }
             // Reversed onto the stack, so subfolders are read in name order.
             let mut subfolders = Vec::new();
             for entry in entries {

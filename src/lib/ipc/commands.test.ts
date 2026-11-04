@@ -2,14 +2,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   closeNote,
+  createFolder,
+  createNote,
   getAppDataInfo,
   getAppInfo,
   listNotes,
+  moveEntry,
   openAppDataFolder,
   openNote,
   pruneBackups,
+  renameEntry,
   resetSyncWarnings,
   resolveNoteConflict,
+  trashEntry,
   updateNote,
   updateSettings,
 } from "./commands";
@@ -107,5 +112,23 @@ test("the note commands send the path and their arguments under Rust's names", a
     ["update_note", { path: "Ideas/Plan.md", text: "text", save: false }],
     ["resolve_note_conflict", { path: "Ideas/Plan.md", choice: "keepBoth" }],
     ["close_note", { path: "Ideas/Plan.md" }],
+  ]);
+});
+
+test("the organize commands send paths and names under Rust's names", async () => {
+  invokeMock.mockResolvedValue("x");
+
+  await createNote("Ideas", "Idea");
+  await createFolder("", "Ideas");
+  await renameEntry("Ideas/Idea.md", "Plan");
+  await moveEntry("Ideas/Plan.md", "");
+  await trashEntry("Plan.md");
+
+  expect(invokeMock.mock.calls).toEqual([
+    ["create_note", { folder: "Ideas", name: "Idea" }],
+    ["create_folder", { parent: "", name: "Ideas" }],
+    ["rename_entry", { path: "Ideas/Idea.md", name: "Plan" }],
+    ["move_entry", { path: "Ideas/Plan.md", folder: "" }],
+    ["trash_entry", { path: "Plan.md" }],
   ]);
 });

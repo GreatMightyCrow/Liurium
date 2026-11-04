@@ -1,9 +1,8 @@
-import { FileText, FolderOpen } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import {
   listNotes,
-  type NoteEntry,
   type NotesView,
   type SkippedNotes,
 } from "../lib/ipc/commands";
@@ -13,9 +12,11 @@ import { PageHeader } from "../ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { commandErrorMessage } from "./commandErrorMessage";
 import { NotePane } from "./notes/NotePane";
+import { NoteTree, type TreeChange } from "./notes/NoteTree";
+import { buildTree } from "./notes/tree";
 import styles from "./NotesPage.module.css";
 
-/** The list shows at most this many notes; the folder tree replaces it later. */
+/** The tree shows at most this many notes; the rest are counted below it. */
 export const SHOWN_NOTES = 1000;
 
 type Loaded =
@@ -46,33 +47,6 @@ export function skippedText(skipped: SkippedNotes): string | null {
   return parts.length === 0 ? null : `Not included: ${parts.join(", ")}.`;
 }
 
-interface Folder {
-  /** Below the project folder; empty for notes at the top. */
-  path: string;
-  notes: { name: string; note: NoteEntry }[];
-}
-
-/** Notes at the top first, then folders by path without case. */
-export function byFolder(notes: NoteEntry[]): Folder[] {
-  const folders = new Map<string, Folder>();
-  for (const note of notes) {
-    const cut = note.path.lastIndexOf("/");
-    const path = cut < 0 ? "" : note.path.slice(0, cut);
-    const name = note.path.slice(cut + 1);
-    let folder = folders.get(path);
-    if (folder === undefined) {
-      folder = { path, notes: [] };
-      folders.set(path, folder);
-    }
-    folder.notes.push({ name, note });
-  }
-  return [...folders.values()].sort((a, b) =>
-    a.path === "" || b.path === ""
-      ? Number(a.path !== "") - Number(b.path !== "")
-      : a.path.localeCompare(b.path, "en", { sensitivity: "base" }),
-  );
-}
-
 function errorOf(reason: unknown): CommandError {
   return reason instanceof CommandFailure ? reason.error : { kind: "internal" };
 }
@@ -101,10 +75,12 @@ export function notePathOf(location: string): string | null {
   }
 }
 
-// The notes of the open project (M3-002): how many, a list by folder on the left,
-// and the open note on the right (M3-003, owner decision Q4).
+// The notes of the open project (M3-002): how many, the folder tree on the left
+// (M3-004), and the open note on the right (M3-003, owner decision Q4).
 export function NotesPage() {
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
+  /** Counts reloads; the tree asks for one after every change. */
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let current = true;
@@ -123,17 +99,22 @@ export function NotesPage() {
     return () => {
       current = false;
     };
-  }, []);
+  }, [version]);
 
   return (
     <div className={styles.page}>
       <PageHeader title="Notes" />
-      <Content loaded={loaded} />
+      <Content
+        loaded={loaded}
+        reload={() => {
+          setVersion((last) => last + 1);
+        }}
+      />
     </div>
   );
 }
 
-function Content({ loaded }: { loaded: Loaded }) {
+function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
   const [location, navigate] = useLocation();
   const openPath = notePathOf(location);
 
@@ -175,72 +156,48 @@ function Content({ loaded }: { loaded: Loaded }) {
     skipped,
   ].filter((notice): notice is string => typeof notice === "string");
 
-  if (view.notes.length === 0) {
-    return (
-      <div className={styles.content}>
-        <EmptyState
-          icon={FileText}
-          title="No notes in this project yet"
-          description="Liurium looks for .md and .markdown files, except in folders such as node_modules, target, or ones whose name starts with a dot."
-        />
-        <Notices notices={notices} />
-      </div>
-    );
-  }
-
   const shown = view.notes.slice(0, SHOWN_NOTES);
   const hidden = view.notes.length - shown.length;
 
+  const changed = (change: TreeChange) => {
+    reload();
+    if (change.open !== undefined) {
+      navigate(noteHref(change.open));
+    } else if (change.moved !== undefined && openPath !== null) {
+      const { from, to } = change.moved;
+      navigate(noteHref(to + openPath.slice(from.length)), { replace: true });
+    } else if (change.trashed !== undefined) {
+      navigate(NOTES, { replace: true });
+    }
+  };
+
   return (
     <div className={styles.split}>
-      <nav className={styles.list} aria-label="Notes in this project">
+      <div className={styles.list}>
         <p className={styles.summary}>
-          {plural(view.notes.length, "note", "notes")}
+          {view.notes.length === 0
+            ? "No notes yet"
+            : plural(view.notes.length, "note", "notes")}
         </p>
         <Notices notices={notices} />
-        {byFolder(shown).map((folder) => (
-          <section
-            key={folder.path}
-            className={styles.folder}
-            aria-label={folder.path === "" ? "Project folder" : folder.path}
-          >
-            <h2
-              className={
-                folder.path === "" ? styles.topName : styles.folderName
-              }
-            >
-              {folder.path === "" ? "Project folder" : folder.path}
-            </h2>
-            <ul className={styles.rows}>
-              {folder.notes.map(({ name, note }) => {
-                const open =
-                  openPath?.toLowerCase() === note.path.toLowerCase();
-                return (
-                  <li key={note.path}>
-                    <Link
-                      href={noteHref(note.path)}
-                      className={styles.row}
-                      aria-current={open ? "page" : undefined}
-                    >
-                      <FileText
-                        className={styles.icon}
-                        strokeWidth={1.5}
-                        aria-hidden
-                      />
-                      <span className={styles.name}>{name}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
+        <NoteTree
+          top={buildTree(shown, view.emptyFolders)}
+          openPath={openPath}
+          noteHref={noteHref}
+          onChanged={changed}
+        />
+        {view.notes.length === 0 && (
+          <p className={styles.more}>
+            Liurium looks for .md and .markdown files, except in folders such as
+            node_modules, target, or ones whose name starts with a dot.
+          </p>
+        )}
         {hidden > 0 && (
           <p className={styles.more}>
             {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
           </p>
         )}
-      </nav>
+      </div>
       <div className={styles.open}>
         {openPath === null ? (
           <p className={styles.hint}>Choose a note on the left to open it.</p>
@@ -249,6 +206,7 @@ function Content({ loaded }: { loaded: Loaded }) {
             key={openPath}
             path={openPath}
             onMoved={(path) => {
+              reload();
               navigate(noteHref(path), { replace: true });
             }}
           />

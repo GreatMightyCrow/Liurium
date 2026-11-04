@@ -26,6 +26,8 @@ const kinds: Record<CommandError["kind"], true> = {
   noProject: true,
   invalidName: true,
   notUtf8: true,
+  isLink: true,
+  skippedName: true,
   unsaved: true,
   internal: true,
 };

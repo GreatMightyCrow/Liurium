@@ -52,6 +52,7 @@ test("a note opens in the editor under the strict CSP and saves with its own lin
   });
   await addProject(page);
   await openNotes(page);
+  await page.getByRole("button", { name: "Ideas", exact: true }).click();
   await page.getByRole("link", { name: "Plan.md" }).click();
 
   const editor = page.getByRole("textbox", { name: "Plan.md" });

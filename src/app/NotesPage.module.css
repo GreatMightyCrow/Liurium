@@ -6,14 +6,6 @@
     height: 100%;
   }
 
-  .content {
-    display: grid;
-    align-content: start;
-    gap: var(--space-5);
-    max-width: var(--size-page-max);
-    padding: var(--space-5);
-  }
-
   /* List on the left, the open note on the right (owner decision M3-003 Q4). When
      the window gets narrow (small window, 200 % zoom), the note wraps below the
      list and the page scrolls. */
@@ -69,78 +61,6 @@
     font-size: var(--font-size-sm);
   }
 
-  .folder {
-    display: grid;
-    gap: var(--space-1);
-  }
-
-  /* Folders read as paths, so they use the code face. */
-  .folderName {
-    margin: 0;
-    padding-inline: var(--space-2);
-    color: var(--color-text-secondary);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-regular);
-    overflow-wrap: anywhere;
-  }
-
-  /* Notes at the top of the project: a label, not a path. */
-  .topName {
-    margin: 0;
-    padding-inline: var(--space-2);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  .rows {
-    display: grid;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  /* The open note has a line in the accent at its start, like the current section
-     in Settings; no fill, so the list stays calm. */
-  .row {
-    display: flex;
-    gap: var(--space-2);
-    align-items: center;
-    min-height: var(--size-control-sm);
-    padding-inline: var(--space-2);
-    border-inline-start: var(--border-width-mark) solid transparent;
-    border-radius: var(--radius-sm);
-    color: var(--color-text);
-    text-decoration: none;
-  }
-
-  .row:hover {
-    background: var(--color-surface);
-  }
-
-  .row:focus-visible {
-    outline: var(--focus-ring-width) solid var(--color-accent-text);
-    outline-offset: calc(var(--focus-ring-width) * -1);
-  }
-
-  .row[aria-current="page"] {
-    border-inline-start-color: var(--color-accent-text);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  .icon {
-    flex: none;
-    width: var(--size-icon-sm);
-    height: var(--size-icon-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .name {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
   .more {
     margin: 0;
     padding-inline: var(--space-2);
@@ -151,10 +71,6 @@
   @media (forced-colors: active) {
     .notices {
       border-inline-start-color: CanvasText;
-    }
-
-    .row[aria-current="page"] {
-      border-inline-start-color: var(--color-forced-selected);
     }
   }
 }

@@ -274,6 +274,13 @@ impl Session {
         }
     }
 
+    /// The note or a folder above it was renamed or moved (M3-004).
+    pub fn rebase(&mut self, from: &RelPath, to: &RelPath) {
+        if let Some(path) = self.path.rebase(from, to) {
+            self.path = path;
+        }
+    }
+
     /// Drops the draft (the user chose to close without saving).
     pub fn discard(&mut self) {
         self.draft = None;

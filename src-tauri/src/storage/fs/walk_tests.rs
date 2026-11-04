@@ -302,3 +302,18 @@ fn symbolic_links_follow_the_same_rules_as_junctions() {
     assert_eq!(walk.skipped.links_outside, 2);
     assert_eq!(walk.skipped.broken_links, 1);
 }
+
+#[test]
+fn empty_folders_are_reported_but_folders_with_other_files_are_not() {
+    let f = fixture();
+    fs::create_dir_all(f.project.join("New/Inner")).expect("folders");
+    fs::create_dir(f.project.join("Empty")).expect("folder");
+    f.file("src/main.rs");
+    fs::create_dir(f.project.join(".hidden")).expect("folder");
+    fs::create_dir_all(f.project.join("node_modules/empty")).expect("folder");
+
+    let walk = f.walk();
+
+    let empty: Vec<String> = walk.empty_folders.iter().map(ToString::to_string).collect();
+    assert_eq!(empty, ["Empty", "New/Inner"]);
+}

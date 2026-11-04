@@ -1,7 +1,10 @@
 use serde::Serialize;
 
 use crate::domain::projects::ProjectError;
-use crate::storage::{db::DbError, fs::FsError};
+use crate::storage::{
+    db::DbError,
+    fs::{FsError, PathRule},
+};
 
 /// What a command reports to the page: a kind the UI can explain in plain words.
 /// Never paths, file contents, or operating-system messages; details stay in Rust
@@ -34,6 +37,8 @@ pub enum CommandError {
     /// Inside `.liurium` or `.git`.
     Protected,
     BrokenLink,
+    /// A link or junction, which Liurium does not rename, move, or delete (M3-004).
+    IsLink,
     /// A folder where a file was expected, or the other way round.
     WrongKind,
     TooLarge {
@@ -50,6 +55,9 @@ pub enum CommandError {
     NoProject,
     /// A name that is empty, too long, or has control characters.
     InvalidName,
+    /// A name Liurium skips in the notes tree (starting with `.`, or a package folder
+    /// such as `node_modules`), so the item would not show up (M3-004).
+    SkippedName,
     /// The file is not UTF-8 text (M3-003).
     NotUtf8,
     /// The note has changes that are not saved yet.
@@ -77,10 +85,13 @@ impl From<DbError> for CommandError {
 impl From<FsError> for CommandError {
     fn from(error: FsError) -> Self {
         match error {
+            FsError::InvalidPath(PathRule::Skipped) => Self::SkippedName,
             FsError::InvalidPath(_) => Self::InvalidPath,
             FsError::OutsideRoot => Self::OutsideProject,
             FsError::Protected => Self::Protected,
             FsError::BrokenLink => Self::BrokenLink,
+            FsError::IsLink => Self::IsLink,
+            FsError::IntoItself => Self::InvalidPath,
             FsError::NotFound => Self::NotFound,
             FsError::WrongKind => Self::WrongKind,
             FsError::AlreadyExists => Self::AlreadyExists,

@@ -23,6 +23,11 @@ const COMMANDS: &[&str] = &[
     "update_note",
     "resolve_note_conflict",
     "close_note",
+    "create_note",
+    "create_folder",
+    "rename_entry",
+    "move_entry",
+    "trash_entry",
 ];
 
 fn main() {

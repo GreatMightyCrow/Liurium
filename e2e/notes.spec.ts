@@ -38,10 +38,15 @@ test("the Notes page lists the project's notes and leaves package folders out", 
 
   await openArea(page, "Notes");
   await expect(page.getByText("2 notes", { exact: true })).toBeVisible();
-  const top = page.getByRole("region", { name: "Project folder" });
-  await expect(top.getByRole("listitem")).toHaveText([/README\.md/]);
-  const ideas = page.getByRole("region", { name: "Ideas" });
-  await expect(ideas.getByRole("listitem")).toHaveText([/Plan\.markdown/]);
+  const tree = page.getByRole("navigation", {
+    name: "Notes in this project",
+  });
+  await expect(tree.getByRole("link")).toHaveText(["README.md"]);
+  await tree.getByRole("button", { name: "Ideas", exact: true }).click();
+  await expect(tree.getByRole("link")).toHaveText([
+    "Plan.markdown",
+    "README.md",
+  ]);
 
   // After a restart the list comes from the walk again, with the new note.
   write(folder, "Ideas/Next.md", "next\n");

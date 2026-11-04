@@ -14,6 +14,11 @@ pub enum FsError {
     Protected,
     /// A link whose target does not exist.
     BrokenLink,
+    /// The item is a link or junction; Liurium does not rename, move, or delete those
+    /// (M3-004), so nothing acts on a target elsewhere.
+    IsLink,
+    /// A folder cannot move into itself or a folder inside it.
+    IntoItself,
     NotFound,
     /// A folder where a file was expected, or the other way round.
     WrongKind,
@@ -35,6 +40,8 @@ impl fmt::Display for FsError {
             Self::OutsideRoot => write!(f, "the path leads outside the project"),
             Self::Protected => write!(f, "this folder is managed by Liurium or Git"),
             Self::BrokenLink => write!(f, "the link points to nothing"),
+            Self::IsLink => write!(f, "the item is a link"),
+            Self::IntoItself => write!(f, "a folder cannot move into itself"),
             Self::NotFound => write!(f, "the file does not exist"),
             Self::WrongKind => write!(f, "a file and a folder were mixed up"),
             Self::AlreadyExists => write!(f, "the file already exists"),
