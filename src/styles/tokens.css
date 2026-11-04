@@ -60,6 +60,8 @@
 
     /* Layout: fixed sizes of the app shell */
     --size-sidebar: 240px;
+    /* The sidebar as a strip of icons while a note is open (M3-014) */
+    --size-sidebar-collapsed: 56px;
     --size-statusbar: 24px;
     --size-header: 48px;
     --size-titlebar: 32px;

@@ -101,3 +101,29 @@ test("an unknown path leads to the dashboard", () => {
   expect(currentPageTitle()).toBe("Dashboard");
   expect(window.location.hash).toBe("#/");
 });
+
+test("the sidebar shrinks to its icons on Notes and opens again elsewhere, as chosen", () => {
+  window.localStorage.clear();
+  const { container } = render(<App />);
+  const shell = () => container.querySelector("[data-frame]");
+  expect(shell()?.getAttribute("data-sidebar")).toBeNull();
+
+  fireEvent.click(sidebarLink("Notes"));
+  expect(shell()?.getAttribute("data-sidebar")).toBe("collapsed");
+  // Names stay for screen readers while only the icons show.
+  expect(screen.getByRole("link", { name: "Projects" })).toBeDefined();
+
+  fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+  expect(shell()?.getAttribute("data-sidebar")).toBeNull();
+  fireEvent.click(sidebarLink("Dashboard"));
+  fireEvent.click(sidebarLink("Notes"));
+  expect(shell()?.getAttribute("data-sidebar")).toBeNull();
+  expect(window.localStorage.getItem("liurium.sidebar.collapsed.notes")).toBe(
+    "false",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  fireEvent.click(sidebarLink("Settings"));
+  expect(shell()?.getAttribute("data-sidebar")).toBeNull();
+  window.localStorage.clear();
+});

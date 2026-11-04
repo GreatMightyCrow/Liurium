@@ -226,3 +226,23 @@ test("note addresses encode each part and decode back", () => {
   expect(notePathOf("/notes")).toBeNull();
   expect(notePathOf("/notes/%E0%A4%A")).toBeNull();
 });
+
+test("the note list can be hidden and shown again, remembered", async () => {
+  window.localStorage.clear();
+  listNotesMock.mockResolvedValue(ready([note("a.md")]));
+  renderPage();
+  await screen.findByText("1 note");
+
+  fireEvent.click(screen.getByRole("button", { name: "Hide note list" }));
+  expect(
+    screen.queryByRole("navigation", { name: "Notes in this project" }),
+  ).toBeNull();
+  expect(
+    screen.getByText("Show the note list to choose a note."),
+  ).toBeDefined();
+  expect(window.localStorage.getItem("liurium.notes.listHidden")).toBe("true");
+
+  fireEvent.click(screen.getByRole("button", { name: "Show note list" }));
+  expect(tree()).toBeDefined();
+  window.localStorage.clear();
+});

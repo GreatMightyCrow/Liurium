@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   createNote,
   type LinkCandidate,
@@ -56,6 +62,8 @@ interface NotePaneProps {
   onOpen: (path: string) => void;
   /** A note was created from a missing link; the list shows it after a reload. */
   onCreated: () => void;
+  /** Shown before the note's name, e.g. the button that shows the note list. */
+  leading?: ReactNode;
 }
 
 /** While typing, the links are asked for again at most this often. */
@@ -97,6 +105,7 @@ export function NotePane({
   notes,
   onOpen,
   onCreated,
+  leading,
 }: NotePaneProps) {
   const { state, changed, save, resolve, unify } = useOpenNote(path, onMoved);
   const { folder, name } = split(path);
@@ -197,6 +206,7 @@ export function NotePane({
   return (
     <section className={styles.pane} aria-label={name}>
       <header className={styles.header}>
+        {leading}
         <div className={styles.titles}>
           <h2 className={styles.name}>{name}</h2>
           {folder !== "" && <p className={styles.folder}>{folder}</p>}

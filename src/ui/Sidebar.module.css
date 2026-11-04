@@ -8,10 +8,63 @@
 
   .header {
     display: flex;
+    gap: var(--space-2);
     align-items: center;
+    justify-content: space-between;
     flex: none;
     height: var(--size-header);
-    padding-inline: var(--space-4);
+    padding-inline: var(--space-4) var(--space-2);
+  }
+
+  /* Collapsed (M3-014): a strip of icons; the button sits where the title was. */
+  .sidebar[data-collapsed] .header {
+    justify-content: center;
+    padding-inline: var(--space-2);
+  }
+
+  .toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-secondary);
+    app-region: no-drag;
+  }
+
+  .toggle:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+  }
+
+  .toggle:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  .toggleIcon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .sidebar[data-collapsed] .link {
+    justify-content: center;
+  }
+
+  /* Off screen but read out. */
+  .hiddenLabel {
+    position: absolute;
+    /* One pixel, the width of a hairline. */
+    width: var(--border-width);
+    height: var(--border-width);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* Drag area of the hidden frame (ADR-0013); see PageHeader.module.css. */

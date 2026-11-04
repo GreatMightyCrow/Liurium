@@ -11,6 +11,8 @@ interface AppShellProps {
   /** Minimize, maximize, close; only rendered for the custom frames. */
   windowControls: ReactNode;
   sidebar: ReactNode;
+  /** The sidebar shows only its icons (M3-014). */
+  sidebarCollapsed?: boolean;
   statusBar: ReactNode;
   children: ReactNode;
 }
@@ -31,6 +33,7 @@ export function AppShell({
   icon,
   windowControls,
   sidebar,
+  sidebarCollapsed = false,
   statusBar,
   children,
 }: AppShellProps) {
@@ -38,6 +41,7 @@ export function AppShell({
     <div
       className={[styles.shell, frameClass[frame]].join(" ")}
       data-frame={frame}
+      data-sidebar={sidebarCollapsed ? "collapsed" : undefined}
     >
       {/* Hidden from screen readers: Windows already announces the window title. */}
       {frame === "liurium" && (

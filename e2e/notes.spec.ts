@@ -38,6 +38,13 @@ test("the Notes page lists the project's notes and leaves package folders out", 
 
   await openArea(page, "Notes");
   await expect(page.getByText("2 notes", { exact: true })).toBeVisible();
+  // On Notes the app sidebar shrinks to its icons (M3-014); the names stay links.
+  await expect(page.locator("[data-sidebar=collapsed]")).toHaveCount(1);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Projects" }),
+  ).toBeVisible();
   const tree = page.getByRole("navigation", {
     name: "Notes in this project",
   });

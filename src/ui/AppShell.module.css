@@ -2,9 +2,22 @@
   .shell {
     display: grid;
     grid-template-columns: var(--size-sidebar) minmax(0, 1fr) auto;
+    transition: grid-template-columns var(--duration-normal)
+      var(--ease-standard);
     grid-template-rows: minmax(0, 1fr) var(--size-statusbar);
     height: 100%;
     overflow: hidden;
+  }
+
+  /* M3-014: only the sidebar's icons. */
+  .shell[data-sidebar="collapsed"] {
+    grid-template-columns: var(--size-sidebar-collapsed) minmax(0, 1fr) auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shell {
+      transition: none;
+    }
   }
 
   .sidebar {

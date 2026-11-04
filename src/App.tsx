@@ -1,11 +1,12 @@
 import { CSPProvider } from "@base-ui/react/csp-provider";
 import { useCallback, useState } from "react";
-import { Router } from "wouter";
+import { Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import styles from "./App.module.css";
 import { AppRoutes } from "./app/AppRoutes";
 import { areas } from "./app/areas";
-import { frameStyleFrom } from "./app/frameStyle";
+import { type FrameStyle, frameStyleFrom } from "./app/frameStyle";
+import { useSidebarCollapsed } from "./app/layoutChoice";
 import { SettingsProvider } from "./app/settingsState";
 import { ShowTheme } from "./app/showTheme";
 import { appIconFor, applyTheme, type Theme, themeFrom } from "./app/theme";
@@ -34,28 +35,41 @@ function App() {
           <NotificationProvider>
             <Router hook={useHashLocation}>
               <SettingsProvider>
-                <AppShell
-                  frame={frame}
-                  title="Liurium"
-                  icon={appIconFor(theme)}
-                  windowControls={frame === "native" ? null : <FrameButtons />}
-                  sidebar={
-                    <Sidebar
-                      title="Liurium"
-                      items={mainAreas}
-                      endItems={endAreas}
-                    />
-                  }
-                  statusBar={<span className={styles.release}>Pre-alpha</span>}
-                >
-                  <AppRoutes />
-                </AppShell>
+                <Shell frame={frame} theme={theme} />
               </SettingsProvider>
             </Router>
           </NotificationProvider>
         </TooltipProvider>
       </ShowTheme>
     </CSPProvider>
+  );
+}
+
+// Inside the router, so the sidebar can follow the page: collapsed to its icons on
+// Notes, open elsewhere, each as the user last chose there (M3-014).
+function Shell({ frame, theme }: { frame: FrameStyle; theme: Theme }) {
+  const [location] = useLocation();
+  const [collapsed, setCollapsed] = useSidebarCollapsed(location);
+  return (
+    <AppShell
+      frame={frame}
+      title="Liurium"
+      icon={appIconFor(theme)}
+      windowControls={frame === "native" ? null : <FrameButtons />}
+      sidebarCollapsed={collapsed}
+      sidebar={
+        <Sidebar
+          title="Liurium"
+          items={mainAreas}
+          endItems={endAreas}
+          collapsed={collapsed}
+          onToggle={setCollapsed}
+        />
+      }
+      statusBar={<span className={styles.release}>Pre-alpha</span>}
+    >
+      <AppRoutes />
+    </AppShell>
   );
 }
 

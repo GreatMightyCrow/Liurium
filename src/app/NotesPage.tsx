@@ -1,4 +1,4 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
@@ -8,9 +8,11 @@ import {
 } from "../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../lib/ipc/errors";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { PageHeader } from "../ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { commandErrorMessage } from "./commandErrorMessage";
+import { useLayoutChoice } from "./layoutChoice";
 import { NotePane } from "./notes/NotePane";
 import { NoteTree, type TreeChange } from "./notes/NoteTree";
 import { buildTree } from "./notes/tree";
@@ -116,6 +118,11 @@ export function NotesPage() {
 
 function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
   const [location, navigate] = useLocation();
+  /** The note list can be hidden for a wider note (M3-014), remembered. */
+  const [listHidden, setListHidden] = useLayoutChoice(
+    "liurium.notes.listHidden",
+    false,
+  );
   const openPath = notePathOf(location);
 
   if (loaded.status === "loading") {
@@ -159,6 +166,17 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
   const shown = view.notes.slice(0, SHOWN_NOTES);
   const hidden = view.notes.length - shown.length;
 
+  const showList = listHidden ? (
+    <IconButton
+      label="Show note list"
+      icon={PanelLeftOpen}
+      size="sm"
+      onClick={() => {
+        setListHidden(false);
+      }}
+    />
+  ) : null;
+
   const changed = (change: TreeChange) => {
     reload();
     if (change.open !== undefined) {
@@ -173,34 +191,53 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
 
   return (
     <div className={styles.split}>
-      <div className={styles.list}>
-        <p className={styles.summary}>
-          {view.notes.length === 0
-            ? "No notes yet"
-            : plural(view.notes.length, "note", "notes")}
-        </p>
-        <Notices notices={notices} />
-        <NoteTree
-          top={buildTree(shown, view.emptyFolders)}
-          openPath={openPath}
-          noteHref={noteHref}
-          onChanged={changed}
-        />
-        {view.notes.length === 0 && (
-          <p className={styles.more}>
-            Liurium looks for .md and .markdown files, except in folders such as
-            node_modules, target, or ones whose name starts with a dot.
-          </p>
-        )}
-        {hidden > 0 && (
-          <p className={styles.more}>
-            {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
-          </p>
-        )}
-      </div>
+      {!listHidden && (
+        <div className={styles.list}>
+          <div className={styles.listHead}>
+            <p className={styles.summary}>
+              {view.notes.length === 0
+                ? "No notes yet"
+                : plural(view.notes.length, "note", "notes")}
+            </p>
+            <IconButton
+              label="Hide note list"
+              icon={PanelLeftClose}
+              size="sm"
+              onClick={() => {
+                setListHidden(true);
+              }}
+            />
+          </div>
+          <Notices notices={notices} />
+          <NoteTree
+            top={buildTree(shown, view.emptyFolders)}
+            openPath={openPath}
+            noteHref={noteHref}
+            onChanged={changed}
+          />
+          {view.notes.length === 0 && (
+            <p className={styles.more}>
+              Liurium looks for .md and .markdown files, except in folders such
+              as node_modules, target, or ones whose name starts with a dot.
+            </p>
+          )}
+          {hidden > 0 && (
+            <p className={styles.more}>
+              {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
+            </p>
+          )}
+        </div>
+      )}
       <div className={styles.open}>
         {openPath === null ? (
-          <p className={styles.hint}>Choose a note on the left to open it.</p>
+          <div className={styles.hintRow}>
+            {showList}
+            <p className={styles.hint}>
+              {listHidden
+                ? "Show the note list to choose a note."
+                : "Choose a note on the left to open it."}
+            </p>
+          </div>
         ) : (
           <NotePane
             key={openPath}
@@ -214,6 +251,7 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
               navigate(noteHref(path));
             }}
             onCreated={reload}
+            leading={showList}
           />
         )}
       </div>
