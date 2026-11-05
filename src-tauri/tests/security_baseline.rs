@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 39] = [
+const REVIEWED_PERMISSIONS: [&str; 41] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -70,6 +70,10 @@ const REVIEWED_PERMISSIONS: [&str; 39] = [
     "allow-wait-note-changes",
     "allow-check-note-changes",
     "allow-reconcile-note",
+    // The question when the window closes (M3-016): waiting takes no arguments; an
+    // answer acts only while a question waits.
+    "allow-wait-close-question",
+    "allow-answer-close-question",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

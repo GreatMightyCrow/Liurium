@@ -8,7 +8,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::{CommandError, Workspace, projects::blocking};
+use super::{
+    CommandError, Workspace,
+    closing::{CloseQuestion, CloseReason},
+    projects::blocking,
+};
 use crate::domain::notes::{
     session::{
         Choice, MAX_NOTE_BYTES, NoteError, Outside, ReadOnly, Resolved, Saved, Session, note_path,
@@ -208,8 +212,8 @@ impl Editor {
 pub enum CloseCheck {
     /// Nothing unsaved, or saved now.
     Clear,
-    /// The draft could not be written; the user decides.
-    Unsaved { name: String, conflict: bool },
+    /// The draft could not be written; the user decides (M3-016).
+    Unsaved(CloseQuestion),
 }
 
 #[derive(Clone, Default)]
@@ -276,17 +280,13 @@ impl Editor {
             .last()
             .unwrap_or_default()
             .to_owned();
-        match open.session.save(&open.root) {
-            Ok(Saved::Saved) => CloseCheck::Clear,
-            Ok(Saved::Conflict | Saved::Gone) => CloseCheck::Unsaved {
-                name,
-                conflict: true,
-            },
-            Ok(Saved::Draft) | Err(_) => CloseCheck::Unsaved {
-                name,
-                conflict: false,
-            },
-        }
+        let reason = match open.session.save(&open.root) {
+            Ok(Saved::Saved) => return CloseCheck::Clear,
+            Ok(Saved::Conflict) => CloseReason::ChangedOutside,
+            Ok(Saved::Gone) => CloseReason::DeletedOutside,
+            Ok(Saved::Draft) | Err(_) => CloseReason::NotWritten,
+        };
+        CloseCheck::Unsaved(CloseQuestion { name, reason })
     }
 
     /// The user chose "keep both" while closing. Returns whether it was written.

@@ -37,6 +37,8 @@ const COMMANDS: &[&str] = &[
     "wait_note_changes",
     "check_note_changes",
     "reconcile_note",
+    "wait_close_question",
+    "answer_close_question",
 ];
 
 fn main() {

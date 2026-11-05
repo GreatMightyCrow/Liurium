@@ -58,7 +58,9 @@ pub fn run() {
             commands::properties::set_property_kind,
             commands::changes::wait_note_changes,
             commands::changes::check_note_changes,
-            commands::editor::reconcile_note
+            commands::editor::reconcile_note,
+            commands::closing::wait_close_question,
+            commands::closing::answer_close_question
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

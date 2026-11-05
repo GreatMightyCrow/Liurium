@@ -5,6 +5,7 @@ import { useHashLocation } from "wouter/use-hash-location";
 import styles from "./App.module.css";
 import { AppRoutes } from "./app/AppRoutes";
 import { areas } from "./app/areas";
+import { CloseQuestionDialog } from "./app/CloseQuestionDialog";
 import { type FrameStyle, frameStyleFrom } from "./app/frameStyle";
 import { useSidebarCollapsed } from "./app/layoutChoice";
 import { SettingsProvider } from "./app/settingsState";
@@ -69,6 +70,7 @@ function Shell({ frame, theme }: { frame: FrameStyle; theme: Theme }) {
       statusBar={<span className={styles.release}>Pre-alpha</span>}
     >
       <AppRoutes />
+      <CloseQuestionDialog />
     </AppShell>
   );
 }

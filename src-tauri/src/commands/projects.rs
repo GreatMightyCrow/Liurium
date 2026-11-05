@@ -10,7 +10,10 @@ use std::{
 use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
-use super::{CommandError, DataStatus, changes::Changes, editor::Editor, notes::NoteIndex};
+use super::{
+    CommandError, DataStatus, changes::Changes, closing::CloseQuestions, editor::Editor,
+    notes::NoteIndex,
+};
 use crate::domain::{
     projects::{self, Project, ProjectCopy, ProjectError},
     settings::StartWith,
@@ -166,6 +169,8 @@ pub struct Workspace {
     editor: Editor,
     /// Watching the open project for changes outside (M3-008).
     changes: Changes,
+    /// The question when the window closes with unsaved text (M3-016).
+    close_questions: CloseQuestions,
 }
 
 impl Workspace {
@@ -190,7 +195,12 @@ impl Workspace {
             notes: NoteIndex::default(),
             editor: Editor::default(),
             changes: Changes::default(),
+            close_questions: CloseQuestions::default(),
         }
+    }
+
+    pub fn close_questions(&self) -> &CloseQuestions {
+        &self.close_questions
     }
 
     pub(super) fn changes(&self) -> &Changes {

@@ -3,6 +3,7 @@ use std::{io, path::PathBuf, time::Duration};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
+use super::closing::{CloseChoice, CloseOutcome, CloseQuestion, CloseReason};
 use super::projects::{AddOutcome, CurrentProject, ProjectInfo, ProjectStatus, Workspace, checked};
 use super::settings::SettingsView;
 use super::*;
@@ -1300,10 +1301,10 @@ fn closing_the_window_saves_the_draft_or_reports_what_is_unsaved() {
     std::fs::write(root.join("Plan.md"), "changed outside").expect("outside");
     assert_eq!(
         editor.save_before_close(),
-        editor::CloseCheck::Unsaved {
+        editor::CloseCheck::Unsaved(CloseQuestion {
             name: "Plan.md".to_owned(),
-            conflict: true
-        }
+            reason: CloseReason::ChangedOutside,
+        })
     );
     assert!(editor.keep_both_before_close());
     assert_eq!(
@@ -1889,4 +1890,136 @@ fn the_check_at_focus_finds_changes_without_a_watcher_and_only_so_often() {
             .ok(),
         Some(next)
     );
+}
+
+// The question when the window closes (M3-016).
+
+fn waiting_question(workspace: &Workspace) -> u64 {
+    workspace.close_questions().ask(CloseQuestion {
+        name: "Plan.md".to_owned(),
+        reason: CloseReason::ChangedOutside,
+    })
+}
+
+#[test]
+fn an_answer_without_a_question_can_neither_close_nor_drop_text() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+
+    for choice in [
+        CloseChoice::Shown,
+        CloseChoice::KeepBoth,
+        CloseChoice::Discard,
+        CloseChoice::Stay,
+    ] {
+        assert_eq!(
+            workspace.answer_close_question(choice),
+            Ok(CloseOutcome::Stays)
+        );
+    }
+
+    let note = workspace.open_note("Plan.md", false).expect("open");
+    assert_eq!(note.text, "mine");
+    assert!(note.unsaved);
+    assert!(!root.join("Plan (conflict).md").exists());
+}
+
+#[test]
+fn cancel_ends_the_question_and_keeps_the_text() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+    waiting_question(&workspace);
+
+    assert_eq!(
+        workspace.answer_close_question(CloseChoice::Stay),
+        Ok(CloseOutcome::Stays)
+    );
+    // Asked once: a later answer finds no question.
+    assert_eq!(
+        workspace.answer_close_question(CloseChoice::Discard),
+        Ok(CloseOutcome::Stays)
+    );
+    assert!(workspace.open_note("Plan.md", false).expect("open").unsaved);
+}
+
+#[test]
+fn close_without_saving_drops_the_text_and_closes() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+    waiting_question(&workspace);
+
+    assert_eq!(
+        workspace.answer_close_question(CloseChoice::Discard),
+        Ok(CloseOutcome::Closes)
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).expect("note"),
+        "one"
+    );
+    assert_eq!(
+        workspace.editor().save_before_close(),
+        editor::CloseCheck::Clear
+    );
+}
+
+#[test]
+fn keep_both_writes_a_copy_and_closes_and_a_deleted_note_stays_deleted() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+    std::fs::remove_file(root.join("Plan.md")).expect("delete");
+    assert_eq!(
+        workspace.editor().save_before_close(),
+        editor::CloseCheck::Unsaved(CloseQuestion {
+            name: "Plan.md".to_owned(),
+            reason: CloseReason::DeletedOutside,
+        })
+    );
+    waiting_question(&workspace);
+
+    assert_eq!(
+        workspace.answer_close_question(CloseChoice::KeepBoth),
+        Ok(CloseOutcome::Closes)
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan (conflict).md")).expect("copy"),
+        "mine"
+    );
+    assert!(!root.join("Plan.md").exists());
+}
+
+#[test]
+fn a_shown_question_is_not_taken_by_the_timer() {
+    let dir = temp_dir();
+    let (workspace, _root) = opened_garden(dir.path());
+    let asked = waiting_question(&workspace);
+
+    assert_eq!(
+        workspace.answer_close_question(CloseChoice::Shown),
+        Ok(CloseOutcome::Stays)
+    );
+
+    assert!(!workspace.close_questions().take_unshown(asked));
+    // Closing again must be shown again, or the page has stopped answering.
+    let again = waiting_question(&workspace);
+    assert!(workspace.close_questions().take_unshown(again));
 }

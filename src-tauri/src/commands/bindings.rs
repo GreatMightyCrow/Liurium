@@ -10,6 +10,7 @@ use std::{
 
 use ts_rs::{Config, TS};
 
+use super::closing::{CloseChoice, CloseOutcome, CloseQuestion, CloseReason};
 use super::data::AppDataInfo;
 use super::editor::{
     ConflictChoice, NoteCheck, NoteLineEnding, NoteOutcome, NoteReadOnly, OpenedNote, SaveState,
@@ -69,6 +70,10 @@ fn typescript_bindings_match_the_rust_types() {
         output::<ConflictChoice>(&config),
         output::<NoteCheck>(&config),
         output::<NoteOutcome>(&config),
+        output::<CloseChoice>(&config),
+        output::<CloseOutcome>(&config),
+        output::<CloseQuestion>(&config),
+        output::<CloseReason>(&config),
         output::<NoteLink>(&config),
         output::<LinkTarget>(&config),
         output::<LinkCandidate>(&config),

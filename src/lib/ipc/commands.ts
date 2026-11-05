@@ -15,6 +15,10 @@ import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
 import type { Value as PropertyValue } from "./bindings/PropertyValue";
 import type { TagNotes } from "./bindings/TagNotes";
 import type { NotesView } from "./bindings/NotesView";
+import type { CloseChoice } from "./bindings/CloseChoice";
+import type { CloseOutcome } from "./bindings/CloseOutcome";
+import type { CloseQuestion } from "./bindings/CloseQuestion";
+import type { CloseReason } from "./bindings/CloseReason";
 import type { NoteCheck } from "./bindings/NoteCheck";
 import type { OpenedNote } from "./bindings/OpenedNote";
 import type { SaveState } from "./bindings/SaveState";
@@ -40,6 +44,10 @@ export type {
   PropertyKindChoice,
   PropertyValue,
   NotesView,
+  CloseChoice,
+  CloseOutcome,
+  CloseQuestion,
+  CloseReason,
   NoteCheck,
   OpenedNote,
   ProjectEntry,
@@ -201,6 +209,19 @@ export function resolveNoteConflict(
  *  drop that text (`discard`). */
 export function closeNote(path: string, discard = false): Promise<void> {
   return call("close_note", { path, discard });
+}
+
+/** Waits until the window wants to close and a note could not be saved, or 30 seconds
+ *  passed (M3-016). */
+export function waitCloseQuestion(): Promise<CloseQuestion | null> {
+  return call("wait_close_question");
+}
+
+/** Answers that question. Without one waiting, it does nothing. */
+export function answerCloseQuestion(
+  choice: CloseChoice,
+): Promise<CloseOutcome> {
+  return call("answer_close_question", { choice });
 }
 
 /** Creates an empty note in a folder ("" for the top). Returns its path. */

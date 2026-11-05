@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod bindings;
 pub mod changes;
+pub mod closing;
 pub mod data;
 pub mod editor;
 mod error;

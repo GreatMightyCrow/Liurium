@@ -248,6 +248,10 @@ interface App {
   launch: (options?: LaunchOptions) => Promise<Page>;
   /** Stops the app, e.g. to move a project folder while nothing holds it. */
   stop: () => Promise<void>;
+  /** Sends the window Windows' own close message, as Alt + F4 or the taskbar do. */
+  closeFromWindows: () => void;
+  /** Waits for the app to exit by itself, e.g. after closing its window (M3-016). */
+  exited: () => Promise<void>;
   /**
    * Starts the app once more while it runs, with its own data folder and
    * arguments, and resolves with that start's exit code (M2-010).
@@ -288,6 +292,34 @@ export const test = base.extend<{ app: App }>({
             await stop(running);
             running = undefined;
           }
+        },
+        closeFromWindows: () => {
+          if (running?.process.pid === undefined) {
+            throw new Error("the app is not running");
+          }
+          running.window ??= mainWindow(running.process.pid);
+          powershell(
+            [
+              "Add-Type -Namespace Liurium -Name Close -MemberDefinition '",
+              '[DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr w, IntPtr l);',
+              "'",
+              `[void][Liurium.Close]::PostMessageW([IntPtr]${running.window}, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)`,
+            ].join("\n"),
+          );
+        },
+        exited: async () => {
+          const process = running?.process;
+          if (process === undefined) {
+            throw new Error("the app is not running");
+          }
+          await until(
+            () =>
+              Promise.resolve(
+                process.exitCode !== null || process.signalCode !== null,
+              ),
+            "the app to exit",
+            15_000,
+          );
         },
         startAgain: (otherDataDir, args) => startAgain(otherDataDir, args),
         window: () => {
