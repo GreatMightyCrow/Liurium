@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -36,7 +37,7 @@ vi.mock("../../lib/ipc/commands", () => ({
 const fakeEditor = {
   text: vi.fn(() => ""),
   setReadOnly: vi.fn(),
-  setLinks: vi.fn(),
+  setMarks: vi.fn(),
   replace: vi.fn(),
   goTo: vi.fn(),
   focus: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock("./noteEditor", () => ({
 
 const onOpen = vi.fn();
 const onCreated = vi.fn();
+const onTag = vi.fn();
 
 function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
   return (
@@ -60,6 +62,7 @@ function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
       ]}
       onOpen={onOpen}
       onCreated={onCreated}
+      onTag={onTag}
     />
   );
 }
@@ -123,7 +126,11 @@ beforeEach(() => {
   openNoteMock.mockResolvedValue(opened());
   updateNoteMock.mockResolvedValue("saved");
   vi.mocked(closeNote).mockResolvedValue(undefined);
-  vi.mocked(noteLinks).mockResolvedValue([]);
+  vi.mocked(noteLinks).mockResolvedValue({
+    links: [],
+    tags: [],
+    frontTags: [],
+  });
   fakeEditor.text.mockReturnValue("# Plan\r\n");
 });
 
@@ -331,27 +338,67 @@ function link(target: NoteLink["target"], from = 0, to = 8): NoteLink {
   return { from, to, target };
 }
 
+test("the note's tags show once in its header and choose that tag", async () => {
+  const text = "a\r\n#idee #Idee";
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue({
+    links: [],
+    tags: [
+      { from: 3, to: 8, tag: "idee" },
+      { from: 9, to: 14, tag: "Idee" },
+    ],
+    frontTags: ["project/sub"],
+  });
+  render(pane());
+  await noteOpened();
+
+  const list = await screen.findByRole("list", { name: "Tags" });
+  expect(
+    within(list)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["#project/sub", "#idee"]);
+  // The editor counts the line break as one position.
+  expect(fakeEditor.setMarks).toHaveBeenCalledWith(
+    [],
+    [
+      { from: 2, to: 7, tag: "idee" },
+      { from: 8, to: 13, tag: "Idee" },
+    ],
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "#idee" }));
+  expect(onTag).toHaveBeenCalledWith("idee");
+});
+
 test("Rust's links reach the editor, CRLF counted as one position", async () => {
   const text = "a\r\n[[Unique]]";
   fakeEditor.text.mockReturnValue(text);
-  vi.mocked(noteLinks).mockResolvedValue([
-    link(
-      { state: "note", path: "Unique.md", heading: null, block: null },
-      3,
-      13,
-    ),
-  ]);
+  vi.mocked(noteLinks).mockResolvedValue({
+    links: [
+      link(
+        { state: "note", path: "Unique.md", heading: null, block: null },
+        3,
+        13,
+      ),
+    ],
+    tags: [],
+    frontTags: [],
+  });
   render(pane());
   await noteOpened();
 
   await waitFor(() => {
-    expect(fakeEditor.setLinks).toHaveBeenCalledWith([
-      link(
-        { state: "note", path: "Unique.md", heading: null, block: null },
-        2,
-        12,
-      ),
-    ]);
+    expect(fakeEditor.setMarks).toHaveBeenCalledWith(
+      [
+        link(
+          { state: "note", path: "Unique.md", heading: null, block: null },
+          2,
+          12,
+        ),
+      ],
+      [],
+    );
   });
   expect(noteLinks).toHaveBeenCalledWith("Ideas/Plan.md", text);
   expect(

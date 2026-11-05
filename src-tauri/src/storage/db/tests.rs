@@ -473,7 +473,10 @@ fn a_new_cache_is_created_in_the_cache_folder_with_wal() {
         number(&cache.connection, "application_id"),
         i64::from(CACHE_ID)
     );
-    assert_eq!(tables(&cache.connection), ["links", "notes"]);
+    assert_eq!(
+        tables(&cache.connection),
+        ["aliases", "links", "notes", "tags"]
+    );
 }
 
 #[test]
@@ -606,8 +609,36 @@ fn a_version_1_cache_gains_links_and_forgets_its_notes_for_one_full_read() {
     let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
 
     assert!(!cache.fresh);
-    assert_eq!(number(&cache.connection, "user_version"), 2);
-    assert_eq!(tables(&cache.connection), ["links", "notes"]);
+    assert_eq!(number(&cache.connection, "user_version"), 3);
+    assert_eq!(
+        tables(&cache.connection),
+        ["aliases", "links", "notes", "tags"]
+    );
     assert!(cache_paths(&cache.connection).is_empty());
     assert!(backups(&path).is_empty());
+}
+
+#[test]
+fn a_version_2_cache_gains_tags_and_aliases_and_reads_every_note_again() {
+    let dir = temp_dir();
+    let path = cache_path(dir.path());
+    fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+    let conn = liurium_database(&path, Kind::Cache, 2);
+    cache_row(&conn);
+    conn.execute(
+        "INSERT INTO links (source, start_byte, end_byte, kind, embed, target) VALUES ('a.md', 0, 8, 'wiki', 0, 'Plan')",
+        [],
+    )
+    .expect("link");
+    drop(conn);
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert_eq!(number(&cache.connection, "user_version"), 3);
+    assert!(cache_paths(&cache.connection).is_empty());
+    let links: i64 = cache
+        .connection
+        .query_row("SELECT count(*) FROM links", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(links, 0, "links go with their notes");
 }

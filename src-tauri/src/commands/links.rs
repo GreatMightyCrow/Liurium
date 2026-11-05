@@ -7,7 +7,8 @@ use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{
-    backlinks::{backlinks as find_backlinks, refresh_notes},
+    NoteFacts,
+    backlinks::{backlinks as find_backlinks, project_tags as stored_tags, refresh_notes},
     links::{self, Anchor, Link, LinkKind, NoteSet, Target},
     session::{MAX_NOTE_BYTES, note_path},
 };
@@ -71,21 +72,57 @@ fn rewritten(original: &str, link: &Link, target: &str) -> String {
     }
 }
 
-pub fn note_links_in(
-    source: &str,
-    text: &str,
-    set: &NoteSet,
-) -> Result<Vec<NoteLink>, CommandError> {
+/// The links and tags of the editor's text (M3-005, M3-007).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteMarks.ts"))]
+pub struct NoteMarks {
+    pub links: Vec<NoteLink>,
+    /// `#tags` in the text, ranges in the editor's units.
+    pub tags: Vec<NoteTag>,
+    /// Tags from the front matter, without `#`.
+    pub front_tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteTag.ts"))]
+pub struct NoteTag {
+    pub from: usize,
+    pub to: usize,
+    /// Without `#`.
+    pub tag: String,
+}
+
+pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMarks, CommandError> {
     let source = note_path(source)?;
-    let found = links::parse(text);
+    let facts = NoteFacts::of(text);
+    let found = &facts.links;
     let bounds: Vec<usize> = found
         .iter()
         .flat_map(|link| [link.range.start, link.range.end])
+        .chain(
+            facts
+                .tags
+                .iter()
+                .flat_map(|tag| [tag.range.start, tag.range.end]),
+        )
         .collect();
     let units = links::utf16_offsets(text, &bounds);
-    Ok(found
+    let (link_units, tag_units) = units.split_at(found.len() * 2);
+    let tags = facts
+        .tags
         .iter()
-        .zip(units.chunks(2))
+        .zip(tag_units.chunks(2))
+        .map(|(tag, range)| NoteTag {
+            from: range[0],
+            to: range[1],
+            tag: tag.tag.clone(),
+        })
+        .collect();
+    let links = found
+        .iter()
+        .zip(link_units.chunks(2))
         .map(|(link, range)| {
             let target = match links::resolve(&source, link, set) {
                 Target::Note { path } => {
@@ -121,7 +158,12 @@ pub fn note_links_in(
                 target,
             }
         })
-        .collect())
+        .collect();
+    Ok(NoteMarks {
+        links,
+        tags,
+        front_tags: facts.front.tags,
+    })
 }
 
 /// A note that links to the open one (M3-006).
@@ -173,7 +215,7 @@ impl Workspace {
             .collect())
     }
 
-    pub fn note_links(&self, path: &str, text: &str) -> Result<Vec<NoteLink>, CommandError> {
+    pub fn note_links(&self, path: &str, text: &str) -> Result<NoteMarks, CommandError> {
         let limit = usize::try_from(MAX_NOTE_BYTES.saturating_mul(2)).unwrap_or(usize::MAX);
         if text.len() > limit {
             return Err(FsError::TooLarge {
@@ -192,9 +234,41 @@ pub async fn note_links(
     path: String,
     text: String,
     workspace: State<'_, Workspace>,
-) -> Result<Vec<NoteLink>, CommandError> {
+) -> Result<NoteMarks, CommandError> {
     let workspace = workspace.inner().clone();
     blocking(move || workspace.note_links(&path, &text)).await
+}
+
+/// A tag and the notes that carry it (M3-007).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "TagNotes.ts"))]
+pub struct TagNotes {
+    /// As first written in the project; tags are compared without case.
+    pub tag: String,
+    pub notes: Vec<String>,
+}
+
+impl Workspace {
+    /// Every tag of the open project with its notes, after the notes saved in
+    /// Liurium had their facts read again.
+    pub fn project_tags(&self) -> Result<Vec<TagNotes>, CommandError> {
+        let (id, root, _) = self.open_project_root()?.ok_or(CommandError::NoProject)?;
+        // Waits for the walk, so the cache holds every note.
+        self.note_set()?;
+        let mut cache = db::open_cache(self.app_dir()?, &id)?;
+        refresh_notes(&mut cache.connection, &root, &self.editor().take_saved())?;
+        Ok(stored_tags(&cache.connection)?
+            .into_iter()
+            .map(|(tag, notes)| TagNotes { tag, notes })
+            .collect())
+    }
+}
+
+#[tauri::command]
+pub async fn project_tags(workspace: State<'_, Workspace>) -> Result<Vec<TagNotes>, CommandError> {
+    let workspace = workspace.inner().clone();
+    blocking(move || workspace.project_tags()).await
 }
 
 #[tauri::command]
@@ -218,7 +292,9 @@ mod tests {
     fn links_come_with_utf16_ranges_and_their_targets() {
         let text = "ä 😀 [[Unique#Top]] [[Plan|mine]] [[New idea]] ![[x.png]]";
 
-        let found = note_links_in("Ideas/Source.md", text, &set()).expect("links");
+        let found = note_links_in("Ideas/Source.md", text, &set())
+            .expect("links")
+            .links;
 
         let unique = text.encode_utf16().collect::<Vec<_>>();
         let slice = |link: &NoteLink| String::from_utf16_lossy(&unique[link.from..link.to]);

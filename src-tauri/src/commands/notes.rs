@@ -145,7 +145,10 @@ impl NoteIndex {
             // A panic must not leave `wait` waiting forever.
             let walked = catch_unwind(AssertUnwindSafe(|| {
                 notes::refresh(&app_dir, &project_id, &root).map(|index| {
-                    let set = NoteSet::new(index.notes.iter().map(|note| note.path.clone()));
+                    let set = NoteSet::with_aliases(
+                        index.notes.iter().map(|note| note.path.clone()),
+                        &index.aliases,
+                    );
                     let view = NotesView::of(index, &set);
                     (view, Arc::new(set))
                 })

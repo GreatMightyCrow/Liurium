@@ -242,3 +242,68 @@ fn byte_offsets_become_utf16_offsets() {
     let start = text.find("[[").expect("link");
     assert_eq!(utf16_offsets(text, &[start, text.len(), 0]), [3, 8, 0]);
 }
+
+fn tags(text: &str) -> Vec<String> {
+    scan(text).tags.into_iter().map(|tag| tag.tag).collect()
+}
+
+#[test]
+fn inline_tags_follow_the_rules() {
+    assert_eq!(
+        tags("Tags: #project #topic/sub, (#idee) #2026 #2026-plan not#tag C# #ä_ö-1 #trail/"),
+        [
+            "project",
+            "topic/sub",
+            "idee",
+            "2026-plan",
+            "ä_ö-1",
+            "trail"
+        ]
+    );
+    assert_eq!(tags("# Heading is no tag\n## Next #real"), ["real"]);
+}
+
+#[test]
+fn tags_in_code_comments_front_matter_and_escapes_do_not_count() {
+    let text = "---\ntags: [front]\n---\n`#inline` %%#hidden%% \\#escaped [url](https://x.org/#frag) #kept\n\n```\n#fenced\n```\n";
+    assert_eq!(tags(text), ["kept"]);
+}
+
+#[test]
+fn a_tag_range_covers_the_hash_and_the_tag() {
+    let text = "ä #Plan next";
+    let found = scan(text).tags;
+    assert_eq!(&text[found[0].range.clone()], "#Plan");
+}
+
+#[test]
+fn aliases_resolve_like_names_and_make_shared_names_ambiguous() {
+    let set = NoteSet::with_aliases(
+        ["Ideas/Plan 2027.md", "Roadmap.md", "Other.md"].map(String::from),
+        &[
+            ("Ideas/Plan 2027.md".into(), "Roadmap".into()),
+            ("Ideas/Plan 2027.md".into(), "Next year".into()),
+            ("Missing.md".into(), "Ghost".into()),
+        ],
+    );
+    let source = rel("Other.md");
+
+    assert_eq!(
+        resolve(&source, &wiki("next year"), &set),
+        note("Ideas/Plan 2027.md")
+    );
+    assert_eq!(
+        resolve(&source, &wiki("Roadmap"), &set),
+        Target::Ambiguous {
+            candidates: vec!["Ideas/Plan 2027.md".into(), "Roadmap.md".into()]
+        }
+    );
+    assert_eq!(
+        resolve(&source, &wiki("Ghost"), &set),
+        Target::Missing {
+            path: "Ghost.md".into()
+        }
+    );
+    assert_eq!(set.link_text("Roadmap.md"), "Roadmap.md");
+    assert_eq!(set.link_text("Ideas/Plan 2027.md"), "Plan 2027");
+}

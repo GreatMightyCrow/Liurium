@@ -41,13 +41,17 @@ const TOP = buildTree(
   ["Empty"],
 );
 
-function renderTree(openPath: string | null = null) {
+function renderTree(
+  openPath: string | null = null,
+  only: { key: string; notes: ReadonlySet<string> } | null = null,
+) {
   const onChanged = vi.fn();
   const { hook } = memoryLocation({ path: "/notes" });
   render(
     <Router hook={hook}>
       <NoteTree
         top={TOP}
+        only={only}
         openPath={openPath}
         noteHref={(path) => `/notes/${path}`}
         onChanged={onChanged}
@@ -189,6 +193,31 @@ test("Move to… offers every folder except the item itself and its inside", asy
   await waitFor(() => {
     expect(moveEntry).toHaveBeenCalledWith("Ideas", "Empty");
   });
+});
+
+test("a filtered tree still counts and moves by the whole project", async () => {
+  renderTree(null, { key: "tag", notes: new Set(["Ideas/Plan.md"]) });
+
+  // Folders on the way are open; everything else is gone.
+  expect(within(tree()).getByRole("link", { name: "Plan.md" })).toBeDefined();
+  expect(within(tree()).queryByRole("link", { name: "README.md" })).toBeNull();
+  expect(within(tree()).queryByRole("button", { name: "Empty" })).toBeNull();
+  expect(within(tree()).queryByRole("button", { name: "Deep" })).toBeNull();
+
+  // Closing one by hand works here too.
+  const ideas = within(tree()).getByRole("button", { name: "Ideas" });
+  expect(ideas.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(ideas);
+  expect(ideas.getAttribute("aria-expanded")).toBe("false");
+  expect(within(tree()).queryByRole("link", { name: "Plan.md" })).toBeNull();
+
+  // The trash question names every note in the folder, shown or not.
+  ideas.focus();
+  fireEvent.keyDown(ideas, { key: "Delete" });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete “Ideas”?",
+  });
+  expect(dialog.textContent).toContain("(2 notes)");
 });
 
 test("arrow keys move between rows and open and close folders", () => {

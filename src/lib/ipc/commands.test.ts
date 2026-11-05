@@ -12,6 +12,7 @@ import {
   noteLinks,
   openAppDataFolder,
   openNote,
+  projectTags,
   pruneBackups,
   renameEntry,
   resetSyncWarnings,
@@ -144,6 +145,14 @@ test("note_links sends the path and the editor's text", async () => {
     path: "Home.md",
     text: "See [[Plan]]",
   });
+});
+
+test("projectTags asks for the open project's tags", async () => {
+  invokeMock.mockResolvedValue([]);
+
+  await projectTags();
+
+  expect(invokeMock).toHaveBeenCalledWith("project_tags", undefined);
 });
 
 test("backlinks sends the note's path", async () => {

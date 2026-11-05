@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, ops::Range};
 
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use super::organize::is_note_name;
 use crate::storage::fs::{RelPath, SKIPPED_FOLDERS};
@@ -57,17 +57,96 @@ fn options() -> Options {
         | Options::ENABLE_WIKILINKS
 }
 
+/// An inline `#tag` (M3-007): its bytes in the text, `#` included, and the tag
+/// without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineTag {
+    pub range: Range<usize>,
+    pub tag: String,
+}
+
+/// What one pass over a note's text found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scan {
+    pub links: Vec<Link>,
+    pub tags: Vec<InlineTag>,
+}
+
 /// Every note link in a note's text, in order.
 pub fn parse(text: &str) -> Vec<Link> {
+    scan(text).links
+}
+
+/// Whether a text is a tag (ADR-0020, M3-007): letters, digits, `_`, `-`, `/`,
+/// at least one that is not a digit, no `/` at either end.
+pub fn valid_tag(tag: &str) -> bool {
+    !tag.is_empty()
+        && !tag.starts_with('/')
+        && !tag.ends_with('/')
+        && tag
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
+        && tag.chars().any(|c| !c.is_ascii_digit() && c != '/')
+}
+
+/// Tags in one piece of plain text that starts at `offset` in the note.
+fn tags_in(piece: &str, offset: usize, before: Option<char>, tags: &mut Vec<InlineTag>) {
+    // The character before the piece in the file: a backslash there escaped the `#`.
+    let mut previous: Option<char> = before;
+    let mut chars = piece.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        let starts = c == '#'
+            && previous.is_none_or(|before| {
+                !(before.is_alphanumeric() || matches!(before, '#' | '/' | '_' | '&' | '\\'))
+            });
+        previous = Some(c);
+        if !starts {
+            continue;
+        }
+        let begin = at + 1;
+        let mut end = begin;
+        while let Some(&(next_at, next)) = chars.peek() {
+            if next.is_alphanumeric() || matches!(next, '_' | '-' | '/') {
+                end = next_at + next.len_utf8();
+                previous = Some(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        let tag = piece[begin..end].trim_end_matches('/');
+        if valid_tag(tag) {
+            tags.push(InlineTag {
+                range: offset + at..offset + begin + tag.len(),
+                tag: tag.to_owned(),
+            });
+        }
+    }
+}
+
+/// Links and inline tags of a note's text in one pass of the parser.
+pub fn scan(text: &str) -> Scan {
     let body_start = front_matter_end(text);
     let body = &text[body_start..];
     let mut links = Vec::new();
+    let mut tags = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
+    let mut in_code_block = false;
     for (event, range) in Parser::new_ext(body, options()).into_offset_iter() {
         let range = range.start + body_start..range.end + body_start;
         match event {
             Event::Code(_) | Event::InlineMath(_) | Event::DisplayMath(_) => code.push(range),
-            Event::Start(Tag::CodeBlock(_)) => code.push(range),
+            Event::Start(Tag::CodeBlock(_)) => {
+                in_code_block = true;
+                code.push(range);
+            }
+            Event::End(TagEnd::CodeBlock) => in_code_block = false,
+            // Only text that is exactly what the file holds there: escapes and
+            // entities come as their own pieces, so `\#x` is no tag.
+            Event::Text(piece) if !in_code_block && text.get(range.clone()) == Some(&*piece) => {
+                let before = text[..range.start].chars().next_back();
+                tags_in(&piece, range.start, before, &mut tags);
+            }
             Event::Start(Tag::Link {
                 link_type,
                 dest_url,
@@ -90,12 +169,14 @@ pub fn parse(text: &str) -> Vec<Link> {
         }
     }
     let comments = comments(text, body_start, &code);
-    links.retain(|link| {
+    let outside = |range: &Range<usize>| {
         !comments
             .iter()
-            .any(|comment| comment.contains(&link.range.start))
-    });
-    links
+            .any(|comment| comment.contains(&range.start))
+    };
+    links.retain(|link| outside(&link.range));
+    tags.retain(|tag| outside(&tag.range));
+    Scan { links, tags }
 }
 
 fn link_of(link_type: LinkType, dest: &str, range: Range<usize>, embed: bool) -> Option<Link> {
@@ -269,6 +350,29 @@ impl NoteSet {
         set
     }
 
+    /// Front matter aliases count like a second name (M3-007, owner decision).
+    pub fn with_aliases(
+        paths: impl IntoIterator<Item = String>,
+        aliases: &[(String, String)],
+    ) -> Self {
+        let mut set = Self::new(paths);
+        let index_of: HashMap<String, usize> = set
+            .paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| (path.to_lowercase(), index))
+            .collect();
+        for (path, alias) in aliases {
+            if let Some(index) = index_of.get(&path.to_lowercase()) {
+                let names = set.by_name.entry(alias.to_lowercase()).or_default();
+                if !names.contains(index) {
+                    names.push(*index);
+                }
+            }
+        }
+        set
+    }
+
     pub fn len(&self) -> usize {
         self.paths.len()
     }
@@ -284,7 +388,15 @@ impl NoteSet {
         let parts: Vec<&str> = bare.split('/').collect();
         for take in 1..=parts.len() {
             let suffix = parts[parts.len() - take..].join("/");
-            if self.ends_with(&suffix).len() == 1 {
+            // A bare name must also be unique among aliases.
+            let unique = if take == 1 {
+                self.by_name
+                    .get(&suffix.to_lowercase())
+                    .is_some_and(|names| names.len() == 1)
+            } else {
+                self.ends_with(&suffix).len() == 1
+            };
+            if unique {
                 return suffix;
             }
         }

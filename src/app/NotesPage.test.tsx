@@ -6,6 +6,7 @@ import {
   listNotes,
   type NoteEntry,
   type NotesView,
+  projectTags,
   type SkippedNotes,
 } from "../lib/ipc/commands";
 import { CommandFailure } from "../lib/ipc/errors";
@@ -17,9 +18,13 @@ import {
   skippedText,
 } from "./NotesPage";
 
-vi.mock("../lib/ipc/commands", () => ({ listNotes: vi.fn() }));
+vi.mock("../lib/ipc/commands", () => ({
+  listNotes: vi.fn(),
+  projectTags: vi.fn(),
+}));
 
 const listNotesMock = vi.mocked(listNotes);
+const projectTagsMock = vi.mocked(projectTags);
 
 const NOTHING_SKIPPED: SkippedNotes = {
   linksOutside: 0,
@@ -75,6 +80,76 @@ function tree() {
 
 beforeEach(() => {
   listNotesMock.mockReset();
+  projectTagsMock.mockReset();
+});
+
+test("tags are only asked for once the Tags tab is chosen", async () => {
+  listNotesMock.mockResolvedValue(ready([note("a.md")]));
+  projectTagsMock.mockResolvedValue([]);
+
+  renderPage();
+  await screen.findByText("1 note");
+  expect(projectTagsMock).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+
+  expect(await screen.findByText(/^No tags yet/)).toBeDefined();
+  expect(projectTagsMock).toHaveBeenCalledTimes(1);
+});
+
+test("choosing a tag shows its notes and nested tags with folders open; clearing brings all back", async () => {
+  listNotesMock.mockResolvedValue(
+    ready([note("Ideas/Deep/Plan.md"), note("Home.md"), note("Other.md")]),
+  );
+  projectTagsMock.mockResolvedValue([
+    { tag: "garden", notes: ["Home.md"] },
+    { tag: "garden/roses", notes: ["Ideas/Deep/Plan.md"] },
+  ]);
+
+  renderPage();
+  await screen.findByText("3 notes");
+  fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "#garden 2 notes" }),
+  );
+
+  expect(await screen.findByText("Showing notes tagged #garden")).toBeDefined();
+  expect(await screen.findByText("2 of 3 notes")).toBeDefined();
+  expect(within(tree()).getByRole("link", { name: "Plan.md" })).toBeDefined();
+  expect(within(tree()).getByRole("link", { name: "Home.md" })).toBeDefined();
+  expect(within(tree()).queryByRole("link", { name: "Other.md" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Show all notes" }));
+
+  expect(within(tree()).getByRole("link", { name: "Other.md" })).toBeDefined();
+  expect(screen.getByText("3 notes")).toBeDefined();
+});
+
+test("a tag the Tags list no longer knows says so instead of an empty tree", async () => {
+  listNotesMock.mockResolvedValue(ready([note("a.md")]));
+  projectTagsMock.mockResolvedValueOnce([{ tag: "old", notes: ["a.md"] }]);
+  projectTagsMock.mockResolvedValue([]);
+
+  renderPage();
+  await screen.findByText("1 note");
+  fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+  fireEvent.click(await screen.findByRole("button", { name: "#old 1 note" }));
+
+  expect(await screen.findByText("No notes carry this tag.")).toBeDefined();
+});
+
+test("tags that cannot be read say why", async () => {
+  listNotesMock.mockResolvedValue(ready([note("a.md")]));
+  projectTagsMock.mockRejectedValue(
+    new CommandFailure("project_tags", { kind: "internal" }),
+  );
+
+  renderPage();
+  await screen.findByText("1 note");
+  fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toMatch(/^Tags could not be read\./);
 });
 
 test("while Rust walks the project, the page says it is looking", () => {

@@ -8,6 +8,7 @@ import {
 } from "../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../lib/ipc/errors";
 import { Button } from "../ui/Button";
+import { Tabs } from "../ui/Tabs";
 import { IconButton } from "../ui/IconButton";
 import { PageHeader } from "../ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
@@ -15,6 +16,8 @@ import { commandErrorMessage } from "./commandErrorMessage";
 import { useLayoutChoice } from "./layoutChoice";
 import { NotePane } from "./notes/NotePane";
 import { NoteTree, type TreeChange } from "./notes/NoteTree";
+import { TagFilterBar, TagList, TagsFailed } from "./notes/TagList";
+import { sameTag, useProjectTags } from "./notes/tags";
 import { buildTree } from "./notes/tree";
 import styles from "./NotesPage.module.css";
 
@@ -108,6 +111,7 @@ export function NotesPage() {
       <PageHeader title="Notes" />
       <Content
         loaded={loaded}
+        version={version}
         reload={() => {
           setVersion((last) => last + 1);
         }}
@@ -116,8 +120,30 @@ export function NotesPage() {
   );
 }
 
-function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
+type ListTab = "files" | "tags";
+
+const LIST_TABS: readonly { value: ListTab; label: string }[] = [
+  { value: "files", label: "Files" },
+  { value: "tags", label: "Tags" },
+];
+
+function Content({
+  loaded,
+  version,
+  reload,
+}: {
+  loaded: Loaded;
+  version: number;
+  reload: () => void;
+}) {
   const [location, navigate] = useLocation();
+  const [listTab, setListTab] = useState<ListTab>("files");
+  /** The tag the tree is filtered by (M3-007). */
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const tags = useProjectTags(
+    listTab === "tags" || tagFilter !== null,
+    `${String(version)}|${listTab}|${tagFilter ?? ""}`,
+  );
   /** The note list can be hidden for a wider note (M3-014), remembered. */
   const [listHidden, setListHidden] = useLayoutChoice(
     "liurium.notes.listHidden",
@@ -163,8 +189,26 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
     skipped,
   ].filter((notice): notice is string => typeof notice === "string");
 
-  const shown = view.notes.slice(0, SHOWN_NOTES);
-  const hidden = view.notes.length - shown.length;
+  const tagged =
+    tagFilter === null
+      ? null
+      : new Set(
+          tags.status === "ready"
+            ? tags.rows.find((row) => sameTag(row.tag, tagFilter))?.notes
+            : [],
+        );
+  const listed =
+    tagged === null
+      ? view.notes
+      : view.notes.filter((note) => tagged.has(note.path));
+  const shown = listed.slice(0, SHOWN_NOTES);
+  const hidden = listed.length - shown.length;
+
+  const chooseTag = (tag: string) => {
+    setTagFilter(tag);
+    setListTab("files");
+    setListHidden(false);
+  };
 
   const showList = listHidden ? (
     <IconButton
@@ -197,7 +241,9 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
             <p className={styles.summary}>
               {view.notes.length === 0
                 ? "No notes yet"
-                : plural(view.notes.length, "note", "notes")}
+                : tagged === null
+                  ? plural(view.notes.length, "note", "notes")
+                  : `${count.format(listed.length)} of ${plural(view.notes.length, "note", "notes")}`}
             </p>
             <IconButton
               label="Hide note list"
@@ -209,23 +255,64 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
             />
           </div>
           <Notices notices={notices} />
-          <NoteTree
-            top={buildTree(shown, view.emptyFolders)}
-            openPath={openPath}
-            noteHref={noteHref}
-            onChanged={changed}
-          />
-          {view.notes.length === 0 && (
-            <p className={styles.more}>
-              Liurium looks for .md and .markdown files, except in folders such
-              as node_modules, target, or ones whose name starts with a dot.
-            </p>
-          )}
-          {hidden > 0 && (
-            <p className={styles.more}>
-              {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
-            </p>
-          )}
+          <Tabs
+            label="Note list"
+            value={listTab}
+            options={LIST_TABS}
+            onChange={setListTab}
+          >
+            {listTab === "tags" ? (
+              <TagList state={tags} chosen={tagFilter} onChoose={chooseTag} />
+            ) : (
+              <>
+                {tagFilter !== null && (
+                  <TagFilterBar
+                    tag={tagFilter}
+                    onClear={() => {
+                      setTagFilter(null);
+                    }}
+                  />
+                )}
+                {tagFilter !== null && tags.status === "failed" && (
+                  <TagsFailed state={tags} />
+                )}
+                <NoteTree
+                  top={buildTree(
+                    tagged === null ? shown : view.notes,
+                    view.emptyFolders,
+                  )}
+                  only={
+                    tagFilter === null
+                      ? null
+                      : {
+                          key: tagFilter.toLowerCase(),
+                          notes: new Set(shown.map((note) => note.path)),
+                        }
+                  }
+                  openPath={openPath}
+                  noteHref={noteHref}
+                  onChanged={changed}
+                />
+                {tagFilter !== null &&
+                  tags.status === "ready" &&
+                  listed.length === 0 && (
+                    <p className={styles.more}>No notes carry this tag.</p>
+                  )}
+                {view.notes.length === 0 && (
+                  <p className={styles.more}>
+                    Liurium looks for .md and .markdown files, except in folders
+                    such as node_modules, target, or ones whose name starts with
+                    a dot.
+                  </p>
+                )}
+                {hidden > 0 && (
+                  <p className={styles.more}>
+                    {`And ${plural(hidden, "more note", "more notes")} not shown here.`}
+                  </p>
+                )}
+              </>
+            )}
+          </Tabs>
         </div>
       )}
       <div className={styles.open}>
@@ -251,6 +338,7 @@ function Content({ loaded, reload }: { loaded: Loaded; reload: () => void }) {
               navigate(noteHref(path));
             }}
             onCreated={reload}
+            onTag={chooseTag}
             leading={showList}
           />
         )}

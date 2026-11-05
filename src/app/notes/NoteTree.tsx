@@ -13,6 +13,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -38,6 +39,7 @@ import {
 import {
   allFolders,
   ancestors,
+  pruneTree,
   type FolderNode,
   isInside,
   type NoteNode,
@@ -55,7 +57,10 @@ export interface TreeChange {
 }
 
 interface NoteTreeProps {
+  /** Every note and folder; counts and "Move to…" always go by this. */
   top: FolderNode;
+  /** Shows only these notes, folders open, while a tag is chosen (M3-007). */
+  only?: { key: string; notes: ReadonlySet<string> } | null;
   openPath: string | null;
   noteHref: (path: string) => string;
   onChanged: (change: TreeChange) => void;
@@ -78,13 +83,30 @@ type Target = { kind: "folder"; path: string } | { kind: "note"; path: string };
 // move between rows, F2 renames, Delete asks to move to the trash.
 export function NoteTree({
   top,
+  only = null,
   openPath,
   noteHref,
   onChanged,
 }: NoteTreeProps) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+  const [opened, setOpened] = useState<ReadonlySet<string>>(
     () => new Set(openPath === null ? [] : ancestors(openPath)),
   );
+  /** Folders closed by hand in the filtered tree; the next tag starts all open. */
+  const [closed, setClosed] = useState<{
+    key: string;
+    paths: ReadonlySet<string>;
+  }>({ key: "", paths: new Set() });
+  const shown = useMemo(
+    () => (only === null ? top : pruneTree(top, only.notes)),
+    [top, only],
+  );
+  const expanded = useMemo<ReadonlySet<string>>(() => {
+    if (only === null) {
+      return opened;
+    }
+    const shut = closed.key === only.key ? closed.paths : new Set<string>();
+    return new Set(allFolders(shown).filter((path) => !shut.has(path)));
+  }, [only, opened, closed, shown]);
   const [asking, setAsking] = useState<Asking | null>(null);
   const [menuTarget, setMenuTarget] = useState<Target>({
     kind: "folder",
@@ -107,9 +129,20 @@ export function NoteTree({
   );
 
   const toggle = (path: string, open?: boolean) => {
-    setExpanded((last) => {
+    const opens = open ?? !expanded.has(path);
+    if (only !== null) {
+      const next = new Set(closed.key === only.key ? closed.paths : []);
+      if (opens) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      setClosed({ key: only.key, paths: next });
+      return;
+    }
+    setOpened((last) => {
       const next = new Set(last);
-      if (open ?? !last.has(path)) {
+      if (opens) {
         next.add(path);
       } else {
         next.delete(path);
@@ -479,7 +512,7 @@ export function NoteTree({
             />
           }
         >
-          {renderFolder(top)}
+          {renderFolder(shown)}
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Positioner className={menuStyles.positioner}>

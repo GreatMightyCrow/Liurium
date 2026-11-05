@@ -1551,7 +1551,7 @@ fn the_open_projects_links_are_resolved_against_its_notes() {
         .expect("links");
 
     assert_eq!(
-        to_json(&found),
+        to_json(&found.links),
         json!([
             {
                 "from": 4,
@@ -1604,4 +1604,53 @@ fn backlinks_follow_edits_saved_in_liurium() {
         workspace.backlinks(".liurium/x.md").unwrap_err(),
         CommandError::InvalidPath
     );
+}
+
+#[test]
+fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    std::fs::write(
+        garden.root.join("Plan.md"),
+        "---\ntags: [Project, idee]\naliases: [Roadmap]\n---\n# Plan #project/sub\n",
+    )
+    .expect("note");
+    std::fs::write(garden.root.join("Home.md"), "#idee and [[Roadmap]]\n").expect("note");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &garden.root);
+
+    assert_eq!(
+        to_json(&workspace.project_tags().expect("tags")),
+        json!([
+            { "tag": "idee", "notes": ["Home.md", "Plan.md"] },
+            { "tag": "Project", "notes": ["Plan.md"] },
+            { "tag": "project/sub", "notes": ["Plan.md"] },
+        ])
+    );
+    let marks = workspace
+        .note_links("Home.md", "#idee and [[Roadmap]]\n")
+        .expect("marks");
+    assert_eq!(
+        to_json(&marks),
+        json!({
+            "links": [{
+                "from": 10, "to": 21,
+                "target": { "state": "note", "path": "Plan.md", "heading": null, "block": null }
+            }],
+            "tags": [{ "from": 0, "to": 5, "tag": "idee" }],
+            "frontTags": [],
+        })
+    );
+
+    workspace.open_note("Home.md", false).expect("open");
+    workspace
+        .update_note("Home.md", "#neu only\n", true)
+        .expect("save");
+    let tags: Vec<String> = workspace
+        .project_tags()
+        .expect("tags")
+        .into_iter()
+        .map(|group| group.tag)
+        .collect();
+    assert_eq!(tags, ["idee", "neu", "Project", "project/sub"]);
 }

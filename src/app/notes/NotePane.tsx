@@ -17,7 +17,13 @@ import {
 import { type CommandError, CommandFailure } from "../../lib/ipc/errors";
 import { RadioGroup } from "../../ui/RadioGroup";
 import { Backlinks } from "./Backlinks";
-import { anchorIndex, inEditor, toEditorPositions } from "./links";
+import {
+  anchorIndex,
+  inEditor,
+  noteTagsOf,
+  tagsInEditor,
+  toEditorPositions,
+} from "./links";
 import { Button } from "../../ui/Button";
 import { Dialog, DialogClose } from "../../ui/Dialog";
 import { ErrorState, LoadingState } from "../../ui/StateView";
@@ -62,6 +68,8 @@ interface NotePaneProps {
   onOpen: (path: string) => void;
   /** A note was created from a missing link; the list shows it after a reload. */
   onCreated: () => void;
+  /** Shows the notes of a tag (M3-007). */
+  onTag: (tag: string) => void;
   /** Shown before the note's name, e.g. the button that shows the note list. */
   leading?: ReactNode;
 }
@@ -105,6 +113,7 @@ export function NotePane({
   notes,
   onOpen,
   onCreated,
+  onTag,
   leading,
 }: NotePaneProps) {
   const { state, changed, save, resolve, unify } = useOpenNote(path, onMoved);
@@ -113,6 +122,7 @@ export function NotePane({
   const linkTimer = useRef<number | null>(null);
   const [question, setQuestion] = useState<LinkQuestion | null>(null);
   const suggestions = useRef<Suggestion[]>([]);
+  const [tags, setTags] = useState<readonly string[]>([]);
 
   useLayoutEffect(() => {
     suggestions.current = suggestionsOf(notes);
@@ -127,13 +137,17 @@ export function NotePane({
     [],
   );
 
-  /** Rust's links for this text; dropped when the text changed meanwhile. */
+  /** Rust's links and tags for this text; dropped when the text changed meanwhile. */
   const refreshLinks = (text: string) => {
     noteLinks(path, text).then(
-      (links) => {
+      (marks) => {
         const current = editor.current;
         if (current !== null && current.text() === text) {
-          current.setLinks(inEditor(text, links));
+          current.setMarks(
+            inEditor(text, marks.links),
+            tagsInEditor(text, marks.tags),
+          );
+          setTags(noteTagsOf(marks.frontTags, marks.tags));
         }
       },
       () => {
@@ -210,6 +224,23 @@ export function NotePane({
         <div className={styles.titles}>
           <h2 className={styles.name}>{name}</h2>
           {folder !== "" && <p className={styles.folder}>{folder}</p>}
+          {tags.length > 0 && (
+            <ul className={styles.tags} role="list" aria-label="Tags">
+              {tags.map((tag) => (
+                <li key={tag.toLowerCase()}>
+                  <button
+                    type="button"
+                    className={styles.tag}
+                    onClick={() => {
+                      onTag(tag);
+                    }}
+                  >
+                    {`#${tag}`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         {state.status === "ready" && (
           <p className={styles.status} data-status={state.save} role="status">

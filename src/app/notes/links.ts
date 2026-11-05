@@ -1,4 +1,4 @@
-import type { NoteLink } from "../../lib/ipc/commands";
+import type { NoteLink, NoteTag } from "../../lib/ipc/commands";
 
 // Links in the editor (M3-005). Rust reports ranges in UTF-16 units of the text it
 // got, which has the file's line breaks; CodeMirror counts every line break as one
@@ -38,6 +38,39 @@ export function inEditor(text: string, links: readonly NoteLink[]): NoteLink[] {
     from: positions[2 * i],
     to: positions[2 * i + 1],
   }));
+}
+
+/** Tags with their ranges in CodeMirror positions. */
+export function tagsInEditor(
+  text: string,
+  tags: readonly NoteTag[],
+): NoteTag[] {
+  const positions = toEditorPositions(
+    text,
+    tags.flatMap((tag) => [tag.from, tag.to]),
+  );
+  return tags.map((tag, i) => ({
+    ...tag,
+    from: positions[2 * i],
+    to: positions[2 * i + 1],
+  }));
+}
+
+/** The tags to show for a note: front matter first, then the text's, each once
+ *  (without case). */
+export function noteTagsOf(
+  frontTags: readonly string[],
+  tags: readonly NoteTag[],
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const tag of [...frontTags, ...tags.map((t) => t.tag)]) {
+    if (!seen.has(tag.toLowerCase())) {
+      seen.add(tag.toLowerCase());
+      result.push(tag);
+    }
+  }
+  return result;
 }
 
 /** GitHub-style slug: `Next steps` → `next-steps`. */

@@ -30,6 +30,7 @@ const COMMANDS: &[&str] = &[
     "trash_entry",
     "note_links",
     "backlinks",
+    "project_tags",
 ];
 
 fn main() {

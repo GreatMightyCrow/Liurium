@@ -32,6 +32,9 @@ tauri-plugin-single-instance = { version = "2.5.5", default-features = false }
 # The one Markdown parser (ADR-0020): links now (M3-005), the read view later. Without
 # default features: no HTML writer, no command-line tool.
 pulldown-cmark = { version = "=0.13.6", default-features = false }
+# Front matter (M3-007), read with its event parser only: no recursion, no alias
+# expansion. Without default features: no encoding detection.
+yaml-rust2 = { version = "=0.13.0", default-features = false }
 
 # Reads OneDrive's account folders for the sync-folder warning (M2-010). Already built
 # for tauri-build's resource step.

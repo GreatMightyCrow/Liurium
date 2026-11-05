@@ -38,6 +38,32 @@
     overflow-wrap: anywhere;
   }
 
+  /* Plain #tags in the accent, as in the text below; no pills. */
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tag {
+    min-height: var(--size-control-sm);
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-accent-text);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+
+  .tag:hover {
+    text-decoration: underline;
+  }
+
   /* Saved is quiet; only states that need the user stand out. */
   .status {
     margin: 0;

@@ -89,6 +89,21 @@ export function buildTree(
   return top;
 }
 
+/** The tree with only these notes, and only the folders that lead to one. */
+export function pruneTree(
+  top: FolderNode,
+  notes: ReadonlySet<string>,
+): FolderNode {
+  const walk = (folder: FolderNode): FolderNode => ({
+    ...folder,
+    folders: folder.folders
+      .map(walk)
+      .filter((child) => child.folders.length > 0 || child.notes.length > 0),
+    notes: folder.notes.filter((note) => notes.has(note.path)),
+  });
+  return walk(top);
+}
+
 export interface Row {
   node: TreeNode;
   /** 1 at the top of the project. */

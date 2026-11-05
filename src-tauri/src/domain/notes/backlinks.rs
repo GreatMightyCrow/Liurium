@@ -7,10 +7,11 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, TransactionBehavior, params};
 
 use super::{
+    facts_of, forget_facts,
     links::{self, NoteSet, Target},
     nanos,
     session::MAX_NOTE_BYTES,
-    stored_links, text, write_links,
+    stored_links, text, write_facts,
 };
 use crate::storage::{
     db::DbError,
@@ -138,7 +139,7 @@ pub fn refresh_notes(
             Err(FsError::NotFound) => None,
             Err(_) => continue,
         };
-        let found = read_text(root, path).map_or_else(Vec::new, |note| links::parse(&note));
+        let found = facts_of(root, path);
         fresh.push((path.to_string(), stamp, found));
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -154,8 +155,8 @@ pub fn refresh_notes(
                         nanos(stamp.modified)
                     ],
                 )?;
-                tx.execute("DELETE FROM links WHERE source = ?1", [path])?;
-                write_links(&tx, path, found)?;
+                forget_facts(&tx, path)?;
+                write_facts(&tx, path, found)?;
             }
             None => {
                 tx.execute("DELETE FROM notes WHERE path = ?1", [path])?;
@@ -164,6 +165,28 @@ pub fn refresh_notes(
     }
     tx.commit()?;
     Ok(())
+}
+
+/// Every tag in the cache with its notes, grouped without case, sorted by tag; the
+/// spelling shown is the first one met in note order.
+pub fn project_tags(conn: &Connection) -> Result<Vec<(String, Vec<String>)>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT tag, source FROM tags ORDER BY lower(source), source, start_byte IS NULL, start_byte",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut groups: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
+    for row in rows {
+        let (tag, source) = row?;
+        let entry = groups
+            .entry(tag.to_lowercase())
+            .or_insert_with(|| (tag, Vec::new()));
+        if !entry.1.contains(&source) {
+            entry.1.push(source);
+        }
+    }
+    Ok(groups.into_values().collect())
 }
 
 #[cfg(test)]

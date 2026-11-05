@@ -19,7 +19,7 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import type { NoteLink } from "../../lib/ipc/commands";
+import type { NoteLink, NoteTag } from "../../lib/ipc/commands";
 import { tags } from "@lezer/highlight";
 
 // The note editor (ADR-0020): CodeMirror as the engine, everything visible from
@@ -62,6 +62,8 @@ const theme = EditorView.theme({
     textUnderlineOffset: "var(--space-1)",
   },
   ".cm-link-missing": { textDecorationStyle: "dashed" },
+  // #tags (M3-007): the accent, no fill.
+  ".cm-tag": { color: "var(--color-accent-text)" },
   ".cm-link-ambiguous": { textDecorationStyle: "dotted" },
   // [[ suggestions
   ".cm-tooltip": {
@@ -86,8 +88,11 @@ const theme = EditorView.theme({
   },
 });
 
-/** New links from Rust; ranges already in editor positions. */
-const setLinks = StateEffect.define<readonly NoteLink[]>();
+/** New links and tags from Rust; ranges already in editor positions. */
+const setLinks = StateEffect.define<{
+  links: readonly NoteLink[];
+  tags: readonly NoteTag[];
+}>();
 
 const linkClass: Record<NoteLink["target"]["state"], string | null> = {
   note: "cm-link-note",
@@ -96,20 +101,36 @@ const linkClass: Record<NoteLink["target"]["state"], string | null> = {
   other: null,
 };
 
-function decorate(links: readonly NoteLink[]): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>();
+const tagMark = Decoration.mark({ class: "cm-tag" });
+
+function decorate(
+  links: readonly NoteLink[],
+  tags: readonly NoteTag[],
+): DecorationSet {
+  const marks: { from: number; to: number; mark: Decoration }[] = [];
   for (const link of links) {
     const className = linkClass[link.target.state];
     if (className !== null && link.to > link.from) {
-      builder.add(
-        link.from,
-        link.to,
-        Decoration.mark({
+      marks.push({
+        from: link.from,
+        to: link.to,
+        mark: Decoration.mark({
           class: className,
           attributes: { title: "Ctrl + click or Ctrl + Enter to follow" },
         }),
-      );
+      });
     }
+  }
+  for (const tag of tags) {
+    if (tag.to > tag.from) {
+      marks.push({ from: tag.from, to: tag.to, mark: tagMark });
+    }
+  }
+  // The builder needs them in order.
+  marks.sort((a, b) => a.from - b.from || a.to - b.to);
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to, mark } of marks) {
+    builder.add(from, to, mark);
   }
   return builder.finish();
 }
@@ -123,7 +144,10 @@ const linksField = StateField.define<{
   update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setLinks)) {
-        return { links: effect.value, marks: decorate(effect.value) };
+        return {
+          links: effect.value.links,
+          marks: decorate(effect.value.links, effect.value.tags),
+        };
       }
     }
     if (!transaction.docChanged) {
@@ -237,8 +261,8 @@ export interface NoteEditor {
    *  which always joins with `\n` (ADR-0020). */
   text: () => string;
   setReadOnly: (readOnly: boolean) => void;
-  /** Links from Rust, ranges in editor positions. */
-  setLinks: (links: readonly NoteLink[]) => void;
+  /** Links and tags from Rust, ranges in editor positions. */
+  setMarks: (links: readonly NoteLink[], tags: readonly NoteTag[]) => void;
   /** Writes `insert` over an editor range, as if typed. */
   replace: (from: number, to: number, insert: string) => void;
   /** Puts the cursor at a position and scrolls it to the top. */
@@ -336,8 +360,8 @@ export function createNoteEditor(
         effects: editable.reconfigure(readOnlyExtensions(readOnly)),
       });
     },
-    setLinks: (links) => {
-      view.dispatch({ effects: setLinks.of(links) });
+    setMarks: (links, tags) => {
+      view.dispatch({ effects: setLinks.of({ links, tags }) });
     },
     replace: (from, to, insert) => {
       view.dispatch({ changes: { from, to, insert }, userEvent: "input" });

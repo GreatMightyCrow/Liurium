@@ -51,7 +51,8 @@ pub fn run() {
             commands::organize::move_entry,
             commands::organize::trash_entry,
             commands::links::note_links,
-            commands::links::backlinks
+            commands::links::backlinks,
+            commands::links::project_tags
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

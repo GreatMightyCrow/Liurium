@@ -4,6 +4,7 @@
 
 pub mod backlinks;
 pub mod links;
+pub mod meta;
 pub mod organize;
 pub mod session;
 #[cfg(test)]
@@ -59,6 +60,27 @@ pub struct Index {
     pub truncated: bool,
     /// Folders with nothing in them, parts joined with `/` (M3-004).
     pub empty_folders: Vec<String>,
+    /// (note, alias) from the notes' front matter (M3-007).
+    pub aliases: Vec<(String, String)>,
+}
+
+/// What Liurium keeps from one note's text (M3-005, M3-007).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NoteFacts {
+    pub links: Vec<Link>,
+    pub tags: Vec<links::InlineTag>,
+    pub front: meta::FrontMatter,
+}
+
+impl NoteFacts {
+    pub fn of(text: &str) -> Self {
+        let scan = links::scan(text);
+        Self {
+            links: scan.links,
+            tags: scan.tags,
+            front: meta::read(text),
+        }
+    }
 }
 
 /// Walks the project and brings its cache up to date: new notes added, notes with
@@ -83,16 +105,23 @@ pub fn refresh_with(
         skipped: walk.skipped,
         truncated: walk.truncated,
         empty_folders: walk.empty_folders.iter().map(ToString::to_string).collect(),
+        aliases: read_aliases(&cache.connection)?,
     })
 }
 
-/// The links of one note, or none when it cannot be read as a note (too large,
+fn read_aliases(conn: &Connection) -> Result<Vec<(String, String)>, DbError> {
+    let mut statement = conn.prepare("SELECT source, alias FROM aliases")?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// The facts of one note, or none when it cannot be read as a note (too large,
 /// not UTF-8, gone meanwhile): it still counts as a note, it just links nowhere.
-fn links_of(root: &ProjectRoot, path: &RelPath) -> Vec<Link> {
+pub(super) fn facts_of(root: &ProjectRoot, path: &RelPath) -> NoteFacts {
     root.read(path, MAX_NOTE_BYTES)
         .ok()
         .and_then(|(bytes, _)| text::decode(&bytes).ok())
-        .map_or_else(Vec::new, |note| links::parse(&note.text))
+        .map_or_else(NoteFacts::default, |note| NoteFacts::of(&note.text))
 }
 
 /// Notes that are new or changed are read and parsed first; then one transaction
@@ -120,7 +149,7 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
             Some(old) if old != stamp => false,
             Some(_) => continue,
         };
-        writes.push((path, stamp, new, links_of(root, &note.path)));
+        writes.push((path, stamp, new, facts_of(root, &note.path)));
         changes.parsed += 1;
     }
 
@@ -137,10 +166,10 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
                 "UPDATE notes SET size = ?2, modified_ns = ?3 WHERE path = ?1",
                 params![path, stamp.0, stamp.1],
             )?;
-            tx.execute("DELETE FROM links WHERE source = ?1", [path])?;
+            forget_facts(&tx, path)?;
             changes.changed += 1;
         }
-        write_links(&tx, path, found)?;
+        write_facts(&tx, path, found)?;
     }
     // Their links go with them (ON DELETE CASCADE).
     for path in known.keys() {
@@ -149,6 +178,35 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
     }
     tx.commit()?;
     Ok(changes)
+}
+
+/// Drops a note's stored links, tags, and aliases.
+fn forget_facts(conn: &Connection, path: &str) -> Result<(), DbError> {
+    for table in ["links", "tags", "aliases"] {
+        conn.execute(&format!("DELETE FROM {table} WHERE source = ?1"), [path])?;
+    }
+    Ok(())
+}
+
+/// Stores a note's links, tags, and aliases; its old rows must be gone already.
+fn write_facts(conn: &Connection, path: &str, facts: &NoteFacts) -> Result<(), DbError> {
+    write_links(conn, path, &facts.links)?;
+    let mut tag = conn.prepare("INSERT INTO tags (source, tag, start_byte) VALUES (?1, ?2, ?3)")?;
+    for inline in &facts.tags {
+        tag.execute(params![
+            path,
+            inline.tag,
+            i64::try_from(inline.range.start).unwrap_or(i64::MAX)
+        ])?;
+    }
+    for front in &facts.front.tags {
+        tag.execute(params![path, front, Option::<i64>::None])?;
+    }
+    let mut alias = conn.prepare("INSERT INTO aliases (source, alias) VALUES (?1, ?2)")?;
+    for name in &facts.front.aliases {
+        alias.execute(params![path, name])?;
+    }
+    Ok(())
 }
 
 /// Stores a note's links; its old rows must be gone already.

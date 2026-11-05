@@ -1,0 +1,90 @@
+@layer components {
+  .rows {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .row {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border: none;
+    border-inline-start: var(--border-width-mark) solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text);
+    font: inherit;
+    text-align: start;
+  }
+
+  .row:hover {
+    background: var(--color-surface);
+  }
+
+  .row:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  /* The tag the tree is filtered by: as the open note in the tree. */
+  .row[aria-current="true"] {
+    border-inline-start-color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .tag {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .count {
+    flex: none;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Read out, not shown: the number alone is enough to see. */
+  .hidden {
+    position: absolute;
+    width: var(--border-width);
+    height: var(--border-width);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .text {
+    margin: 0;
+    padding-inline: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .filter {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: var(--space-2);
+  }
+
+  .filterText {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  @media (forced-colors: active) {
+    .row[aria-current="true"] {
+      border-inline-start-color: var(--color-forced-selected);
+    }
+  }
+}

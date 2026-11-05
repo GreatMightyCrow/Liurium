@@ -6,6 +6,8 @@ import type { CurrentProject } from "./bindings/CurrentProject";
 import type { ConflictChoice } from "./bindings/ConflictChoice";
 import type { BacklinkSource } from "./bindings/BacklinkSource";
 import type { NoteLink } from "./bindings/NoteLink";
+import type { NoteMarks } from "./bindings/NoteMarks";
+import type { TagNotes } from "./bindings/TagNotes";
 import type { NotesView } from "./bindings/NotesView";
 import type { OpenedNote } from "./bindings/OpenedNote";
 import type { SaveState } from "./bindings/SaveState";
@@ -23,6 +25,7 @@ export type {
   ConflictChoice,
   CurrentProject,
   NoteLink,
+  NoteMarks,
   NotesView,
   OpenedNote,
   ProjectEntry,
@@ -31,6 +34,7 @@ export type {
   SaveState,
   Settings,
   SettingsView,
+  TagNotes,
 };
 export type { DataStatus } from "./bindings/DataStatus";
 export type { FrameStyle } from "./bindings/FrameStyle";
@@ -42,6 +46,7 @@ export type { LinkTarget } from "./bindings/LinkTarget";
 export type { NoteEntry } from "./bindings/NoteEntry";
 export type { NoteLineEnding } from "./bindings/NoteLineEnding";
 export type { NoteReadOnly } from "./bindings/NoteReadOnly";
+export type { NoteTag } from "./bindings/NoteTag";
 export type { SettingKey } from "./bindings/SettingKey";
 export type { SkippedNotes } from "./bindings/SkippedNotes";
 export type { StartWith } from "./bindings/StartWith";
@@ -190,15 +195,20 @@ export function trashEntry(path: string): Promise<void> {
   return call("trash_entry", { path });
 }
 
-/** Every link in the editor's text, with its place and where it leads. Rust only
- *  parses the text; nothing is written. */
-export function noteLinks(path: string, text: string): Promise<NoteLink[]> {
+/** Every link and tag in the editor's text, with its place (and where a link
+ *  leads). Rust only parses the text; nothing is written. */
+export function noteLinks(path: string, text: string): Promise<NoteMarks> {
   return call("note_links", { path, text });
 }
 
 /** The notes that link to this one, with the line around each link. */
 export function backlinksOf(path: string): Promise<BacklinkSource[]> {
   return call("backlinks", { path });
+}
+
+/** Every tag of the open project with the notes that carry it. */
+export function projectTags(): Promise<TagNotes[]> {
+  return call("project_tags");
 }
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {
