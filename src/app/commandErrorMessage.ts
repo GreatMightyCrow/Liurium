@@ -13,6 +13,9 @@ const messages: {
     error: Extract<CommandError, { kind: Kind }>,
   ) => string;
 } = {
+  linkRefused: () => "Liurium does not open this kind of address.",
+  linkNotOpened: () =>
+    "Windows could not open this address. Check that a browser or mail program is set up.",
   notFound: () => "The file or folder no longer exists.",
   alreadyExists: () => "A file or folder with this name already exists.",
   changed: () => "The file was changed outside Liurium. Nothing was saved.",

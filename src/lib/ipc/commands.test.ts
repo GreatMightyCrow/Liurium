@@ -12,6 +12,7 @@ import {
   moveEntry,
   noteLinks,
   openAppDataFolder,
+  openExternalLink,
   openNote,
   reconcileNote,
   projectTags,
@@ -130,6 +131,16 @@ test("the note commands send the path and their arguments under Rust's names", a
     ["wait_note_changes", { seen: 4 }],
     ["check_note_changes", undefined],
   ]);
+});
+
+test("opening an external link sends the address under Rust's name", async () => {
+  invokeMock.mockResolvedValue(undefined);
+
+  await openExternalLink("https://example.org/");
+
+  expect(invokeMock).toHaveBeenLastCalledWith("open_external_link", {
+    address: "https://example.org/",
+  });
 });
 
 test("the organize commands send paths and names under Rust's names", async () => {

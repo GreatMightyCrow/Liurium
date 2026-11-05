@@ -7,6 +7,9 @@ use std::{collections::HashMap, ops::Range};
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
+use super::external::{
+    bare_address_end, bare_address_start, checked_address, claimed_other_address,
+};
 use super::organize::is_note_name;
 use crate::storage::fs::{RelPath, SKIPPED_FOLDERS};
 
@@ -70,6 +73,31 @@ pub struct InlineTag {
 pub struct Scan {
     pub links: Vec<Link>,
     pub tags: Vec<InlineTag>,
+    pub external: Vec<ExternalLink>,
+}
+
+/// A link that leaves Liurium (M3-012): never a note link, not kept in the cache.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLink {
+    /// Bytes of the whole link in the note's text.
+    pub range: Range<usize>,
+    /// Checked and normalized; this is what opens.
+    pub address: String,
+    /// The visible text, when it claims another address than this one.
+    pub claims: Option<String>,
+}
+
+/// An external link's target, if its form and address allow one.
+fn external_address(link_type: LinkType, dest: &str) -> Option<String> {
+    match link_type {
+        LinkType::Inline
+        | LinkType::Reference
+        | LinkType::Collapsed
+        | LinkType::Shortcut
+        | LinkType::Autolink => checked_address(dest),
+        LinkType::Email => checked_address(&format!("mailto:{dest}")),
+        _ => None,
+    }
 }
 
 /// Every note link in a note's text, in order.
@@ -130,10 +158,22 @@ pub fn scan(text: &str) -> Scan {
     let body = &text[body_start..];
     let mut links = Vec::new();
     let mut tags = Vec::new();
+    let mut external: Vec<ExternalLink> = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
     let mut in_code_block = false;
+    // Inside a link or image a bare address is that link's text, not a link of its own.
+    let mut in_link = 0_usize;
+    // The visible text of the external link being read.
+    let mut visible: Option<String> = None;
+    // A bare address is read from the file, so it can reach past this piece.
+    let mut bare_until = 0_usize;
     for (event, range) in Parser::new_ext(body, options()).into_offset_iter() {
         let range = range.start + body_start..range.end + body_start;
+        if let Some(visible) = &mut visible
+            && let Event::Text(piece) | Event::Code(piece) = &event
+        {
+            visible.push_str(piece);
+        }
         match event {
             Event::Code(_) | Event::InlineMath(_) | Event::DisplayMath(_) => code.push(range),
             Event::Start(Tag::CodeBlock(_)) => {
@@ -146,25 +186,63 @@ pub fn scan(text: &str) -> Scan {
             Event::Text(piece) if !in_code_block && text.get(range.clone()) == Some(&*piece) => {
                 let before = text[..range.start].chars().next_back();
                 tags_in(&piece, range.start, before, &mut tags);
+                if in_link == 0 {
+                    let mut from = bare_until.saturating_sub(range.start);
+                    while from < piece.len()
+                        && let Some(at) = bare_address_start(&piece, from, before)
+                    {
+                        let start = range.start + at;
+                        let end = bare_address_end(text, start);
+                        if let Some(address) = text.get(start..end).and_then(checked_address) {
+                            external.push(ExternalLink {
+                                range: start..end,
+                                address,
+                                claims: None,
+                            });
+                        }
+                        bare_until = end;
+                        from = end.saturating_sub(range.start).max(at + 1);
+                    }
+                }
             }
             Event::Start(Tag::Link {
                 link_type,
                 dest_url,
                 ..
             }) => {
-                if let Some(link) = link_of(link_type, &dest_url, range, false) {
+                in_link += 1;
+                if let Some(address) = external_address(link_type, &dest_url) {
+                    external.push(ExternalLink {
+                        range,
+                        address,
+                        claims: None,
+                    });
+                    visible = Some(String::new());
+                } else if let Some(link) = link_of(link_type, &dest_url, range, false) {
                     links.push(link);
+                }
+            }
+            Event::End(TagEnd::Link) => {
+                in_link = in_link.saturating_sub(1);
+                if let Some(shown) = visible.take()
+                    && let Some(link) = external.last_mut()
+                {
+                    link.claims = claimed_other_address(&shown, &link.address);
                 }
             }
             Event::Start(Tag::Image {
                 link_type,
                 dest_url,
                 ..
-            }) if matches!(link_type, LinkType::WikiLink { .. }) => {
-                if let Some(link) = link_of(link_type, &dest_url, range, true) {
+            }) => {
+                in_link += 1;
+                if matches!(link_type, LinkType::WikiLink { .. })
+                    && let Some(link) = link_of(link_type, &dest_url, range, true)
+                {
                     links.push(link);
                 }
             }
+            Event::End(TagEnd::Image) => in_link = in_link.saturating_sub(1),
             _ => {}
         }
     }
@@ -176,7 +254,18 @@ pub fn scan(text: &str) -> Scan {
     };
     links.retain(|link| outside(&link.range));
     tags.retain(|tag| outside(&tag.range));
-    Scan { links, tags }
+    external.retain(|link| outside(&link.range));
+    // A `#` inside an address is its fragment, not a tag.
+    tags.retain(|tag| {
+        !external
+            .iter()
+            .any(|link| link.range.contains(&tag.range.start))
+    });
+    Scan {
+        links,
+        tags,
+        external,
+    }
 }
 
 fn link_of(link_type: LinkType, dest: &str, range: Range<usize>, embed: bool) -> Option<Link> {

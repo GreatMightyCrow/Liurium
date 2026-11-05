@@ -61,12 +61,14 @@ const theme = EditorView.theme({
     },
   ".cm-activeLine": { backgroundColor: "transparent" },
   // Links (M3-005): the accent; missing ones dashed, ambiguous ones dotted.
-  ".cm-link-note, .cm-link-missing, .cm-link-ambiguous": {
+  ".cm-link-note, .cm-link-missing, .cm-link-ambiguous, .cm-link-external": {
     color: "var(--color-accent-text)",
     textDecorationLine: "underline",
     textDecorationThickness: "var(--border-width)",
     textUnderlineOffset: "var(--space-1)",
   },
+  // A link that leaves Liurium says so with an arrow (M3-012).
+  ".cm-link-external::after": { content: '"\\2197"' },
   ".cm-link-missing": { textDecorationStyle: "dashed" },
   // #tags (M3-007): the accent, no fill.
   ".cm-tag": { color: "var(--color-accent-text)" },
@@ -104,8 +106,18 @@ const linkClass: Record<NoteLink["target"]["state"], string | null> = {
   note: "cm-link-note",
   missing: "cm-link-missing",
   ambiguous: "cm-link-ambiguous",
+  external: "cm-link-external",
   other: null,
 };
+
+const FOLLOW_HINT = "Ctrl + click or Ctrl + Enter to follow";
+
+/** An external link names its address, so the reader sees where it leads (M3-012). */
+function linkTitle(link: NoteLink): string {
+  return link.target.state === "external"
+    ? `${link.target.address}\nCtrl + click or Ctrl + Enter to open`
+    : FOLLOW_HINT;
+}
 
 const tagMark = Decoration.mark({ class: "cm-tag" });
 
@@ -122,7 +134,7 @@ function decorate(
         to: link.to,
         mark: Decoration.mark({
           class: className,
-          attributes: { title: "Ctrl + click or Ctrl + Enter to follow" },
+          attributes: { title: linkTitle(link) },
         }),
       });
     }

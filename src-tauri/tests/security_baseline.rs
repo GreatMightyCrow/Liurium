@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 41] = [
+const REVIEWED_PERMISSIONS: [&str; 42] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -74,6 +74,8 @@ const REVIEWED_PERMISSIONS: [&str; 41] = [
     // answer acts only while a question waits.
     "allow-wait-close-question",
     "allow-answer-close-question",
+    // External links (M3-012): the address is checked in Rust; only http, https, mailto.
+    "allow-open-external-link",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

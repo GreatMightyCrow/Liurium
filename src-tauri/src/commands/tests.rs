@@ -2023,3 +2023,53 @@ fn a_shown_question_is_not_taken_by_the_timer() {
     let again = waiting_question(&workspace);
     assert!(workspace.close_questions().take_unshown(again));
 }
+
+// External links (M3-012).
+
+#[test]
+fn external_links_reach_the_page_with_their_place_in_utf16_and_their_address() {
+    let set = crate::domain::notes::links::NoteSet::with_aliases(["Plan.md".to_owned()], &[]);
+    let marks = links::note_links_in(
+        "Plan.md",
+        "äö [[Plan]] [b](https://example.org) #tag [www.a.example](https://b.example)",
+        &set,
+    )
+    .expect("marks");
+    assert_eq!(marks.tags.len(), 1);
+    let found: Vec<_> = marks
+        .links
+        .iter()
+        .filter(|link| matches!(link.target, links::LinkTarget::External { .. }))
+        .collect();
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0].from, 12);
+    assert_eq!(
+        to_json(found[0]),
+        json!({
+            "from": 12,
+            "to": 36,
+            "target": { "state": "external", "address": "https://example.org/", "claims": null },
+        })
+    );
+    assert!(matches!(
+        &found[1].target,
+        links::LinkTarget::External { claims: Some(claims), .. } if claims == "www.a.example"
+    ));
+}
+
+#[test]
+fn the_open_command_refuses_what_a_note_could_not_link_to() {
+    for address in [
+        "javascript:alert(1)",
+        "file:///C:/Windows/system32/calc.exe",
+        "C:\\Windows\\system32\\calc.exe",
+        "https://u:p@example.org",
+        "mailto:a@example.org?attach=C:/s",
+    ] {
+        assert_eq!(
+            links::open_external(address),
+            Err(CommandError::LinkRefused),
+            "{address}"
+        );
+    }
+}

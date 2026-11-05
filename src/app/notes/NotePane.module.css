@@ -72,6 +72,14 @@
     white-space: nowrap;
   }
 
+  /* Addresses have no spaces to wrap at. */
+  .address {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+
   .status[data-status="conflict"],
   .status[data-status="failed"],
   .status[data-status="gone"] {

@@ -14,6 +14,7 @@ import {
   createNote,
   type NoteLink,
   noteLinks,
+  openExternalLink,
   type NoteMarks,
   openNote,
   type NoteCheck,
@@ -41,6 +42,7 @@ vi.mock("../../lib/ipc/commands", () => ({
   closeNote: vi.fn(),
   reconcileNote: vi.fn(),
   noteLinks: vi.fn(),
+  openExternalLink: vi.fn(),
   createNote: vi.fn(),
   editProperty: vi.fn(),
   propertyKinds: vi.fn(),
@@ -1052,4 +1054,72 @@ test("a note renamed outside moves on", async () => {
   await waitFor(() => {
     expect(onMoved).toHaveBeenCalledWith("Ideas/Moved.md");
   });
+});
+
+// External links (M3-012).
+
+function externalLink(claims: string | null): NoteLink {
+  return {
+    from: 0,
+    to: 5,
+    target: { state: "external", address: "https://example.org/", claims },
+  };
+}
+
+test("an honest external link opens at once", async () => {
+  vi.mocked(openExternalLink).mockResolvedValue(undefined);
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(externalLink(null));
+  });
+
+  expect(openExternalLink).toHaveBeenCalledWith("https://example.org/");
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("a link claiming another address asks first, and Cancel opens nothing", async () => {
+  vi.mocked(openExternalLink).mockResolvedValue(undefined);
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(externalLink("www.meinebank.de"));
+  });
+
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("www.meinebank.de");
+  expect(dialog.textContent).toContain("https://example.org/");
+  expect(openExternalLink).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(openExternalLink).not.toHaveBeenCalled();
+
+  act(() => {
+    editor().onFollow(externalLink("www.meinebank.de"));
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open address" }));
+  await waitFor(() => {
+    expect(openExternalLink).toHaveBeenCalledWith("https://example.org/");
+  });
+});
+
+test("a link that does not open says why", async () => {
+  vi.mocked(openExternalLink).mockRejectedValue(
+    new CommandFailure("open_external_link", { kind: "linkNotOpened" }),
+  );
+  render(pane());
+  await noteOpened();
+
+  act(() => {
+    editor().onFollow(externalLink(null));
+  });
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("The link did not open.");
+  expect(alert.textContent).toContain("Windows could not open this address.");
 });

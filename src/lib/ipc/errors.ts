@@ -31,6 +31,8 @@ const kinds: Record<CommandError["kind"], true> = {
   unsaved: true,
   invalidTag: true,
   propertyRefused: true,
+  linkRefused: true,
+  linkNotOpened: true,
   internal: true,
 };
 const knownKinds = new Set<string>(Object.keys(kinds));

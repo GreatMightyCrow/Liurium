@@ -66,6 +66,10 @@ pub enum CommandError {
     InvalidTag,
     /// A property change that could harm the rest of the front matter (M3-015).
     PropertyRefused,
+    /// An address Liurium does not open (M3-012).
+    LinkRefused,
+    /// Windows could not open the address (M3-012).
+    LinkNotOpened,
     /// Nothing the user can act on.
     Internal,
 }

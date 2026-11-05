@@ -3,6 +3,7 @@
 //! Only the cache is written; the project folder is only read.
 
 pub mod backlinks;
+pub mod external;
 pub mod links;
 pub mod meta;
 pub mod organize;
@@ -70,6 +71,8 @@ pub struct Index {
 pub struct NoteFacts {
     pub links: Vec<Link>,
     pub tags: Vec<links::InlineTag>,
+    /// Links that leave Liurium (M3-012); shown in the editor, not kept in the cache.
+    pub external: Vec<links::ExternalLink>,
     pub front: meta::FrontMatter,
 }
 
@@ -79,6 +82,7 @@ impl NoteFacts {
         Self {
             links: scan.links,
             tags: scan.tags,
+            external: scan.external,
             front: meta::read(text),
         }
     }

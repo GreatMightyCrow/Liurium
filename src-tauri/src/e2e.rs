@@ -15,6 +15,13 @@ const ONEDRIVE: &str = "LIURIUM_E2E_ONEDRIVE";
 /// Leaves only the check at window focus, as on a drive without change reports.
 const NO_WATCH: &str = "LIURIUM_E2E_NO_WATCH";
 
+/// File that records opened addresses, so tests and CI start no browser (M3-012).
+const OPENED_LINKS: &str = "LIURIUM_E2E_OPENED_LINKS";
+
+pub fn opened_links() -> Option<PathBuf> {
+    env::var_os(OPENED_LINKS).map(PathBuf::from)
+}
+
 pub fn no_watch() -> bool {
     env::var_os(NO_WATCH).is_some()
 }

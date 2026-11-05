@@ -60,7 +60,8 @@ pub fn run() {
             commands::changes::check_note_changes,
             commands::editor::reconcile_note,
             commands::closing::wait_close_question,
-            commands::closing::answer_close_question
+            commands::closing::answer_close_question,
+            commands::links::open_external_link
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

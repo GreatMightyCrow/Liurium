@@ -39,6 +39,7 @@ const COMMANDS: &[&str] = &[
     "reconcile_note",
     "wait_close_question",
     "answer_close_question",
+    "open_external_link",
 ];
 
 fn main() {

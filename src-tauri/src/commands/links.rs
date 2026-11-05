@@ -10,6 +10,7 @@ use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{
     NoteFacts,
     backlinks::{backlinks as find_backlinks, project_tags as stored_tags, refresh_notes},
+    external::checked_address,
     links::{self, Anchor, Link, LinkKind, NoteSet, Target},
     session::{MAX_NOTE_BYTES, note_path},
 };
@@ -42,6 +43,13 @@ pub enum LinkTarget {
     Ambiguous { candidates: Vec<LinkCandidate> },
     /// Following asks to create this note.
     Missing { path: String },
+    /// Opens in the browser or mail program (M3-012).
+    External {
+        /// Checked and normalized; this is what opens.
+        address: String,
+        /// The visible text, when it claims another address: the page asks first.
+        claims: Option<String>,
+    },
     /// Not a note link; never followed.
     Other,
 }
@@ -110,9 +118,16 @@ pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMark
                 .iter()
                 .flat_map(|tag| [tag.range.start, tag.range.end]),
         )
+        .chain(
+            facts
+                .external
+                .iter()
+                .flat_map(|link| [link.range.start, link.range.end]),
+        )
         .collect();
     let units = links::utf16_offsets(text, &bounds);
-    let (link_units, tag_units) = units.split_at(found.len() * 2);
+    let (link_units, rest) = units.split_at(found.len() * 2);
+    let (tag_units, external_units) = rest.split_at(facts.tags.len() * 2);
     let tags = facts
         .tags
         .iter()
@@ -161,6 +176,20 @@ pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMark
                 target,
             }
         })
+        .chain(
+            facts
+                .external
+                .iter()
+                .zip(external_units.chunks(2))
+                .map(|(link, range)| NoteLink {
+                    from: range[0],
+                    to: range[1],
+                    target: LinkTarget::External {
+                        address: link.address.clone(),
+                        claims: link.claims.clone(),
+                    },
+                }),
+        )
         .collect();
     Ok(NoteMarks {
         links,
@@ -168,6 +197,29 @@ pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMark
         front_tags: facts.front.tags,
         properties: NoteProperties::of(text),
     })
+}
+
+/// Opens an address in the program Windows has for it (M3-012). The page's address is
+/// checked again here: the page cannot open anything `checked_address` refuses.
+/// `ShellExecute` through `open`, no command line.
+pub fn open_external(address: &str) -> Result<(), CommandError> {
+    let address = checked_address(address).ok_or(CommandError::LinkRefused)?;
+    #[cfg(feature = "e2e")]
+    if let Some(record) = crate::e2e::opened_links() {
+        use std::io::Write;
+        return std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(record)
+            .and_then(|mut file| writeln!(file, "{address}"))
+            .map_err(|_| CommandError::LinkNotOpened);
+    }
+    open::that_detached(&address).map_err(|_| CommandError::LinkNotOpened)
+}
+
+#[tauri::command]
+pub async fn open_external_link(address: String) -> Result<(), CommandError> {
+    blocking(move || open_external(&address)).await
 }
 
 /// A note that links to the open one (M3-006).

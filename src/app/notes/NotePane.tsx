@@ -12,6 +12,7 @@ import {
   type NoteEntry,
   type NoteLink,
   noteLinks,
+  openExternalLink,
   type NoteMarks,
   type NoteReadOnly,
   type OpenedNote,
@@ -102,7 +103,8 @@ let pendingAnchor: {
 
 type LinkQuestion =
   | { kind: "ambiguous"; link: NoteLink; candidates: LinkCandidate[] }
-  | { kind: "missing"; path: string };
+  | { kind: "missing"; path: string }
+  | { kind: "external"; address: string; claims: string };
 
 function errorOf(reason: unknown): CommandError {
   return reason instanceof CommandFailure ? reason.error : { kind: "internal" };
@@ -136,6 +138,7 @@ export function NotePane({
   const { folder, name } = split(path);
   const linkTimer = useRef<number | null>(null);
   const [question, setQuestion] = useState<LinkQuestion | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const suggestions = useRef<Suggestion[]>([]);
   const [marks, setMarks] = useState<NoteMarks | null>(null);
   /** "Edit as text": the block shows in the note instead of in the box (M3-015). */
@@ -284,9 +287,26 @@ export function NotePane({
     }
   };
 
+  const openLink = (address: string) => {
+    setLinkError(null);
+    openExternalLink(address).catch((reason: unknown) => {
+      setLinkError(commandErrorMessage(errorOf(reason)));
+    });
+  };
+
   const follow = (link: NoteLink) => {
     const target = link.target;
-    if (target.state === "note") {
+    if (target.state === "external") {
+      if (target.claims === null) {
+        openLink(target.address);
+      } else {
+        setQuestion({
+          kind: "external",
+          address: target.address,
+          claims: target.claims,
+        });
+      }
+    } else if (target.state === "note") {
       const anchor = { heading: target.heading, block: target.block };
       if (target.path.toLowerCase() === path.toLowerCase()) {
         jumpTo(anchor);
@@ -392,6 +412,11 @@ export function NotePane({
               {`Not saved. ${commandErrorMessage(state.saveError)} Liurium tries again with your next change, or press Ctrl + S.`}
             </p>
           )}
+          {linkError !== null && (
+            <p className={styles.notice} role="alert">
+              {`The link did not open. ${linkError}`}
+            </p>
+          )}
           {state.save === "conflict" && (
             <ConflictBar name={name} onChoose={resolve} />
           )}
@@ -493,6 +518,19 @@ export function NotePane({
               candidate.replacement,
             );
             onOpen(candidate.path);
+          }}
+        />
+      )}
+      {question?.kind === "external" && (
+        <ExternalLinkDialog
+          address={question.address}
+          claims={question.claims}
+          onClose={() => {
+            setQuestion(null);
+          }}
+          onOpen={() => {
+            setQuestion(null);
+            openLink(question.address);
           }}
         />
       )}
@@ -729,6 +767,43 @@ function ReadOnlyNotice({
         />
       )}
     </div>
+  );
+}
+
+// The link's text looks like another address than the one it opens (M3-012, owner
+// decision Q1). Focus starts on Cancel, the safe answer.
+function ExternalLinkDialog({
+  address,
+  claims,
+  onOpen,
+  onClose,
+}: {
+  address: string;
+  claims: string;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open
+      title="Open this address?"
+      description={`The link says “${claims}”, but it opens another address:`}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      actions={
+        <>
+          <DialogClose>Cancel</DialogClose>
+          <Button variant="primary" onClick={onOpen}>
+            Open address
+          </Button>
+        </>
+      }
+    >
+      <p className={styles.address}>{address}</p>
+    </Dialog>
   );
 }
 

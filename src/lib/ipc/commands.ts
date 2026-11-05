@@ -224,6 +224,11 @@ export function answerCloseQuestion(
   return call("answer_close_question", { choice });
 }
 
+/** Opens an address in the browser or mail program; Rust checks it first (M3-012). */
+export function openExternalLink(address: string): Promise<void> {
+  return call("open_external_link", { address });
+}
+
 /** Creates an empty note in a folder ("" for the top). Returns its path. */
 export function createNote(folder: string, name: string): Promise<string> {
   return call("create_note", { folder, name });
