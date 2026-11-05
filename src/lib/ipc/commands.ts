@@ -7,6 +7,12 @@ import type { ConflictChoice } from "./bindings/ConflictChoice";
 import type { BacklinkSource } from "./bindings/BacklinkSource";
 import type { NoteLink } from "./bindings/NoteLink";
 import type { NoteMarks } from "./bindings/NoteMarks";
+import type { NoteProperties } from "./bindings/NoteProperties";
+import type { Edit as PropertyEdit } from "./bindings/PropertyEdit";
+import type { PropertyField } from "./bindings/PropertyField";
+import type { PropertyKind } from "./bindings/PropertyKind";
+import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
+import type { Value as PropertyValue } from "./bindings/PropertyValue";
 import type { TagNotes } from "./bindings/TagNotes";
 import type { NotesView } from "./bindings/NotesView";
 import type { OpenedNote } from "./bindings/OpenedNote";
@@ -26,6 +32,12 @@ export type {
   CurrentProject,
   NoteLink,
   NoteMarks,
+  NoteProperties,
+  PropertyEdit,
+  PropertyField,
+  PropertyKind,
+  PropertyKindChoice,
+  PropertyValue,
   NotesView,
   OpenedNote,
   ProjectEntry,
@@ -204,6 +216,28 @@ export function noteLinks(path: string, text: string): Promise<NoteMarks> {
 /** The notes that link to this one, with the line around each link. */
 export function backlinksOf(path: string): Promise<BacklinkSource[]> {
   return call("backlinks", { path });
+}
+
+/** The note's text after one property edit. Rust only changes the text; it saves
+ *  through the editor, like typing. */
+export function editProperty(
+  text: string,
+  edit: PropertyEdit,
+): Promise<string> {
+  return call("edit_property", { text, edit });
+}
+
+/** The kinds chosen for property names in the open project. */
+export function propertyKinds(): Promise<PropertyKindChoice[]> {
+  return call("property_kinds");
+}
+
+/** Chooses a kind for a property name; `null` follows the value again. */
+export function setPropertyKind(
+  name: string,
+  kind: PropertyKind | null,
+): Promise<void> {
+  return call("set_property_kind", { name, kind });
 }
 
 /** Every tag of the open project with the notes that carry it. */

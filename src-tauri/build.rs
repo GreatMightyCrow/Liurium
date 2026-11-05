@@ -31,6 +31,9 @@ const COMMANDS: &[&str] = &[
     "note_links",
     "backlinks",
     "project_tags",
+    "edit_property",
+    "property_kinds",
+    "set_property_kind",
 ];
 
 fn main() {

@@ -1,0 +1,281 @@
+@layer components {
+  /* Above the note's text, in the same column and on the same scroll. */
+  .box {
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
+    max-width: var(--size-note-measure);
+    padding: var(--space-5) var(--space-5) 0;
+  }
+
+  .head {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  .rows {
+    display: grid;
+    gap: var(--space-1);
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Name column, value column; below each other when the note gets narrow. */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+    align-items: flex-start;
+    min-height: var(--size-control-sm);
+  }
+
+  .label {
+    display: flex;
+    flex: 0 0 var(--size-property-name);
+    gap: var(--space-1);
+    align-items: center;
+    min-width: 0;
+    min-height: var(--size-control-sm);
+  }
+
+  .kind,
+  .staticIcon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-secondary);
+  }
+
+  .kind:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  /* Fields look like text until they are pointed at or focused. */
+  .name,
+  .input,
+  .addItem {
+    min-width: 0;
+    height: var(--size-control-sm);
+    padding-inline: var(--space-1);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text);
+    font: inherit;
+  }
+
+  .name {
+    flex: 1;
+    width: 100%;
+    color: var(--color-text-secondary);
+  }
+
+  .staticName {
+    min-width: 0;
+    padding-inline: var(--space-1);
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .value {
+    display: grid;
+    flex: 1 1 var(--size-path-min);
+    gap: var(--space-1);
+    align-items: center;
+    min-width: 0;
+    min-height: var(--size-control-sm);
+  }
+
+  .input {
+    width: 100%;
+  }
+
+  .name:hover,
+  .input:hover {
+    border-color: var(--color-border-control);
+  }
+
+  .name:focus,
+  .input:focus {
+    border-color: var(--color-border-control);
+    background: var(--color-canvas);
+  }
+
+  .input::placeholder,
+  .addItem::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .input:read-only:hover {
+    border-color: transparent;
+  }
+
+  .checkbox {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    margin: 0 var(--space-1);
+    accent-color: var(--color-accent);
+  }
+
+  .source {
+    flex: 1 1 var(--size-path-min);
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-1);
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .hint {
+    margin: 0;
+    padding-inline: var(--space-1);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .error {
+    margin: 0;
+    color: var(--color-danger);
+  }
+
+  .items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* One removable value (owner, M3-015): the accent on its muted color, no shadow. */
+  .capsule {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2) var(--space-1);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-capsule);
+    background: var(--color-accent-muted);
+    color: var(--color-accent-text);
+  }
+
+  .capsuleText {
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+
+  button.capsuleText:hover {
+    text-decoration: underline;
+  }
+
+  .capsuleRemove {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--size-icon-md);
+    min-height: var(--size-icon-md);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-capsule);
+    background: none;
+    color: inherit;
+  }
+
+  .capsuleRemove:hover {
+    color: var(--color-text);
+  }
+
+  .capsuleIcon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .adding {
+    display: flex;
+    flex: 1 1 var(--size-control-md);
+    min-width: var(--size-control-md);
+  }
+
+  .addItem {
+    width: 100%;
+  }
+
+  .addRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    width: 100%;
+  }
+
+  .addRow .input {
+    flex: 1 1 var(--size-project-name);
+    width: auto;
+    border-color: var(--color-border-control);
+    background: var(--color-canvas);
+  }
+
+  .select {
+    height: var(--size-control-sm);
+    padding-inline: var(--space-1);
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font: inherit;
+  }
+
+  .select:disabled {
+    opacity: var(--opacity-disabled);
+  }
+
+  @media (forced-colors: active) {
+    .capsule {
+      border-color: CanvasText;
+    }
+
+    .name,
+    .input,
+    .addItem {
+      border-color: CanvasText;
+    }
+  }
+}

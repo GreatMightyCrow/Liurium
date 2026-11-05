@@ -4,7 +4,12 @@
 //! is not used), nesting deeper than 32 or more than 10 000 events stop it, and
 //! aliases are never expanded. Any problem leaves the note without front matter data.
 
-use yaml_rust2::parser::{Event, Parser};
+use std::ops::Range;
+
+use yaml_rust2::{
+    parser::{Event, Parser},
+    scanner::TScalarStyle,
+};
 
 use super::links::valid_tag;
 
@@ -19,9 +24,18 @@ pub struct FrontMatter {
     pub aliases: Vec<String>,
 }
 
-/// The YAML between the opening `---` on the first line and the next line that is
-/// `---` or `...`; `None` without a closed block at the very start.
-pub fn block(text: &str) -> Option<&str> {
+/// Where a front matter block lies in a note's text, in bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockPlace {
+    /// The YAML between the two marker lines.
+    pub yaml: Range<usize>,
+    /// The whole block with both marker lines and the last line's break.
+    pub whole: Range<usize>,
+}
+
+/// The block from the opening `---` on the first line to the next line that is `---`
+/// or `...`; `None` without a closed block at the very start.
+pub fn place(text: &str) -> Option<BlockPlace> {
     let mut lines = text.split_inclusive('\n');
     let first = lines.next()?;
     if first.trim_end_matches(['\r', '\n']) != "---" {
@@ -32,35 +46,78 @@ pub fn block(text: &str) -> Option<&str> {
     for line in lines {
         let bare = line.trim_end_matches(['\r', '\n']);
         if bare == "---" || bare == "..." {
-            return Some(&text[start..at]);
+            return Some(BlockPlace {
+                yaml: start..at,
+                whole: 0..at + line.len(),
+            });
         }
         at += line.len();
     }
     None
 }
 
-enum Node {
-    Scalar(String),
+/// The YAML of the block at the very start of a note.
+pub fn block(text: &str) -> Option<&str> {
+    place(text).map(|place| &text[place.yaml])
+}
+
+pub(super) enum Node {
+    Scalar {
+        value: String,
+        /// Written without quotes, so `12` and `true` mean a number and a yes or no.
+        plain: bool,
+    },
     Sequence(Vec<Node>),
     Mapping(Vec<Node>),
     /// An alias or anything else not read.
     Skipped,
 }
 
+/// A document read within the limits.
+pub(super) struct Parsed {
+    pub top: Option<Node>,
+    /// The line (from 1) of each key of a mapping at the top, in order.
+    pub key_lines: Vec<usize>,
+    /// It uses anchors, aliases, or explicit tags, so a line cannot be judged alone.
+    pub linked: bool,
+}
+
 /// The first document's top value, built without recursion and within the limits.
 fn top_value(yaml: &str) -> Option<Node> {
+    parse(yaml)?.top
+}
+
+pub(super) fn parse(yaml: &str) -> Option<Parsed> {
     if yaml.len() > MAX_BYTES {
         return None;
     }
     let mut parser = Parser::new_from_str(yaml);
     let mut open: Vec<Node> = Vec::new();
     let mut top = None;
+    let mut key_lines = Vec::new();
+    let mut linked = false;
     for _ in 0..MAX_EVENTS {
-        let (event, _) = parser.next_token().ok()?;
+        let (event, marker) = parser.next_token().ok()?;
+        if !matches!(event, Event::MappingEnd)
+            && let [Node::Mapping(items)] = open.as_slice()
+            && items.len() % 2 == 0
+        {
+            key_lines.push(marker.line());
+        }
         let done = match event {
-            Event::Scalar(value, ..) => Some(Node::Scalar(value)),
-            Event::Alias(_) => Some(Node::Skipped),
-            Event::SequenceStart(..) | Event::MappingStart(..) => {
+            Event::Scalar(value, style, anchor, tag) => {
+                linked |= anchor != 0 || tag.is_some();
+                Some(Node::Scalar {
+                    value,
+                    plain: matches!(style, TScalarStyle::Plain),
+                })
+            }
+            Event::Alias(_) => {
+                linked = true;
+                Some(Node::Skipped)
+            }
+            Event::SequenceStart(anchor, ref tag) | Event::MappingStart(anchor, ref tag) => {
+                linked |= anchor != 0 || tag.is_some();
                 if open.len() >= MAX_DEPTH {
                     return None;
                 }
@@ -72,7 +129,13 @@ fn top_value(yaml: &str) -> Option<Node> {
                 None
             }
             Event::SequenceEnd | Event::MappingEnd => Some(open.pop()?),
-            Event::DocumentEnd | Event::StreamEnd => return top,
+            Event::DocumentEnd | Event::StreamEnd => {
+                return Some(Parsed {
+                    top,
+                    key_lines,
+                    linked,
+                });
+            }
             Event::Nothing | Event::StreamStart | Event::DocumentStart => None,
         };
         if let Some(node) = done {
@@ -86,17 +149,17 @@ fn top_value(yaml: &str) -> Option<Node> {
     None
 }
 
-fn texts(node: &Node, split: bool) -> Vec<String> {
+pub(super) fn texts(node: &Node, split: bool) -> Vec<String> {
     match node {
-        Node::Scalar(value) if split => value
+        Node::Scalar { value, .. } if split => value
             .split(|c: char| c == ',' || c.is_whitespace())
             .map(str::to_owned)
             .collect(),
-        Node::Scalar(value) => vec![value.clone()],
+        Node::Scalar { value, .. } => vec![value.clone()],
         Node::Sequence(items) => items
             .iter()
             .filter_map(|item| match item {
-                Node::Scalar(value) => Some(value.clone()),
+                Node::Scalar { value, .. } => Some(value.clone()),
                 _ => None,
             })
             .collect(),
@@ -112,7 +175,7 @@ pub fn read(text: &str) -> FrontMatter {
     };
     let mut meta = FrontMatter::default();
     for pair in entries.chunks(2) {
-        let [Node::Scalar(key), value] = pair else {
+        let [Node::Scalar { value: key, .. }, value] = pair else {
             continue;
         };
         match key.as_str() {

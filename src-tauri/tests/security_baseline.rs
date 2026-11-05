@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 33] = [
+const REVIEWED_PERMISSIONS: [&str; 36] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -60,6 +60,11 @@ const REVIEWED_PERMISSIONS: [&str; 33] = [
     "allow-backlinks",
     // Tags (M3-007): no arguments; tags of the open project from the cache.
     "allow-project-tags",
+    // Properties (M3-015): a pure text change, nothing written; the kinds of the open
+    // project, and one kind chosen by the user.
+    "allow-edit-property",
+    "allow-property-kinds",
+    "allow-set-property-kind",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

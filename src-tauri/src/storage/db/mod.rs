@@ -46,7 +46,10 @@ static APP_SCHEMA: Schema = Schema {
 
 static PROJECT_SCHEMA: Schema = Schema {
     application_id: PROJECT_ID,
-    migrations: &[include_str!("migrations/project/0001_meta.sql")],
+    migrations: &[
+        include_str!("migrations/project/0001_meta.sql"),
+        include_str!("migrations/project/0002_property_kinds.sql"),
+    ],
 };
 
 static CACHE_SCHEMA: Schema = Schema {
@@ -131,7 +134,13 @@ fn open_with(
     let found = check_owner(&conn, schema)?;
     set_journal_mode(&conn, kind)?;
     conn.pragma_update(None, "synchronous", kind.synchronous())?;
-    migrate::migrate(&mut conn, schema, path, found, kind != Kind::Cache)?;
+    // A write-protected project cannot be upgraded and must not be written; it stays
+    // readable at its version (M3-015). Whatever is newer than that version must cope
+    // with its absence.
+    let frozen = kind == Kind::Project && found > 0 && conn.is_readonly(rusqlite::MAIN_DB)?;
+    if !frozen {
+        migrate::migrate(&mut conn, schema, path, found, kind != Kind::Cache)?;
+    }
     Ok(conn)
 }
 

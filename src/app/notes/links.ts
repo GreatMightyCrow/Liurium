@@ -56,6 +56,41 @@ export function tagsInEditor(
   }));
 }
 
+/** One change that turns `from` into `to`, keeping what they share at both ends and
+ *  never cutting a Windows line break in two. Offsets are in `from`, in UTF-16. */
+export function textChange(
+  from: string,
+  to: string,
+): { from: number; to: number; insert: string } {
+  const longest = Math.min(from.length, to.length);
+  let start = 0;
+  while (start < longest && from[start] === to[start]) {
+    start += 1;
+  }
+  if (start > 0 && from[start - 1] === "\r" && from[start] === "\n") {
+    start -= 1;
+  }
+  let tail = 0;
+  while (
+    tail < longest - start &&
+    from[from.length - 1 - tail] === to[to.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  if (
+    tail > 0 &&
+    from[from.length - tail] === "\n" &&
+    from[from.length - tail - 1] === "\r"
+  ) {
+    tail -= 1;
+  }
+  return {
+    from: start,
+    to: from.length - tail,
+    insert: to.slice(start, to.length - tail),
+  };
+}
+
 /** The tags to show for a note: front matter first, then the text's, each once
  *  (without case). */
 export function noteTagsOf(

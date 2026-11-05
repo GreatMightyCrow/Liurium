@@ -21,6 +21,7 @@ import {
 vi.mock("../lib/ipc/commands", () => ({
   listNotes: vi.fn(),
   projectTags: vi.fn(),
+  propertyKinds: vi.fn(() => Promise.resolve([])),
 }));
 
 const listNotesMock = vi.mocked(listNotes);

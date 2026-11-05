@@ -36,6 +36,9 @@
     "allow-trash-entry",
     "allow-note-links",
     "allow-backlinks",
-    "allow-project-tags"
+    "allow-project-tags",
+    "allow-edit-property",
+    "allow-property-kinds",
+    "allow-set-property-kind"
   ]
 }

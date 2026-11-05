@@ -223,6 +223,17 @@ impl Workspace {
             .map(|project| (project.id.clone(), project.root.clone(), project.read_only)))
     }
 
+    /// Works with the open project, reopening the last one on the first call.
+    pub(super) fn with_open_project<T>(
+        &self,
+        work: impl FnOnce(&Project) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let app = self.app()?;
+        let mut guard = self.lock()?;
+        let current = self.restored(&mut guard, &app)?;
+        work(current.open.as_ref().ok_or(CommandError::NoProject)?)
+    }
+
     /// Id and folder of the open project, reopening the last one on the first call.
     pub(super) fn open_root(&self) -> Result<Option<(String, ProjectRoot)>, CommandError> {
         let app = self.app()?;

@@ -7,12 +7,18 @@ import {
 } from "react";
 import {
   createNote,
+  editProperty,
   type LinkCandidate,
   type NoteEntry,
   type NoteLink,
   noteLinks,
+  type NoteMarks,
   type NoteReadOnly,
   type OpenedNote,
+  type PropertyEdit,
+  type PropertyKind,
+  propertyKinds,
+  setPropertyKind,
 } from "../../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../../lib/ipc/errors";
 import { RadioGroup } from "../../ui/RadioGroup";
@@ -22,8 +28,10 @@ import {
   inEditor,
   noteTagsOf,
   tagsInEditor,
+  textChange,
   toEditorPositions,
 } from "./links";
+import { PropertiesBox } from "./PropertiesBox";
 import { Button } from "../../ui/Button";
 import { Dialog, DialogClose } from "../../ui/Dialog";
 import { ErrorState, LoadingState } from "../../ui/StateView";
@@ -122,7 +130,30 @@ export function NotePane({
   const linkTimer = useRef<number | null>(null);
   const [question, setQuestion] = useState<LinkQuestion | null>(null);
   const suggestions = useRef<Suggestion[]>([]);
-  const [tags, setTags] = useState<readonly string[]>([]);
+  const [marks, setMarks] = useState<NoteMarks | null>(null);
+  /** "Edit as text": the block shows in the note instead of in the box (M3-015). */
+  const [blockAsText, setBlockAsText] = useState(false);
+  const blockAsTextRef = useRef(blockAsText);
+  const [kinds, setKinds] = useState<ReadonlyMap<string, PropertyKind>>(
+    new Map(),
+  );
+  const [propertyError, setPropertyError] = useState<string | null>(null);
+
+  const loadKinds = () => {
+    propertyKinds().then(
+      (choices) => {
+        setKinds(
+          new Map(
+            choices.map((choice) => [choice.name.toLowerCase(), choice.kind]),
+          ),
+        );
+      },
+      () => {
+        // Without chosen kinds, fields follow their values.
+      },
+    );
+  };
+  useEffect(loadKinds, []);
 
   useLayoutEffect(() => {
     suggestions.current = suggestionsOf(notes);
@@ -140,20 +171,71 @@ export function NotePane({
   /** Rust's links and tags for this text; dropped when the text changed meanwhile. */
   const refreshLinks = (text: string) => {
     noteLinks(path, text).then(
-      (marks) => {
+      (found) => {
         const current = editor.current;
         if (current !== null && current.text() === text) {
           current.setMarks(
-            inEditor(text, marks.links),
-            tagsInEditor(text, marks.tags),
+            inEditor(text, found.links),
+            tagsInEditor(text, found.tags),
           );
-          setTags(noteTagsOf(marks.frontTags, marks.tags));
+          applyHidden(current, text, found, blockAsTextRef.current);
+          setMarks(found);
         }
       },
       () => {
         // Without links the note still edits and saves; they come with the next change.
       },
     );
+  };
+
+  const editBox = (edit: PropertyEdit) => {
+    const current = editor.current;
+    if (current === null) {
+      return;
+    }
+    const text = current.text();
+    editProperty(text, edit).then(
+      (next) => {
+        setPropertyError(null);
+        const open = editor.current;
+        // Typing meanwhile: the edit answered for older text, so it asks again.
+        if (open === null || next === text) {
+          return;
+        }
+        if (open.text() !== text) {
+          editBox(edit);
+          return;
+        }
+        const change = textChange(text, next);
+        const [from, to] = toEditorPositions(text, [change.from, change.to]);
+        open.replaceFromBox(from, to, change.insert);
+        refreshLinks(open.text());
+      },
+      (reason: unknown) => {
+        setPropertyError(commandErrorMessage(errorOf(reason)));
+      },
+    );
+  };
+
+  const chooseKind = (name: string, kind: PropertyKind | null) => {
+    setPropertyKind(name, kind).then(
+      () => {
+        setPropertyError(null);
+        loadKinds();
+      },
+      (reason: unknown) => {
+        setPropertyError(commandErrorMessage(errorOf(reason)));
+      },
+    );
+  };
+
+  const showBlockAsText = (asText: boolean) => {
+    blockAsTextRef.current = asText;
+    setBlockAsText(asText);
+    const current = editor.current;
+    if (current !== null && marks !== null) {
+      applyHidden(current, current.text(), marks, asText);
+    }
   };
 
   const jumpTo = (anchor: { heading: string | null; block: string | null }) => {
@@ -217,6 +299,20 @@ export function NotePane({
     }, LINKS_EVERY_MS);
   };
 
+  const properties = marks?.properties ?? null;
+  const boxFields =
+    properties !== null && properties.state === "fields" ? properties : null;
+  const boxShown =
+    properties?.state === "none" || (boxFields !== null && !blockAsText);
+  // Tags from the front matter show in the box; here only those from the text.
+  const tags =
+    marks === null
+      ? []
+      : noteTagsOf(
+          boxFields !== null && !blockAsText ? [] : marks.frontTags,
+          marks.tags,
+        );
+
   return (
     <section className={styles.pane} aria-label={name}>
       <header className={styles.header}>
@@ -272,18 +368,58 @@ export function NotePane({
               onUnify={unify}
             />
           )}
-          <EditorHost
-            key={`${state.note.path}:${String(state.version)}`}
-            note={state.note}
-            label={name}
-            onChange={edited}
-            onSave={() => {
-              void save();
-            }}
-            onFollow={follow}
-            suggestions={() => suggestions.current}
-            onReady={ready}
-          />
+          <div className={styles.scroll}>
+            {boxShown && (
+              <PropertiesBox
+                properties={boxFields}
+                kinds={kinds}
+                readOnly={state.note.readOnly !== null}
+                error={propertyError}
+                onEdit={editBox}
+                onKind={chooseKind}
+                onTag={onTag}
+                onEditAsText={() => {
+                  showBlockAsText(true);
+                }}
+              />
+            )}
+            {blockAsText && boxFields !== null && (
+              <div className={styles.asText}>
+                <p className={styles.asTextNote}>
+                  The properties show as text in the note.
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    showBlockAsText(false);
+                  }}
+                >
+                  Show as properties
+                </Button>
+              </div>
+            )}
+            {properties?.state === "asText" && (
+              <div className={styles.asText} role="status">
+                <p className={styles.asTextNote}>
+                  This front matter cannot show as properties. It uses YAML that
+                  Liurium cannot change safely, so it stays as text.
+                </p>
+              </div>
+            )}
+            <EditorHost
+              key={`${state.note.path}:${String(state.version)}`}
+              note={state.note}
+              label={name}
+              onChange={edited}
+              onSave={() => {
+                void save();
+              }}
+              onFollow={follow}
+              suggestions={() => suggestions.current}
+              onReady={ready}
+            />
+          </div>
           <Backlinks
             path={state.note.path}
             onOpenAt={(source, offset) => {
@@ -333,6 +469,27 @@ export function NotePane({
       )}
     </section>
   );
+}
+
+/** Hides the block when it ends with a line break: without one, the text after it
+ *  would have nowhere to start. */
+function applyHidden(
+  editor: NoteEditor,
+  text: string,
+  marks: NoteMarks,
+  asText: boolean,
+) {
+  const properties = marks.properties;
+  if (
+    asText ||
+    properties.state !== "fields" ||
+    text[properties.to - 1] !== "\n"
+  ) {
+    editor.setHidden(null);
+    return;
+  }
+  const [from, to] = toEditorPositions(text, [properties.from, properties.to]);
+  editor.setHidden({ from, to });
 }
 
 function ConflictBar({

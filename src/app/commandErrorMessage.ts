@@ -34,6 +34,10 @@ const messages: {
   notUtf8: () =>
     "Liurium can open only UTF-8 text files. This file uses another encoding or is not text.",
   unsaved: () => "This note has changes that are not saved yet.",
+  invalidTag: () =>
+    "A tag can hold letters, digits, _, -, and /, and needs at least one that is not a digit.",
+  propertyRefused: () =>
+    "Liurium could not make this change without risk to the rest of the note. Check the value, or use Edit as text.",
   outsideProject: () => "This path leads outside the project.",
   protected: () =>
     "This folder is managed by Liurium or Git and cannot be changed here.",

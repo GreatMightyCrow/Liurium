@@ -12,6 +12,7 @@ use std::{
 };
 
 use rusqlite::{Connection, MAIN_DB, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 
 pub use error::ProjectError;
 
@@ -476,6 +477,98 @@ fn new_id(connection: &Connection) -> Result<String, ProjectError> {
 }
 
 /// A lowercase UUID v4, as `new_id` makes them. Ids from `project.db` are untrusted.
+/// How a property shows, chosen by name for all notes of a project (M3-015).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "PropertyKind.ts"))]
+pub enum PropertyKind {
+    Text,
+    List,
+    Number,
+    Checkbox,
+    Date,
+    DateTime,
+}
+
+impl PropertyKind {
+    fn stored(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::List => "list",
+            Self::Number => "number",
+            Self::Checkbox => "checkbox",
+            Self::Date => "date",
+            Self::DateTime => "dateTime",
+        }
+    }
+
+    fn from_stored(stored: &str) -> Option<Self> {
+        [
+            Self::Text,
+            Self::List,
+            Self::Number,
+            Self::Checkbox,
+            Self::Date,
+            Self::DateTime,
+        ]
+        .into_iter()
+        .find(|kind| kind.stored() == stored)
+    }
+}
+
+impl Project {
+    /// The kinds chosen in this project, by name. A write-protected project may still
+    /// be at a version without them (it cannot be upgraded); it has none then.
+    pub fn property_kinds(&self) -> Result<Vec<(String, PropertyKind)>, DbError> {
+        property_kinds(&self.connection)
+    }
+
+    /// Chooses a kind for a name, or with `None` goes back to following the value.
+    pub fn set_property_kind(&self, name: &str, kind: Option<PropertyKind>) -> Result<(), DbError> {
+        set_property_kind(&self.connection, name, kind)
+    }
+}
+
+fn property_kinds(conn: &Connection) -> Result<Vec<(String, PropertyKind)>, DbError> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'property_kinds')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(Vec::new());
+    }
+    let mut statement = conn.prepare("SELECT name, kind FROM property_kinds ORDER BY name")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut kinds = Vec::new();
+    for row in rows {
+        let (name, stored) = row?;
+        // The file can come from anywhere; an unknown kind counts as not chosen.
+        if let Some(kind) = PropertyKind::from_stored(&stored) {
+            kinds.push((name, kind));
+        }
+    }
+    Ok(kinds)
+}
+
+fn set_property_kind(
+    conn: &Connection,
+    name: &str,
+    kind: Option<PropertyKind>,
+) -> Result<(), DbError> {
+    match kind {
+        Some(kind) => conn.execute(
+            "INSERT INTO property_kinds (name, kind) VALUES (?1, ?2)
+             ON CONFLICT (name) DO UPDATE SET name = excluded.name, kind = excluded.kind",
+            params![name, kind.stored()],
+        )?,
+        None => conn.execute("DELETE FROM property_kinds WHERE name = ?1", [name])?,
+    };
+    Ok(())
+}
+
 pub fn is_project_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     bytes.len() == 36

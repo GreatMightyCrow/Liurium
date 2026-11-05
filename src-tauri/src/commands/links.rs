@@ -5,6 +5,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use super::properties::NoteProperties;
 use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{
     NoteFacts,
@@ -82,6 +83,8 @@ pub struct NoteMarks {
     pub tags: Vec<NoteTag>,
     /// Tags from the front matter, without `#`.
     pub front_tags: Vec<String>,
+    /// The front matter for the properties box (M3-015).
+    pub properties: NoteProperties,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -163,6 +166,7 @@ pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMark
         links,
         tags,
         front_tags: facts.front.tags,
+        properties: NoteProperties::of(text),
     })
 }
 

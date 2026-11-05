@@ -875,3 +875,101 @@ fn a_registry_from_before_the_sync_warning_keeps_its_projects() {
     assert_eq!(project.name, "Garden");
     assert!(first_sync_warning(&app, &fixture.id).expect("first"));
 }
+
+#[test]
+fn property_kinds_are_kept_per_project_and_compared_without_case() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let folder = dir.path().join("Work");
+    fs::create_dir(&folder).expect("folder");
+    let project = add(&app, &folder).expect("added");
+    assert_eq!(project.property_kinds().expect("kinds"), []);
+
+    project
+        .set_property_kind("due", Some(PropertyKind::Date))
+        .expect("set");
+    project
+        .set_property_kind("seen", Some(PropertyKind::Checkbox))
+        .expect("set");
+    project
+        .set_property_kind("DUE", Some(PropertyKind::DateTime))
+        .expect("changed");
+    assert_eq!(
+        project.property_kinds().expect("kinds"),
+        [
+            ("DUE".to_owned(), PropertyKind::DateTime),
+            ("seen".to_owned(), PropertyKind::Checkbox),
+        ]
+    );
+
+    project.set_property_kind("Seen", None).expect("removed");
+    assert_eq!(
+        project.property_kinds().expect("kinds"),
+        [("DUE".to_owned(), PropertyKind::DateTime)]
+    );
+
+    // They live in the project and come back with it.
+    let id = project.id.clone();
+    drop(project);
+    let again = open(&app, &id).expect("opened again");
+    assert_eq!(
+        again.property_kinds().expect("kinds"),
+        [("DUE".to_owned(), PropertyKind::DateTime)]
+    );
+}
+
+#[test]
+fn an_unknown_kind_in_the_project_file_counts_as_not_chosen() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let folder = dir.path().join("Work");
+    fs::create_dir(&folder).expect("folder");
+    let project = add(&app, &folder).expect("added");
+    project
+        .set_property_kind("due", Some(PropertyKind::Date))
+        .expect("set");
+    project
+        .connection
+        .execute_batch(
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE property_kinds SET kind = 'evil';
+             PRAGMA ignore_check_constraints = OFF;",
+        )
+        .expect("changed by hand");
+
+    assert_eq!(project.property_kinds().expect("kinds"), []);
+}
+
+#[test]
+fn an_older_project_gains_property_kinds_after_a_backup() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Old", 1);
+
+    let opened = add(&app, &fixture.root).expect("upgraded");
+
+    assert_eq!(opened.property_kinds().expect("kinds"), []);
+    opened
+        .set_property_kind("due", Some(PropertyKind::Date))
+        .expect("can be written");
+    let backups = fs::read_dir(fixture.root.join(".liurium").join("backups"))
+        .expect("backups")
+        .count();
+    assert_eq!(backups, 1);
+}
+
+#[test]
+fn a_write_protected_older_project_still_opens_and_stays_as_it_is() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let fixture = project(dir.path(), "Archive", 1);
+    read_only(&fixture.database());
+    let before = Snapshot::of(&fixture.database());
+
+    let opened = add(&app, &fixture.root).expect("opened");
+
+    assert!(opened.read_only);
+    assert_eq!(opened.property_kinds().expect("none yet"), []);
+    drop(opened);
+    before.assert_unchanged(&fixture.database());
+}

@@ -29,6 +29,8 @@ const kinds: Record<CommandError["kind"], true> = {
   isLink: true,
   skippedName: true,
   unsaved: true,
+  invalidTag: true,
+  propertyRefused: true,
   internal: true,
 };
 const knownKinds = new Set<string>(Object.keys(kinds));

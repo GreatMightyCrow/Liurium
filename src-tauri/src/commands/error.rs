@@ -62,6 +62,10 @@ pub enum CommandError {
     NotUtf8,
     /// The note has changes that are not saved yet.
     Unsaved,
+    /// A tag with characters a tag cannot have (M3-015).
+    InvalidTag,
+    /// A property change that could harm the rest of the front matter (M3-015).
+    PropertyRefused,
     /// Nothing the user can act on.
     Internal,
 }

@@ -12,9 +12,13 @@ import {
   createNote,
   type NoteLink,
   noteLinks,
+  type NoteMarks,
   openNote,
   type OpenedNote,
+  editProperty,
+  propertyKinds,
   resolveNoteConflict,
+  setPropertyKind,
   updateNote,
 } from "../../lib/ipc/commands";
 import { CommandFailure } from "../../lib/ipc/errors";
@@ -29,6 +33,9 @@ vi.mock("../../lib/ipc/commands", () => ({
   closeNote: vi.fn(),
   noteLinks: vi.fn(),
   createNote: vi.fn(),
+  editProperty: vi.fn(),
+  propertyKinds: vi.fn(),
+  setPropertyKind: vi.fn(),
   backlinksOf: vi.fn(() => Promise.resolve([])),
 }));
 
@@ -38,6 +45,8 @@ const fakeEditor = {
   text: vi.fn(() => ""),
   setReadOnly: vi.fn(),
   setMarks: vi.fn(),
+  setHidden: vi.fn(),
+  replaceFromBox: vi.fn(),
   replace: vi.fn(),
   goTo: vi.fn(),
   focus: vi.fn(),
@@ -130,7 +139,9 @@ beforeEach(() => {
     links: [],
     tags: [],
     frontTags: [],
+    properties: { state: "none" },
   });
+  vi.mocked(propertyKinds).mockResolvedValue([]);
   fakeEditor.text.mockReturnValue("# Plan\r\n");
 });
 
@@ -338,6 +349,232 @@ function link(target: NoteLink["target"], from = 0, to = 8): NoteLink {
   return { from, to, target };
 }
 
+const BLOCK = "---\r\ndue: 2026-10-20\r\ntags:\r\n  - idee\r\n---\r\n";
+
+function boxMarks(fields: NoteMarks["properties"]): NoteMarks {
+  return { links: [], tags: [], frontTags: ["idee"], properties: fields };
+}
+
+const FIELDS: NoteMarks["properties"] = {
+  state: "fields",
+  from: 0,
+  to: BLOCK.length,
+  fields: [
+    { name: "due", value: { kind: "date", text: "2026-10-20" } },
+    { name: "tags", value: { kind: "list", items: ["idee"] } },
+  ],
+};
+
+test("front matter shows in the box, hidden in the editor, and its tags are not in the header", async () => {
+  const text = `${BLOCK}Body`;
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks(FIELDS));
+  render(pane());
+  await noteOpened();
+
+  const box = await screen.findByRole("region", { name: "Properties" });
+  expect(within(box).getByLabelText("Value of property due")).toHaveProperty(
+    "value",
+    "2026-10-20",
+  );
+  expect(screen.queryByRole("list", { name: "Tags" })).toBeNull();
+  // Each line break counts as one position in the editor.
+  expect(fakeEditor.setHidden).toHaveBeenLastCalledWith({
+    from: 0,
+    to: BLOCK.length - 5,
+  });
+
+  fireEvent.click(within(box).getByRole("button", { name: "idee" }));
+  expect(onTag).toHaveBeenCalledWith("idee");
+});
+
+test("an edit in the box goes through Rust and into the editor as one change", async () => {
+  const text = `${BLOCK}Body`;
+  const next = text.replace("2026-10-20", "2027-01-31");
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks(FIELDS));
+  vi.mocked(editProperty).mockResolvedValue(next);
+  render(pane());
+  await noteOpened();
+
+  const due = await screen.findByLabelText("Value of property due");
+  fireEvent.change(due, { target: { value: "2027-01-31" } });
+  fireEvent.blur(due);
+
+  await waitFor(() => {
+    expect(fakeEditor.replaceFromBox).toHaveBeenCalled();
+  });
+  expect(editProperty).toHaveBeenCalledWith(text, {
+    action: "set",
+    name: "due",
+    value: { kind: "date", text: "2027-01-31" },
+  });
+  // Only what differs, in editor positions (one line break before it).
+  expect(fakeEditor.replaceFromBox).toHaveBeenCalledWith(12, 19, "7-01-31");
+});
+
+test("a refused edit says why and changes nothing", async () => {
+  const text = `${BLOCK}Body`;
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks(FIELDS));
+  vi.mocked(editProperty).mockRejectedValue(
+    new CommandFailure("edit_property", { kind: "propertyRefused" }),
+  );
+  render(pane());
+  await noteOpened();
+
+  const add = await screen.findByLabelText("Add to tags");
+  fireEvent.change(add, { target: { value: "neu" } });
+  fireEvent.keyDown(add, { key: "Enter" });
+
+  expect((await screen.findByRole("alert")).textContent).toMatch(
+    /^Liurium could not make this change/,
+  );
+  expect(fakeEditor.replaceFromBox).not.toHaveBeenCalled();
+});
+
+test("Edit as text shows the block in the note, with its tags in the header, and back", async () => {
+  const text = `${BLOCK}Body`;
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks(FIELDS));
+  render(pane());
+  await noteOpened();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit as text" }));
+
+  expect(screen.queryByRole("region", { name: "Properties" })).toBeNull();
+  expect(fakeEditor.setHidden).toHaveBeenLastCalledWith(null);
+  expect(screen.getByRole("list", { name: "Tags" })).toBeDefined();
+
+  fireEvent.click(screen.getByRole("button", { name: "Show as properties" }));
+
+  expect(screen.getByRole("region", { name: "Properties" })).toBeDefined();
+  expect(fakeEditor.setHidden).toHaveBeenLastCalledWith({
+    from: 0,
+    to: BLOCK.length - 5,
+  });
+});
+
+test("front matter Liurium cannot judge stays as text and says so", async () => {
+  fakeEditor.text.mockReturnValue("---\nbad: [\n---\nBody");
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks({ state: "asText" }));
+  render(pane());
+  await noteOpened();
+
+  expect(
+    await screen.findByText(/^This front matter cannot show as properties/),
+  ).toBeDefined();
+  expect(screen.queryByRole("region", { name: "Properties" })).toBeNull();
+  expect(fakeEditor.setHidden).toHaveBeenLastCalledWith(null);
+});
+
+test("a block without a line break after it is not hidden", async () => {
+  const text = "---\na: 1\n---";
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(
+    boxMarks({
+      state: "fields",
+      from: 0,
+      to: text.length,
+      fields: [{ name: "a", value: { kind: "number", text: "1" } }],
+    }),
+  );
+  render(pane());
+  await noteOpened();
+
+  await screen.findByRole("region", { name: "Properties" });
+  expect(fakeEditor.setHidden).toHaveBeenLastCalledWith(null);
+});
+
+test("a note without properties offers only Add property", async () => {
+  render(pane());
+  await noteOpened();
+
+  const box = await screen.findByRole("region", { name: "Properties" });
+  expect(within(box).queryByRole("heading")).toBeNull();
+  expect(
+    within(box).getByRole("button", { name: "Add property" }),
+  ).toBeDefined();
+});
+
+test("a new property is written with its kind, and the kind is kept for the project", async () => {
+  vi.mocked(editProperty).mockResolvedValue("---\r\ndue:\r\n---\r\n# Plan\r\n");
+  vi.mocked(setPropertyKind).mockResolvedValue(undefined);
+  render(pane());
+  await noteOpened();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add property" }));
+  fireEvent.change(screen.getByLabelText("Name of the new property"), {
+    target: { value: " due " },
+  });
+  fireEvent.change(screen.getByLabelText("Kind of the new property"), {
+    target: { value: "date" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+  await waitFor(() => {
+    expect(setPropertyKind).toHaveBeenCalledWith("due", "date");
+  });
+  expect(editProperty).toHaveBeenCalledWith("# Plan\r\n", {
+    action: "set",
+    name: "due",
+    value: { kind: "empty" },
+  });
+});
+
+test("a chosen kind changes how a value shows, and a value that does not fit says so", async () => {
+  const text = "---\ndue: soon\ncount: 5\n---\n";
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(propertyKinds).mockResolvedValue([
+    { name: "DUE", kind: "date" },
+    { name: "count", kind: "text" },
+  ]);
+  vi.mocked(noteLinks).mockResolvedValue(
+    boxMarks({
+      state: "fields",
+      from: 0,
+      to: text.length,
+      fields: [
+        { name: "due", value: { kind: "text", text: "soon" } },
+        { name: "count", value: { kind: "number", text: "5" } },
+      ],
+    }),
+  );
+  render(pane());
+  await noteOpened();
+
+  expect(await screen.findByText(/^Not a date\./)).toBeDefined();
+  expect(screen.getByLabelText("Value of property due")).toHaveProperty(
+    "value",
+    "soon",
+  );
+  expect(screen.getByLabelText("Value of property count")).toHaveProperty(
+    "value",
+    "5",
+  );
+  expect(editProperty).not.toHaveBeenCalled();
+});
+
+test("a read-only note shows its properties without controls", async () => {
+  openNoteMock.mockResolvedValue(opened({ readOnly: "file" }));
+  const text = `${BLOCK}Body`;
+  fakeEditor.text.mockReturnValue(text);
+  vi.mocked(noteLinks).mockResolvedValue(boxMarks(FIELDS));
+  render(pane());
+  await noteOpened();
+
+  const box = await screen.findByRole("region", { name: "Properties" });
+  expect(within(box).queryByRole("button", { name: "Remove idee" })).toBeNull();
+  expect(
+    within(box).queryByRole("button", { name: "Add property" }),
+  ).toBeNull();
+  expect(within(box).queryByLabelText("Add to tags")).toBeNull();
+  expect(within(box).getByLabelText("Value of property due")).toHaveProperty(
+    "readOnly",
+    true,
+  );
+});
+
 test("the note's tags show once in its header and choose that tag", async () => {
   const text = "a\r\n#idee #Idee";
   fakeEditor.text.mockReturnValue(text);
@@ -348,6 +585,7 @@ test("the note's tags show once in its header and choose that tag", async () => 
       { from: 9, to: 14, tag: "Idee" },
     ],
     frontTags: ["project/sub"],
+    properties: { state: "none" },
   });
   render(pane());
   await noteOpened();
@@ -384,6 +622,7 @@ test("Rust's links reach the editor, CRLF counted as one position", async () => 
     ],
     tags: [],
     frontTags: [],
+    properties: { state: "none" },
   });
   render(pane());
   await noteOpened();

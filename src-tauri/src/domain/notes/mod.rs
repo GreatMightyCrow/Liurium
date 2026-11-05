@@ -6,6 +6,7 @@ pub mod backlinks;
 pub mod links;
 pub mod meta;
 pub mod organize;
+pub mod properties;
 pub mod session;
 #[cfg(test)]
 mod session_tests;

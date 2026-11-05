@@ -43,7 +43,13 @@ test("a tag typed in a note shows in the Tags view and filters the tree; an alia
   await expect(
     page.getByRole("heading", { level: 2, name: "Plan.md", exact: true }),
   ).toBeVisible();
-  await expect(headerTags.getByRole("button")).toHaveText(["#garden/roses"]);
+  // Its front matter tags show in the properties box instead of the header.
+  await expect(
+    page
+      .getByRole("region", { name: "Properties" })
+      .getByRole("button", { name: "garden/roses", exact: true }),
+  ).toBeVisible();
+  await expect(headerTags).toHaveCount(0);
 
   // A tag typed just now counts at once: the Tags tab saves the note first.
   await tree.getByRole("link", { name: "Other.md" }).click();

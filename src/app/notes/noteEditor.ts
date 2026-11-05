@@ -7,11 +7,15 @@ import {
   type CompletionContext,
 } from "@codemirror/autocomplete";
 import {
+  Annotation,
   Compartment,
+  EditorSelection,
   EditorState,
   RangeSetBuilder,
   StateEffect,
   StateField,
+  type Transaction,
+  type TransactionSpec,
 } from "@codemirror/state";
 import {
   Decoration,
@@ -30,7 +34,8 @@ import { tags } from "@lezer/highlight";
 
 const theme = EditorView.theme({
   "&": {
-    height: "100%",
+    // Grows with its text: the note and the properties box scroll together (M3-015).
+    minHeight: "100%",
     color: "var(--color-text)",
     backgroundColor: "var(--color-canvas)",
     fontFamily: "var(--font-ui)",
@@ -38,6 +43,7 @@ const theme = EditorView.theme({
   },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
+    overflow: "visible",
     fontFamily: "inherit",
     lineHeight: "var(--line-height-base)",
   },
@@ -175,6 +181,89 @@ function linkAt(state: EditorState, pos: number): NoteLink | null {
   );
 }
 
+/** The front matter while the properties box shows it (M3-015). */
+const setHidden = StateEffect.define<{ from: number; to: number } | null>();
+/** A change the box asked for; only those may touch the hidden block. */
+const fromBox = Annotation.define<boolean>();
+const hiddenBlock = (from: number, to: number) =>
+  Decoration.set(Decoration.replace({ block: true }).range(from, to));
+
+const hiddenField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setHidden)) {
+        return effect.value === null
+          ? Decoration.none
+          : hiddenBlock(effect.value.from, effect.value.to);
+      }
+    }
+    return value.map(transaction.changes);
+  },
+  provide: (field) => [
+    EditorView.decorations.from(field),
+    EditorView.atomicRanges.of((view) => view.state.field(field)),
+  ],
+});
+
+function hiddenRange(set: DecorationSet): { from: number; to: number } | null {
+  const cursor = set.iter();
+  return cursor.value === null ? null : { from: cursor.from, to: cursor.to };
+}
+
+/** While a block is hidden, typing, deleting, or selecting never reaches it: Backspace
+ *  at the start of the text would otherwise take the whole block, and the cursor
+ *  would vanish inside it. Undo and the box's own edits pass. */
+function guardHidden(
+  transaction: Transaction,
+): TransactionSpec | readonly TransactionSpec[] {
+  if (
+    transaction.annotation(fromBox) === true ||
+    transaction.isUserEvent("undo") ||
+    transaction.isUserEvent("redo")
+  ) {
+    return transaction;
+  }
+  const before = hiddenRange(transaction.startState.field(hiddenField));
+  let after = before;
+  for (const effect of transaction.effects) {
+    if (effect.is(setHidden)) {
+      after = effect.value;
+    }
+  }
+  if (after === null) {
+    return transaction;
+  }
+  // Up to the last character of the block: typing right after it is fine.
+  if (
+    before !== null &&
+    transaction.changes.touchesRange(before.from, before.to - 1) !== false
+  ) {
+    return {};
+  }
+  const end =
+    after === before ? transaction.changes.mapPos(after.to, -1) : after.to;
+  const selection = transaction.newSelection;
+  if (selection.ranges.every((range) => range.from >= end)) {
+    return transaction;
+  }
+  return [
+    transaction,
+    {
+      selection: EditorSelection.create(
+        selection.ranges.map((range) =>
+          EditorSelection.range(
+            Math.max(range.anchor, end),
+            Math.max(range.head, end),
+          ),
+        ),
+        selection.mainIndex,
+      ),
+      sequential: true,
+    },
+  ];
+}
+
 /** A note offered after `[[`. */
 export interface Suggestion {
   /** Shown: the file name without its ending. */
@@ -263,8 +352,12 @@ export interface NoteEditor {
   setReadOnly: (readOnly: boolean) => void;
   /** Links and tags from Rust, ranges in editor positions. */
   setMarks: (links: readonly NoteLink[], tags: readonly NoteTag[]) => void;
+  /** Hides the front matter while the properties box shows it; `null` shows it. */
+  setHidden: (range: { from: number; to: number } | null) => void;
   /** Writes `insert` over an editor range, as if typed. */
   replace: (from: number, to: number, insert: string) => void;
+  /** The same for an edit from the properties box, which may touch the hidden block. */
+  replaceFromBox: (from: number, to: number, insert: string) => void;
   /** Puts the cursor at a position and scrolls it to the top. */
   goTo: (pos: number) => void;
   focus: () => void;
@@ -306,6 +399,8 @@ export function createNoteEditor(
     markdown(),
     syntaxHighlighting(markdownLook),
     linksField,
+    hiddenField,
+    EditorState.transactionFilter.of(guardHidden),
     autocompletion({
       override: [linkCompletions(options.suggestions)],
       icons: false,
@@ -363,8 +458,18 @@ export function createNoteEditor(
     setMarks: (links, tags) => {
       view.dispatch({ effects: setLinks.of({ links, tags }) });
     },
+    setHidden: (range) => {
+      view.dispatch({ effects: setHidden.of(range) });
+    },
     replace: (from, to, insert) => {
       view.dispatch({ changes: { from, to, insert }, userEvent: "input" });
+    },
+    replaceFromBox: (from, to, insert) => {
+      view.dispatch({
+        changes: { from, to, insert },
+        annotations: fromBox.of(true),
+        userEvent: "input",
+      });
     },
     goTo: (pos) => {
       const at = Math.min(pos, view.state.doc.length);

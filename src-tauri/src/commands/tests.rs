@@ -1639,6 +1639,7 @@ fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
             }],
             "tags": [{ "from": 0, "to": 5, "tag": "idee" }],
             "frontTags": [],
+            "properties": { "state": "none" },
         })
     );
 
@@ -1653,4 +1654,79 @@ fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
         .map(|group| group.tag)
         .collect();
     assert_eq!(tags, ["idee", "neu", "Project", "project/sub"]);
+}
+
+#[test]
+fn note_marks_carry_the_properties_and_their_range_in_the_editors_units() {
+    use crate::commands::properties::NoteProperties;
+    use crate::domain::notes::links::NoteSet;
+
+    let text = "---\ntitle: Grüße 😀\n---\nBody";
+    let marks = crate::commands::links::note_links_in(
+        "Home.md",
+        text,
+        &NoteSet::with_aliases(std::iter::empty(), &[]),
+    )
+    .expect("marks");
+    let NoteProperties::Fields { from, to, fields } = marks.properties else {
+        panic!("fields: {:?}", marks.properties);
+    };
+    assert_eq!((from, to), (0, 24));
+    assert_eq!(fields[0].name, "title");
+    assert_eq!(
+        fields[0].value,
+        crate::domain::notes::properties::Value::Text {
+            text: "Grüße 😀".to_owned()
+        }
+    );
+}
+
+#[test]
+fn edits_answer_with_the_new_text_and_a_kind_the_page_can_explain() {
+    use crate::commands::properties::edit_property_in;
+    use crate::domain::notes::properties::{Edit, Value};
+
+    let set = |name: &str, value: Value| Edit::Set {
+        name: name.to_owned(),
+        value,
+    };
+    assert_eq!(
+        edit_property_in("Body", &set("a", Value::Empty)).as_deref(),
+        Ok("---\na:\n---\nBody")
+    );
+    assert_eq!(
+        edit_property_in("Body", &set("a:b", Value::Empty)),
+        Err(CommandError::InvalidName)
+    );
+    assert_eq!(
+        edit_property_in(
+            "---\na: 1\nb: 2\n---\n",
+            &Edit::Rename {
+                name: "a".to_owned(),
+                to: "b".to_owned()
+            }
+        ),
+        Err(CommandError::AlreadyExists)
+    );
+    assert_eq!(
+        edit_property_in(
+            "Body",
+            &set(
+                "tags",
+                Value::List {
+                    items: vec!["two words".to_owned()]
+                }
+            )
+        ),
+        Err(CommandError::InvalidTag)
+    );
+    assert_eq!(
+        edit_property_in("---\nbad: [\n---\n", &set("a", Value::Empty)),
+        Err(CommandError::PropertyRefused)
+    );
+    let huge = "x".repeat(11 * 1024 * 1024);
+    assert!(matches!(
+        edit_property_in(&huge, &set("a", Value::Empty)),
+        Err(CommandError::TooLarge { .. })
+    ));
 }

@@ -17,8 +17,11 @@ use super::links::{
 };
 use super::notes::{NoteEntry, NotesView, SkippedNotes};
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
+use super::properties::{NoteProperties, PropertyField, PropertyKindChoice};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
+use crate::domain::notes::properties::{Edit, Value};
+use crate::domain::projects::PropertyKind;
 use crate::domain::settings::{SettingKey, Settings, StartWith, Zoom};
 use crate::domain::sync::SyncTool;
 use crate::frame::FrameStyle;
@@ -70,6 +73,12 @@ fn typescript_bindings_match_the_rust_types() {
         output::<NoteMarks>(&config),
         output::<NoteTag>(&config),
         output::<TagNotes>(&config),
+        output::<NoteProperties>(&config),
+        output::<PropertyField>(&config),
+        output::<PropertyKindChoice>(&config),
+        output::<Value>(&config),
+        output::<PropertyKind>(&config),
+        output::<Edit>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

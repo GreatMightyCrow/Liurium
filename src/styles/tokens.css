@@ -81,6 +81,8 @@
        note text before it wraps */
     --size-notes-list: 280px;
     --size-note-measure: 80ch;
+    /* The name column of the properties box (M3-015) */
+    --size-property-name: 176px;
 
     /* Controls: buttons and fields */
     --size-control-sm: 28px;
@@ -100,6 +102,8 @@
     --radius-sm: 4px;
     --radius-md: 6px;
     --radius-lg: 8px;
+    /* A removable value in the properties box (M3-015) */
+    --radius-capsule: 999px;
 
     /* Lines and focus */
     --border-width: 1px;

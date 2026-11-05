@@ -52,7 +52,10 @@ pub fn run() {
             commands::organize::trash_entry,
             commands::links::note_links,
             commands::links::backlinks,
-            commands::links::project_tags
+            commands::links::project_tags,
+            commands::properties::edit_property,
+            commands::properties::property_kinds,
+            commands::properties::set_property_kind
         ])
         .setup(|app| {
             let app_dir = app_data_dir(app);

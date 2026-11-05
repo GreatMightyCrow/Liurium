@@ -114,9 +114,35 @@
     color: var(--color-danger);
   }
 
-  .editor {
+  /* The properties box and the note's text scroll as one (M3-015). */
+  .scroll {
+    display: flex;
     flex: 1;
+    flex-direction: column;
     min-height: 0;
+    overflow: auto;
+  }
+
+  .editor {
+    display: grid;
+    flex: 1 0 auto;
+    min-width: 0;
+  }
+
+  .asText {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    align-items: center;
+    max-width: var(--size-note-measure);
+    padding: var(--space-3) var(--space-5) 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .asTextNote {
+    flex: 1 1 var(--size-path-min);
+    margin: 0;
   }
 
   @media (forced-colors: active) {
