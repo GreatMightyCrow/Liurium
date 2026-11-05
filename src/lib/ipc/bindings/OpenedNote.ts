@@ -22,4 +22,13 @@ unsaved: boolean,
 /**
  * The file changed outside Liurium; saving waits for a choice.
  */
-conflict: boolean, };
+conflict: boolean, 
+/**
+ * The file is gone; nothing is saved until the user chooses (M3-008).
+ */
+gone: boolean, 
+/**
+ * Sent back with the page's text, so text from before a reload cannot overwrite
+ * the file (M3-008).
+ */
+revision: number, };

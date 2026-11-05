@@ -59,6 +59,23 @@ pub enum Saved {
     Draft,
     /// The file changed outside Liurium; nothing is written until the user chooses.
     Conflict,
+    /// The file is gone; nothing is written, so it does not come back unasked (M3-008).
+    Gone,
+}
+
+/// What a look at the disk found (M3-008, owner decisions Q2 to Q4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outside {
+    /// Nothing to do for the page.
+    Same,
+    /// No unsaved text: the note now holds the file's new text.
+    Reloaded,
+    /// Unsaved text and a changed or unreadable file: saving waits for a choice.
+    Conflict,
+    /// The file is gone and no new note has its text.
+    Gone,
+    /// The note now lives at another path.
+    Moved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +107,11 @@ pub struct Session {
     /// Newer text from the page, not written yet.
     draft: Option<String>,
     conflict: bool,
+    /// The file was not found at the last look (M3-008).
+    gone: bool,
+    /// Counts automatic reloads and reloads the user chose. Text from the page says
+    /// which one it is based on, so typing during a reload cannot overwrite the file.
+    revision: u64,
 }
 
 impl Session {
@@ -131,7 +153,26 @@ impl Session {
             saved: text,
             draft: None,
             conflict: false,
+            gone: false,
+            revision: 0,
         })
+    }
+
+    pub fn is_gone(&self) -> bool {
+        self.gone
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Whether the file differs from what this session last read or wrote. A file
+    /// already known to be gone, or a conflict already waiting, is nothing new.
+    pub fn differs_on_disk(&self, root: &ProjectRoot) -> bool {
+        match root.stamp(&self.path) {
+            Ok(stamp) => stamp != self.stamp && !self.conflict,
+            Err(_) => !self.gone,
+        }
     }
 
     pub fn path(&self) -> &RelPath {
@@ -188,6 +229,26 @@ impl Session {
         self.save(root)
     }
 
+    /// `update` for text based on a given revision. Text based on an older one was
+    /// typed before a reload, so it must not replace the file: it waits for a choice.
+    pub fn update_at(
+        &mut self,
+        root: &ProjectRoot,
+        text: &str,
+        save: bool,
+        revision: u64,
+    ) -> Result<Saved, NoteError> {
+        if revision == self.revision {
+            return self.update(root, text, save);
+        }
+        let saved = self.update(root, text, false)?;
+        if saved == Saved::Draft {
+            self.conflict = true;
+            return Ok(Saved::Conflict);
+        }
+        Ok(saved)
+    }
+
     /// Writes the draft, if there is one and no conflict is waiting.
     pub fn save(&mut self, root: &ProjectRoot) -> Result<Saved, NoteError> {
         let Some(draft) = self.draft.clone() else {
@@ -197,19 +258,161 @@ impl Session {
             return Ok(Saved::Conflict);
         }
         let bytes = encode(&draft, self.bom, self.ending);
+        // `Unchanged` also refuses a file that is gone, so it does not come back unasked.
         match root.write(&self.path, &bytes, Expect::Unchanged(self.stamp)) {
             Ok(stamp) => {
                 self.stamp = stamp;
                 self.saved = draft;
                 self.draft = None;
+                self.gone = false;
                 Ok(Saved::Saved)
             }
             Err(FsError::Changed) => {
+                if matches!(root.stamp(&self.path), Err(FsError::NotFound)) {
+                    self.gone = true;
+                    return Ok(Saved::Gone);
+                }
                 self.conflict = true;
                 Ok(Saved::Conflict)
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// Looks at the disk and brings the session in line (M3-008). `recent` lists the
+    /// notes that appeared lately, newest last. Only what is on disk decides, so a
+    /// report from Windows that was lost, doubled, or out of order changes nothing.
+    pub fn reconcile(
+        &mut self,
+        root: &ProjectRoot,
+        project_read_only: bool,
+        recent: &[RelPath],
+    ) -> Result<Outside, NoteError> {
+        // A rename that changes only upper and lower case leaves the file reachable.
+        let spelling = recent.iter().rev().find(|path| self.is(path)).cloned();
+        let respelled = spelling.is_some_and(|path| {
+            let differs = path != self.path;
+            if differs {
+                self.path = path;
+            }
+            differs
+        });
+        let outside = match root.stamp(&self.path) {
+            Ok(stamp) if stamp == self.stamp => {
+                self.gone = false;
+                Outside::Same
+            }
+            Ok(_) => self.changed_on_disk(root, project_read_only, recent)?,
+            Err(FsError::NotFound) => self.missing(root, recent),
+            Err(error) => return Err(error.into()),
+        };
+        Ok(if respelled && outside == Outside::Same {
+            Outside::Moved
+        } else {
+            outside
+        })
+    }
+
+    fn changed_on_disk(
+        &mut self,
+        root: &ProjectRoot,
+        project_read_only: bool,
+        recent: &[RelPath],
+    ) -> Result<Outside, NoteError> {
+        let (bytes, stamp) = match root.read(&self.path, MAX_NOTE_BYTES) {
+            Ok(found) => found,
+            Err(FsError::NotFound) => return Ok(self.missing(root, recent)),
+            Err(FsError::TooLarge { .. }) => return Ok(self.unreadable()),
+            Err(error) => return Err(error.into()),
+        };
+        let Ok(found) = decode(&bytes) else {
+            return Ok(self.unreadable());
+        };
+        self.gone = false;
+        let same_form = found.bom == self.bom && found.ending == self.ending;
+        if same_form && found.text == self.saved {
+            // Touched, not changed: any unsaved text still fits.
+            self.stamp = stamp;
+            self.conflict = false;
+            return Ok(Outside::Same);
+        }
+        if same_form && self.draft.as_deref() == Some(found.text.as_str()) {
+            // The file now says what the user typed: nothing is left to decide.
+            self.saved = found.text;
+            self.draft = None;
+            self.stamp = stamp;
+            self.conflict = false;
+            return Ok(Outside::Same);
+        }
+        if self.draft.is_some() {
+            self.conflict = true;
+            return Ok(Outside::Conflict);
+        }
+        self.reload(root, project_read_only)?;
+        Ok(Outside::Reloaded)
+    }
+
+    /// The old text stays and saving stops; the conflict bar offers the choices.
+    fn unreadable(&mut self) -> Outside {
+        self.gone = false;
+        self.conflict = true;
+        Outside::Conflict
+    }
+
+    fn missing(&mut self, root: &ProjectRoot, recent: &[RelPath]) -> Outside {
+        if let Some((path, stamp)) = self.renamed_to(root, recent) {
+            self.path = path;
+            self.stamp = stamp;
+            self.gone = false;
+            self.conflict = false;
+            return Outside::Moved;
+        }
+        self.gone = true;
+        self.conflict = false;
+        Outside::Gone
+    }
+
+    /// The one new note with exactly this note's last read text (owner decision Q4).
+    /// An empty note never follows: every empty file would match.
+    fn renamed_to(&self, root: &ProjectRoot, recent: &[RelPath]) -> Option<(RelPath, Stamp)> {
+        if self.saved.is_empty() {
+            return None;
+        }
+        let len = u64::try_from(encode(&self.saved, self.bom, self.ending).len()).ok()?;
+        let mut found = None;
+        for candidate in recent {
+            if self.is(candidate) || root.stamp(candidate).map_or(true, |stamp| stamp.len != len) {
+                continue;
+            }
+            let Ok((bytes, stamp)) = root.read(candidate, MAX_NOTE_BYTES) else {
+                continue;
+            };
+            if decode(&bytes).is_ok_and(|note| note.text == self.saved) {
+                if found.is_some() {
+                    return None;
+                }
+                found = Some((candidate.clone(), stamp));
+            }
+        }
+        found
+    }
+
+    /// Reads the file again; the page's older text can no longer be saved.
+    fn reload(&mut self, root: &ProjectRoot, project_read_only: bool) -> Result<(), NoteError> {
+        let revision = self.revision + 1;
+        *self = Self::open(root, self.path.clone(), project_read_only, false)?;
+        self.revision = revision;
+        Ok(())
+    }
+
+    /// A deleted note's folder may be gone with it.
+    fn make_parent(&self, root: &ProjectRoot, path: &RelPath) -> Result<(), NoteError> {
+        if self.gone
+            && let Some(parent) = path.parent()
+        {
+            root.create_dir(&parent)?;
+        }
+        Ok(())
     }
 
     /// The user's answer to a conflict. Without a conflict, only `Reload` does
@@ -222,10 +425,13 @@ impl Session {
     ) -> Result<Resolved, NoteError> {
         match choice {
             Choice::Reload => {
-                *self = Self::open(root, self.path.clone(), project_read_only, false)?;
+                self.reload(root, project_read_only)?;
                 Ok(Resolved::Reloaded)
             }
             Choice::Overwrite => {
+                if project_read_only {
+                    return Err(NoteError::ReadOnly);
+                }
                 let draft = self.draft.clone().unwrap_or_else(|| self.saved.clone());
                 let bytes = encode(&draft, self.bom, self.ending);
                 let expect = match root.stamp(&self.path) {
@@ -233,15 +439,18 @@ impl Session {
                     Err(FsError::NotFound) => Expect::New,
                     Err(error) => return Err(error.into()),
                 };
+                self.make_parent(root, &self.path)?;
                 self.stamp = root.write(&self.path, &bytes, expect)?;
                 self.saved = draft;
                 self.draft = None;
                 self.conflict = false;
+                self.gone = false;
                 Ok(Resolved::Saved)
             }
             Choice::KeepBoth => {
                 let draft = self.draft.clone().unwrap_or_else(|| self.saved.clone());
                 let bytes = encode(&draft, self.bom, self.ending);
+                self.make_parent(root, &self.path)?;
                 for attempt in 1..=MAX_CONFLICT_COPIES {
                     let copy = conflict_path(&self.path, attempt)?;
                     match root.write(&copy, &bytes, Expect::New) {
@@ -251,6 +460,7 @@ impl Session {
                             self.saved = draft;
                             self.draft = None;
                             self.conflict = false;
+                            self.gone = false;
                             return Ok(Resolved::KeptBoth { path: copy });
                         }
                         Err(FsError::AlreadyExists) => {}
@@ -262,14 +472,15 @@ impl Session {
         }
     }
 
-    /// Saves before the note is left (switch, project change, close). A conflict
-    /// keeps both, so nothing is lost without asking; other failures are returned.
+    /// Saves before the note is left (switch, project change, close). A conflict or a
+    /// deleted file keeps the text as a copy, so nothing is lost without asking and a
+    /// deleted file does not come back; other failures are returned.
     pub fn flush(&mut self, root: &ProjectRoot) -> Result<Option<Resolved>, NoteError> {
         if !self.has_draft() {
             return Ok(None);
         }
         match self.save(root)? {
-            Saved::Conflict => self.resolve(root, Choice::KeepBoth, false).map(Some),
+            Saved::Conflict | Saved::Gone => self.resolve(root, Choice::KeepBoth, false).map(Some),
             Saved::Saved | Saved::Draft => Ok(None),
         }
     }

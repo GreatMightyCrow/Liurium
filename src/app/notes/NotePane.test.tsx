@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import {
   act,
   fireEvent,
@@ -9,11 +10,13 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   closeNote,
+  reconcileNote,
   createNote,
   type NoteLink,
   noteLinks,
   type NoteMarks,
   openNote,
+  type NoteCheck,
   type OpenedNote,
   editProperty,
   propertyKinds,
@@ -24,13 +27,19 @@ import {
 import { CommandFailure } from "../../lib/ipc/errors";
 import { createNoteEditor, type NoteEditorOptions } from "./noteEditor";
 import { NotePane } from "./NotePane";
-import { DRAFT_EVERY_MS, flushOpenNote, SAVE_AFTER_MS } from "./useOpenNote";
+import {
+  DRAFT_EVERY_MS,
+  flushOpenNote,
+  SAVE_AFTER_MS,
+  UPDATED_SHOWS_MS,
+} from "./useOpenNote";
 
 vi.mock("../../lib/ipc/commands", () => ({
   openNote: vi.fn(),
   updateNote: vi.fn(),
   resolveNoteConflict: vi.fn(),
   closeNote: vi.fn(),
+  reconcileNote: vi.fn(),
   noteLinks: vi.fn(),
   createNote: vi.fn(),
   editProperty: vi.fn(),
@@ -47,6 +56,7 @@ const fakeEditor = {
   setMarks: vi.fn(),
   setHidden: vi.fn(),
   replaceFromBox: vi.fn(),
+  replaceFromOutside: vi.fn(),
   replace: vi.fn(),
   goTo: vi.fn(),
   focus: vi.fn(),
@@ -59,8 +69,9 @@ vi.mock("./noteEditor", () => ({
 const onOpen = vi.fn();
 const onCreated = vi.fn();
 const onTag = vi.fn();
+const onClosed = vi.fn();
 
-function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
+function pane(path = "Ideas/Plan.md", onMoved = vi.fn(), outside = 0) {
   return (
     <NotePane
       path={path}
@@ -72,6 +83,8 @@ function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
       onOpen={onOpen}
       onCreated={onCreated}
       onTag={onTag}
+      onClosed={onClosed}
+      outside={outside}
     />
   );
 }
@@ -79,6 +92,7 @@ function pane(path = "Ideas/Plan.md", onMoved = vi.fn()) {
 const openNoteMock = vi.mocked(openNote);
 const updateNoteMock = vi.mocked(updateNote);
 const resolveMock = vi.mocked(resolveNoteConflict);
+const reconcileMock = vi.mocked(reconcileNote);
 
 function opened(extra: Partial<OpenedNote> = {}): OpenedNote {
   return {
@@ -88,6 +102,8 @@ function opened(extra: Partial<OpenedNote> = {}): OpenedNote {
     readOnly: null,
     unsaved: false,
     conflict: false,
+    gone: false,
+    revision: 0,
     ...extra,
   };
 }
@@ -118,6 +134,8 @@ function status() {
         "Saving…",
         "Changed outside Liurium",
         "Not saved",
+        "Deleted outside Liurium",
+        "Updated from outside",
       ].includes(element.textContent),
     )?.textContent;
 }
@@ -179,6 +197,7 @@ test("typing sends a draft soon and saves a second after the last change", async
     "Ideas/Plan.md",
     "# Plan\r\nmore",
     false,
+    0,
   );
   act(() => {
     editor().onChange("# Plan\r\nmore text");
@@ -190,6 +209,7 @@ test("typing sends a draft soon and saves a second after the last change", async
     "Ideas/Plan.md",
     expect.any(String),
     true,
+    0,
   );
 
   await wait(200);
@@ -200,6 +220,7 @@ test("typing sends a draft soon and saves a second after the last change", async
     "Ideas/Plan.md",
     "# Plan\r\nmore text",
     true,
+    0,
   );
 });
 
@@ -215,7 +236,12 @@ test("Ctrl + S saves at once", async () => {
   });
 
   await waitFor(() => {
-    expect(updateNoteMock).toHaveBeenCalledWith("Ideas/Plan.md", "now", true);
+    expect(updateNoteMock).toHaveBeenCalledWith(
+      "Ideas/Plan.md",
+      "now",
+      true,
+      0,
+    );
   });
   expect(status()).toBe("Saved");
 });
@@ -330,6 +356,7 @@ test("leaving the note and closing the window save the last text", async () => {
     "Ideas/Plan.md",
     "for the close button",
     true,
+    0,
   );
 
   act(() => {
@@ -341,6 +368,7 @@ test("leaving the note and closing the window save the last text", async () => {
       "Ideas/Plan.md",
       "left behind",
       true,
+      0,
     );
   });
 });
@@ -725,4 +753,303 @@ test("a missing note is created after asking, then opened", async () => {
   });
   expect(createNote).toHaveBeenCalledWith("Ideas", "Neue Idee.md");
   expect(onCreated).toHaveBeenCalled();
+});
+
+// Changes made outside (M3-008). The count on the pane is what the page's wait for
+// Rust's signal raises.
+
+async function changedOutside(
+  rerender: (ui: ReactElement) => void,
+  onMoved = vi.fn(),
+) {
+  await act(async () => {
+    rerender(pane("Ideas/Plan.md", onMoved, 1));
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+test("a change outside without unsaved text takes over the text and keeps the editor", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "reloaded",
+    note: opened({ text: "# Plan\r\nfrom outside\r\n", revision: 1 }),
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+  const editors = vi.mocked(createNoteEditor).mock.calls.length;
+
+  await changedOutside(rerender);
+
+  await waitFor(() => {
+    expect(status()).toBe("Updated from outside");
+  });
+  expect(fakeEditor.replaceFromOutside).toHaveBeenCalledWith(
+    7,
+    7,
+    "from outside\r\n",
+  );
+  expect(vi.mocked(createNoteEditor).mock.calls).toHaveLength(editors);
+  expect(updateNoteMock).not.toHaveBeenCalled();
+
+  await wait(UPDATED_SHOWS_MS);
+  expect(status()).toBe("Saved");
+});
+
+test("after a reload, new text is sent with the new revision", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "reloaded",
+    note: opened({ text: "theirs", revision: 3 }),
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+  await changedOutside(rerender);
+  await waitFor(() => {
+    expect(status()).toBe("Updated from outside");
+  });
+
+  act(() => {
+    editor().onChange("theirs and mine");
+    editor().onSave();
+  });
+
+  await waitFor(() => {
+    expect(updateNoteMock).toHaveBeenLastCalledWith(
+      "Ideas/Plan.md",
+      "theirs and mine",
+      true,
+      3,
+    );
+  });
+});
+
+test("a new line break kind starts a new editor", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "reloaded",
+    note: opened({ text: "lf\n", lineEnding: "lf", revision: 1 }),
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+
+  await changedOutside(rerender);
+
+  await waitFor(() => {
+    expect(editor().lineBreak).toBe("\n");
+  });
+  expect(editor().text).toBe("lf\n");
+  expect(fakeEditor.replaceFromOutside).not.toHaveBeenCalled();
+});
+
+test("unsent typing reaches Rust before it looks at the file", async () => {
+  const order: string[] = [];
+  updateNoteMock.mockImplementation(() => {
+    order.push("text");
+    return Promise.resolve("draft");
+  });
+  reconcileMock.mockImplementation(() => {
+    order.push("look");
+    return Promise.resolve({
+      outcome: "conflict",
+      note: opened({ text: "mine", unsaved: true, conflict: true }),
+    });
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+  act(() => {
+    editor().onChange("mine");
+  });
+
+  await changedOutside(rerender);
+
+  await screen.findByRole("alert");
+  expect(order.slice(0, 2)).toEqual(["text", "look"]);
+  expect(updateNoteMock).toHaveBeenCalledWith(
+    "Ideas/Plan.md",
+    "mine",
+    false,
+    0,
+  );
+  expect(status()).toBe("Changed outside Liurium");
+  expect(fakeEditor.replaceFromOutside).not.toHaveBeenCalled();
+});
+
+test("typing during the look becomes a conflict and stays in the editor", async () => {
+  const answers: ((check: NoteCheck) => void)[] = [];
+  reconcileMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  const { rerender } = render(pane());
+  await noteOpened();
+  await changedOutside(rerender);
+
+  act(() => {
+    editor().onChange("typed meanwhile");
+  });
+  await act(async () => {
+    answers[0]?.({
+      outcome: "reloaded",
+      note: opened({ text: "theirs", revision: 1 }),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  await waitFor(() => {
+    expect(updateNoteMock).toHaveBeenCalledWith(
+      "Ideas/Plan.md",
+      "typed meanwhile",
+      false,
+      0,
+    );
+  });
+  expect(fakeEditor.replaceFromOutside).not.toHaveBeenCalled();
+  expect(status()).toBe("Changed outside Liurium");
+});
+
+test("a look that finds nothing leaves the status alone", async () => {
+  reconcileMock.mockResolvedValue({ outcome: "same", note: opened() });
+  const { rerender } = render(pane());
+  await noteOpened();
+  act(() => {
+    editor().onChange("mine");
+  });
+
+  await changedOutside(rerender);
+
+  await waitFor(() => {
+    expect(reconcileMock).toHaveBeenCalled();
+  });
+  expect(status()).toBe("Not saved yet");
+});
+
+test("a note deleted outside offers to create it again", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "gone",
+    note: opened({ gone: true }),
+  });
+  resolveMock.mockResolvedValue(opened());
+  const { rerender } = render(pane());
+  await noteOpened();
+
+  await changedOutside(rerender);
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("deleted or moved outside Liurium");
+  expect(status()).toBe("Deleted outside Liurium");
+
+  fireEvent.click(screen.getByRole("button", { name: "Create again" }));
+  await waitFor(() => {
+    expect(resolveMock).toHaveBeenCalledWith("Ideas/Plan.md", "overwrite");
+  });
+  await waitFor(() => {
+    expect(status()).toBe("Saved");
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("while a note is deleted, typing keeps the bar and is not reported as saved", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "gone",
+    note: opened({ gone: true }),
+  });
+  updateNoteMock.mockResolvedValue("gone");
+  const { rerender } = render(pane());
+  await noteOpened();
+  await changedOutside(rerender);
+  await screen.findByRole("alert");
+
+  act(() => {
+    editor().onChange("mine");
+    editor().onSave();
+  });
+
+  await waitFor(() => {
+    expect(updateNoteMock).toHaveBeenCalledWith(
+      "Ideas/Plan.md",
+      "mine",
+      true,
+      0,
+    );
+  });
+  expect(status()).toBe("Deleted outside Liurium");
+  expect(screen.getByRole("button", { name: "Create again" })).toBeDefined();
+});
+
+test("closing a deleted note without unsaved text does not ask", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "gone",
+    note: opened({ gone: true }),
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+  await changedOutside(rerender);
+  await screen.findByRole("alert");
+
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+  await waitFor(() => {
+    expect(onClosed).toHaveBeenCalled();
+  });
+  expect(closeNote).toHaveBeenCalledWith("Ideas/Plan.md", false);
+});
+
+test("closing a deleted note with unsaved text asks first", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "gone",
+    note: opened({ gone: true, unsaved: true, text: "mine" }),
+  });
+  updateNoteMock.mockResolvedValue("gone");
+  const { rerender } = render(pane());
+  await noteOpened();
+  act(() => {
+    editor().onChange("mine");
+  });
+  await changedOutside(rerender);
+  await screen.findByRole("alert");
+
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  const drop = await screen.findByRole("button", { name: "Drop my text" });
+  expect(closeNote).not.toHaveBeenCalled();
+  expect(onClosed).not.toHaveBeenCalled();
+
+  fireEvent.click(drop);
+
+  await waitFor(() => {
+    expect(onClosed).toHaveBeenCalled();
+  });
+  expect(closeNote).toHaveBeenCalledWith("Ideas/Plan.md", true);
+});
+
+test("a deleted note in a write-protected project cannot be created again", async () => {
+  openNoteMock.mockResolvedValue(opened({ readOnly: "project" }));
+  reconcileMock.mockResolvedValue({
+    outcome: "gone",
+    note: opened({ gone: true, readOnly: "project" }),
+  });
+  const { rerender } = render(pane());
+  await noteOpened();
+
+  await changedOutside(rerender);
+
+  await waitFor(() => {
+    expect(status()).toBe("Deleted outside Liurium");
+  });
+  expect(screen.queryByRole("button", { name: "Create again" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Close" })).toBeDefined();
+});
+
+test("a note renamed outside moves on", async () => {
+  reconcileMock.mockResolvedValue({
+    outcome: "moved",
+    note: opened({ path: "Ideas/Moved.md" }),
+  });
+  const onMoved = vi.fn();
+  const { rerender } = render(pane("Ideas/Plan.md", onMoved));
+  await noteOpened();
+
+  await changedOutside(rerender, onMoved);
+
+  await waitFor(() => {
+    expect(onMoved).toHaveBeenCalledWith("Ideas/Moved.md");
+  });
 });

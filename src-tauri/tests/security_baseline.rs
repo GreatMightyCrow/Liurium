@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 36] = [
+const REVIEWED_PERMISSIONS: [&str; 39] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -65,6 +65,11 @@ const REVIEWED_PERMISSIONS: [&str; 36] = [
     "allow-edit-property",
     "allow-property-kinds",
     "allow-set-property-kind",
+    // Changes outside (M3-008): waiting returns only a number; looking takes no
+    // arguments; reconciling takes a note path checked by the note rules.
+    "allow-wait-note-changes",
+    "allow-check-note-changes",
+    "allow-reconcile-note",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

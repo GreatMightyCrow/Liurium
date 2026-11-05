@@ -23,12 +23,14 @@ interface BacklinksProps {
   path: string;
   /** Opens a source note with the cursor at a place in its text (UTF-16). */
   onOpenAt: (path: string, offset: number) => void;
+  /** Changes when notes changed outside Liurium, so the list is asked for again. */
+  refresh?: number;
 }
 
 // The notes that link to the open one (M3-006), as a band at the bottom of the
 // note: a button to open and close it, each source note with the line around
 // each link; a click opens that note at the link.
-export function Backlinks({ path, onOpenAt }: BacklinksProps) {
+export function Backlinks({ path, onOpenAt, refresh = 0 }: BacklinksProps) {
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [open, setOpen] = useState<boolean | null>(chosenOpen);
   const listId = useId();
@@ -50,7 +52,7 @@ export function Backlinks({ path, onOpenAt }: BacklinksProps) {
     return () => {
       current = false;
     };
-  }, [path]);
+  }, [path, refresh]);
 
   if (loaded.status === "loading") {
     return null;

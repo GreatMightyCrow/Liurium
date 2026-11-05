@@ -18,6 +18,7 @@ import { NotePane } from "./notes/NotePane";
 import { NoteTree, type TreeChange } from "./notes/NoteTree";
 import { TagFilterBar, TagList, TagsFailed } from "./notes/TagList";
 import { sameTag, useProjectTags } from "./notes/tags";
+import { useNoteChanges } from "./notes/useNoteChanges";
 import { buildTree } from "./notes/tree";
 import styles from "./NotesPage.module.css";
 
@@ -86,6 +87,12 @@ export function NotesPage() {
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   /** Counts reloads; the tree asks for one after every change. */
   const [version, setVersion] = useState(0);
+  /** Counts changes outside Liurium (M3-008); the open note looks at its file. */
+  const [outside, setOutside] = useState(0);
+  useNoteChanges(() => {
+    setVersion((last) => last + 1);
+    setOutside((last) => last + 1);
+  });
 
   useEffect(() => {
     let current = true;
@@ -112,6 +119,7 @@ export function NotesPage() {
       <Content
         loaded={loaded}
         version={version}
+        outside={outside}
         reload={() => {
           setVersion((last) => last + 1);
         }}
@@ -130,10 +138,12 @@ const LIST_TABS: readonly { value: ListTab; label: string }[] = [
 function Content({
   loaded,
   version,
+  outside,
   reload,
 }: {
   loaded: Loaded;
   version: number;
+  outside: number;
   reload: () => void;
 }) {
   const [location, navigate] = useLocation();
@@ -339,6 +349,10 @@ function Content({
             }}
             onCreated={reload}
             onTag={chooseTag}
+            onClosed={() => {
+              navigate(NOTES, { replace: true });
+            }}
+            outside={outside}
             leading={showList}
           />
         )}

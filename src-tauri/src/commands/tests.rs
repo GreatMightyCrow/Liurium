@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, time::Duration};
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -1144,11 +1144,13 @@ fn a_note_opens_saves_and_reports_its_state_as_json() {
             "readOnly": null,
             "unsaved": false,
             "conflict": false,
+            "gone": false,
+            "revision": 0,
         })
     );
 
     let draft = workspace
-        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", false)
+        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", false, 0)
         .expect("draft");
     assert_eq!(to_json(&draft), json!("draft"));
     let reopened = workspace
@@ -1158,14 +1160,16 @@ fn a_note_opens_saves_and_reports_its_state_as_json() {
     assert!(reopened.unsaved);
 
     let saved = workspace
-        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", true)
+        .update_note("Ideas/Plan.md", "a\r\nb\r\nc", true, 0)
         .expect("save");
     assert_eq!(to_json(&saved), json!("saved"));
     assert_eq!(
         std::fs::read(root.join("Ideas/Plan.md")).expect("note"),
         b"a\r\nb\r\nc"
     );
-    workspace.close_note("Ideas/Plan.md").expect("closed");
+    workspace
+        .close_note("Ideas/Plan.md", false)
+        .expect("closed");
 }
 
 #[test]
@@ -1192,7 +1196,7 @@ fn only_note_paths_inside_the_open_project_can_be_opened() {
         CommandError::NotFound
     );
     assert_eq!(
-        workspace.update_note("other.md", "x", true).unwrap_err(),
+        workspace.update_note("other.md", "x", true, 0).unwrap_err(),
         CommandError::NotFound
     );
 }
@@ -1217,11 +1221,11 @@ fn a_conflict_waits_for_the_choice_and_keep_both_moves_to_the_copy() {
     std::fs::write(root.join("Plan.md"), "theirs, longer").expect("outside");
 
     let state = workspace
-        .update_note("Plan.md", "mine, edited", true)
+        .update_note("Plan.md", "mine, edited", true, 0)
         .expect("save");
     assert_eq!(state, editor::SaveState::Conflict);
     assert_eq!(
-        workspace.close_note("Plan.md").unwrap_err(),
+        workspace.close_note("Plan.md", false).unwrap_err(),
         CommandError::Unsaved
     );
 
@@ -1254,7 +1258,7 @@ fn opening_another_note_or_project_saves_the_draft_first() {
 
     workspace.open_note("a.md", false).expect("open");
     workspace
-        .update_note("a.md", "a, draft", false)
+        .update_note("a.md", "a, draft", false, 0)
         .expect("draft");
     workspace.open_note("b.md", false).expect("other note");
     assert_eq!(
@@ -1263,7 +1267,7 @@ fn opening_another_note_or_project_saves_the_draft_first() {
     );
 
     workspace
-        .update_note("b.md", "b, draft", false)
+        .update_note("b.md", "b, draft", false, 0)
         .expect("draft");
     workspace.open(&work.id).expect("other project");
     assert_eq!(
@@ -1282,7 +1286,7 @@ fn closing_the_window_saves_the_draft_or_reports_what_is_unsaved() {
     assert_eq!(editor.save_before_close(), editor::CloseCheck::Clear);
 
     workspace
-        .update_note("Plan.md", "draft", false)
+        .update_note("Plan.md", "draft", false, 0)
         .expect("draft");
     assert_eq!(editor.save_before_close(), editor::CloseCheck::Clear);
     assert_eq!(
@@ -1291,7 +1295,7 @@ fn closing_the_window_saves_the_draft_or_reports_what_is_unsaved() {
     );
 
     workspace
-        .update_note("Plan.md", "second", false)
+        .update_note("Plan.md", "second", false, 0)
         .expect("draft");
     std::fs::write(root.join("Plan.md"), "changed outside").expect("outside");
     assert_eq!(
@@ -1454,7 +1458,7 @@ fn trashing_moves_into_the_projects_trash_and_closes_the_open_note() {
     std::fs::write(root.join("Ideas/Plan.md"), "plan").expect("note");
     workspace.open_note("Ideas/Plan.md", false).expect("open");
     workspace
-        .update_note("Ideas/Plan.md", "plan, draft", false)
+        .update_note("Ideas/Plan.md", "plan, draft", false, 0)
         .expect("draft");
 
     workspace.trash_entry("Ideas").expect("trash");
@@ -1474,7 +1478,7 @@ fn trashing_moves_into_the_projects_trash_and_closes_the_open_note() {
     );
     assert_eq!(
         workspace
-            .update_note("Ideas/Plan.md", "x", true)
+            .update_note("Ideas/Plan.md", "x", true, 0)
             .unwrap_err(),
         CommandError::NotFound
     );
@@ -1489,7 +1493,7 @@ fn the_open_note_follows_a_rename_of_its_folder_and_keeps_its_draft() {
     std::fs::write(root.join("Ideas/Plan.md"), "plan").expect("note");
     workspace.open_note("Ideas/Plan.md", false).expect("open");
     workspace
-        .update_note("Ideas/Plan.md", "plan, draft", false)
+        .update_note("Ideas/Plan.md", "plan, draft", false, 0)
         .expect("draft");
 
     workspace.rename_entry("Ideas", "Thoughts").expect("rename");
@@ -1503,7 +1507,7 @@ fn the_open_note_follows_a_rename_of_its_folder_and_keeps_its_draft() {
         .expect("same note");
     assert_eq!(opened.text, "plan, draft");
     workspace
-        .update_note("Thoughts/Plan.md", "plan, edited", true)
+        .update_note("Thoughts/Plan.md", "plan, edited", true, 0)
         .expect("save at the new place");
     assert_eq!(
         std::fs::read_to_string(root.join("Thoughts/Plan.md")).expect("note"),
@@ -1519,7 +1523,7 @@ fn an_unsolved_conflict_blocks_moving_the_open_note() {
     workspace.open_note("Plan.md", false).expect("open");
     std::fs::write(root.join("Plan.md"), "theirs, longer").expect("outside");
     workspace
-        .update_note("Plan.md", "mine, edited", true)
+        .update_note("Plan.md", "mine, edited", true, 0)
         .expect("conflict");
 
     assert_eq!(
@@ -1589,7 +1593,7 @@ fn backlinks_follow_edits_saved_in_liurium() {
 
     workspace.open_note("Home.md", false).expect("open");
     workspace
-        .update_note("Home.md", "now [[Plan]] here\n", true)
+        .update_note("Home.md", "now [[Plan]] here\n", true, 0)
         .expect("save");
     let found = workspace.backlinks("Plan.md").expect("backlinks");
 
@@ -1645,7 +1649,7 @@ fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
 
     workspace.open_note("Home.md", false).expect("open");
     workspace
-        .update_note("Home.md", "#neu only\n", true)
+        .update_note("Home.md", "#neu only\n", true, 0)
         .expect("save");
     let tags: Vec<String> = workspace
         .project_tags()
@@ -1729,4 +1733,160 @@ fn edits_answer_with_the_new_text_and_a_kind_the_page_can_explain() {
         edit_property_in(&huge, &set("a", Value::Empty)),
         Err(CommandError::TooLarge { .. })
     ));
+}
+
+// Changes outside through a real watcher on a real folder (M3-008). A report takes a
+// moment, so these wait for the page's signal, with room for a slow runner.
+
+const REPORT_WAIT: Duration = Duration::from_secs(20);
+
+/// Waits until no change has been signaled for a while and returns the count.
+fn settled(workspace: &Workspace) -> u64 {
+    let mut seen = workspace
+        .changes()
+        .wait(u64::MAX, Duration::ZERO)
+        .expect("count");
+    loop {
+        let next = workspace
+            .changes()
+            .wait(seen, Duration::from_millis(1200))
+            .expect("count");
+        if next == seen {
+            return seen;
+        }
+        seen = next;
+    }
+}
+
+fn signaled(workspace: &Workspace, seen: u64) -> u64 {
+    let next = workspace.changes().wait(seen, REPORT_WAIT).expect("count");
+    assert_ne!(next, seen, "no signal after a change outside");
+    next
+}
+
+fn listed(workspace: &Workspace) -> Vec<String> {
+    note_paths(&workspace.notes().expect("notes"))
+}
+
+#[test]
+fn a_note_made_outside_reaches_the_list_and_the_page_is_told() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    assert!(listed(&workspace).is_empty());
+    let seen = settled(&workspace);
+
+    std::fs::write(root.join("New.md"), "new").expect("note");
+
+    signaled(&workspace, seen);
+    assert_eq!(listed(&workspace), ["New.md"]);
+}
+
+#[test]
+fn liuriums_own_saves_and_its_database_do_not_tell_the_page() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    let seen = settled(&workspace);
+
+    workspace
+        .update_note("Plan.md", "two", true, 0)
+        .expect("save");
+    std::fs::write(root.join(".liurium/other"), "x").expect("file");
+
+    assert_eq!(settled(&workspace), seen);
+}
+
+#[test]
+fn an_open_note_changed_outside_reloads_after_the_signal() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    let seen = settled(&workspace);
+
+    std::fs::write(root.join("Plan.md"), "from outside").expect("change");
+    signaled(&workspace, seen);
+
+    let check = workspace.reconcile_note("Plan.md").expect("look");
+    assert_eq!(check.outcome, editor::NoteOutcome::Reloaded);
+    assert_eq!(check.note.text, "from outside");
+    assert_eq!(check.note.revision, 1);
+}
+
+#[test]
+fn an_open_note_renamed_outside_follows_with_its_unsaved_text() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+    let seen = settled(&workspace);
+
+    std::fs::rename(root.join("Plan.md"), root.join("Moved.md")).expect("rename");
+    signaled(&workspace, seen);
+
+    let check = workspace.reconcile_note("Plan.md").expect("look");
+    assert_eq!(check.outcome, editor::NoteOutcome::Moved);
+    assert_eq!(check.note.path, "Moved.md");
+    assert_eq!(check.note.text, "mine");
+    assert!(check.note.unsaved);
+    assert_eq!(listed(&workspace), ["Moved.md"]);
+}
+
+#[test]
+fn an_open_note_deleted_outside_stays_open_and_can_be_dropped() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    std::fs::write(root.join("Plan.md"), "one").expect("note");
+    workspace.open_note("Plan.md", false).expect("open");
+    workspace
+        .update_note("Plan.md", "mine", false, 0)
+        .expect("draft");
+    let seen = settled(&workspace);
+
+    std::fs::remove_file(root.join("Plan.md")).expect("delete");
+    signaled(&workspace, seen);
+
+    let check = workspace.reconcile_note("Plan.md").expect("look");
+    assert_eq!(check.outcome, editor::NoteOutcome::Gone);
+    assert!(check.note.gone);
+    assert_eq!(check.note.text, "mine");
+    assert_eq!(
+        workspace.update_note("Plan.md", "more", true, 0),
+        Ok(editor::SaveState::Gone)
+    );
+    assert_eq!(
+        workspace.close_note("Plan.md", false),
+        Err(CommandError::Unsaved)
+    );
+    workspace.close_note("Plan.md", true).expect("dropped");
+    assert!(!root.join("Plan.md").exists());
+}
+
+#[test]
+fn the_check_at_focus_finds_changes_without_a_watcher_and_only_so_often() {
+    let dir = temp_dir();
+    let (workspace, root) = opened_garden(dir.path());
+    assert!(listed(&workspace).is_empty());
+    workspace.stop_watching();
+    let seen = settled(&workspace);
+
+    std::fs::write(root.join("New.md"), "new").expect("note");
+    workspace.check_note_changes().expect("check");
+    let next = signaled(&workspace, seen);
+    assert_eq!(listed(&workspace), ["New.md"]);
+
+    // Clicking back at once does not look again.
+    std::fs::write(root.join("Second.md"), "new").expect("note");
+    workspace.check_note_changes().expect("check");
+    assert_eq!(
+        workspace
+            .changes()
+            .wait(next, Duration::from_millis(300))
+            .ok(),
+        Some(next)
+    );
 }

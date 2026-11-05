@@ -12,6 +12,12 @@ const DATA_DIR: &str = "LIURIUM_E2E_DATA_DIR";
 const PICK: &str = "LIURIUM_E2E_PICK";
 /// Folder treated as OneDrive's; the test build ignores the real sync folders.
 const ONEDRIVE: &str = "LIURIUM_E2E_ONEDRIVE";
+/// Leaves only the check at window focus, as on a drive without change reports.
+const NO_WATCH: &str = "LIURIUM_E2E_NO_WATCH";
+
+pub fn no_watch() -> bool {
+    env::var_os(NO_WATCH).is_some()
+}
 
 pub fn data_dir() -> Option<PathBuf> {
     env::var_os(DATA_DIR).map(PathBuf::from)

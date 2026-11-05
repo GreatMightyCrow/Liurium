@@ -10,7 +10,9 @@ use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{
-    session::{Choice, MAX_NOTE_BYTES, NoteError, ReadOnly, Resolved, Saved, Session, note_path},
+    session::{
+        Choice, MAX_NOTE_BYTES, NoteError, Outside, ReadOnly, Resolved, Saved, Session, note_path,
+    },
     text::LineEnding,
 };
 use crate::storage::fs::{FsError, ProjectRoot, RelPath};
@@ -30,6 +32,33 @@ pub struct OpenedNote {
     pub unsaved: bool,
     /// The file changed outside Liurium; saving waits for a choice.
     pub conflict: bool,
+    /// The file is gone; nothing is saved until the user chooses (M3-008).
+    pub gone: bool,
+    /// Sent back with the page's text, so text from before a reload cannot overwrite
+    /// the file (M3-008).
+    #[cfg_attr(test, ts(type = "number"))]
+    pub revision: u64,
+}
+
+/// What `reconcile_note` found (M3-008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteOutcome.ts"))]
+pub enum NoteOutcome {
+    Same,
+    /// No unsaved text; the page shows the file's new text.
+    Reloaded,
+    Conflict,
+    Gone,
+    Moved,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteCheck.ts"))]
+pub struct NoteCheck {
+    pub outcome: NoteOutcome,
+    pub note: OpenedNote,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -60,6 +89,8 @@ pub enum SaveState {
     Draft,
     /// The file changed outside Liurium; `resolve_note_conflict` decides.
     Conflict,
+    /// The file is gone; nothing was written (M3-008).
+    Gone,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -88,6 +119,8 @@ impl OpenedNote {
             }),
             unsaved: session.has_draft(),
             conflict: session.in_conflict(),
+            gone: session.is_gone(),
+            revision: session.revision(),
         }
     }
 }
@@ -128,8 +161,25 @@ impl Editor {
         }
         match open.session.save(&open.root)? {
             Saved::Saved => Ok(()),
-            Saved::Conflict | Saved::Draft => Err(CommandError::Unsaved),
+            Saved::Conflict | Saved::Draft | Saved::Gone => Err(CommandError::Unsaved),
         }
+    }
+
+    /// The open note's path, if it belongs to this project (M3-008).
+    pub(super) fn open_path(&self, project_id: &str) -> Option<String> {
+        let slot = self.slot.lock().ok()?;
+        let open = slot.as_ref().filter(|open| open.project_id == project_id)?;
+        Some(open.session.path().to_string())
+    }
+
+    /// Whether the open note's file differs from what Rust last read or wrote. Its own
+    /// saves update the stamp under this lock, so they never count (M3-008).
+    pub(super) fn differs_on_disk(&self, project_id: &str) -> bool {
+        self.slot.lock().is_ok_and(|slot| {
+            slot.as_ref()
+                .filter(|open| open.project_id == project_id)
+                .is_some_and(|open| open.session.differs_on_disk(&open.root))
+        })
     }
 
     /// The open note follows a rename or move.
@@ -228,7 +278,7 @@ impl Editor {
             .to_owned();
         match open.session.save(&open.root) {
             Ok(Saved::Saved) => CloseCheck::Clear,
-            Ok(Saved::Conflict) => CloseCheck::Unsaved {
+            Ok(Saved::Conflict | Saved::Gone) => CloseCheck::Unsaved {
                 name,
                 conflict: true,
             },
@@ -296,6 +346,7 @@ impl Workspace {
         path: &str,
         text: &str,
         save: bool,
+        revision: u64,
     ) -> Result<SaveState, CommandError> {
         let limit = usize::try_from(MAX_NOTE_BYTES.saturating_mul(2)).unwrap_or(usize::MAX);
         if text.len() > limit {
@@ -306,13 +357,41 @@ impl Workspace {
             .into());
         }
         self.with_open(path, |open, editor| {
-            Ok(match open.session.update(&open.root, text, save)? {
+            let saved = open.session.update_at(&open.root, text, save, revision)?;
+            Ok(match saved {
                 Saved::Saved => {
                     editor.mark(open.session.path());
                     SaveState::Saved
                 }
                 Saved::Draft => SaveState::Draft,
                 Saved::Conflict => SaveState::Conflict,
+                Saved::Gone => SaveState::Gone,
+            })
+        })
+    }
+
+    /// Looks at the open note's file and brings the session in line (M3-008).
+    pub fn reconcile_note(&self, path: &str) -> Result<NoteCheck, CommandError> {
+        let recent = match self.open_root()? {
+            Some((id, _)) => self.note_index().recent_added(&id),
+            None => Vec::new(),
+        };
+        self.with_open(path, |open, editor| {
+            let outside = open
+                .session
+                .reconcile(&open.root, open.project_read_only, &recent)?;
+            if outside == Outside::Reloaded {
+                editor.mark(open.session.path());
+            }
+            Ok(NoteCheck {
+                outcome: match outside {
+                    Outside::Same => NoteOutcome::Same,
+                    Outside::Reloaded => NoteOutcome::Reloaded,
+                    Outside::Conflict => NoteOutcome::Conflict,
+                    Outside::Gone => NoteOutcome::Gone,
+                    Outside::Moved => NoteOutcome::Moved,
+                },
+                note: OpenedNote::of(&open.session),
             })
         })
     }
@@ -336,13 +415,14 @@ impl Workspace {
         })
     }
 
-    /// Leaves the note; refused while its text is not saved.
-    pub fn close_note(&self, path: &str) -> Result<(), CommandError> {
+    /// Leaves the note; refused while its text is not saved, unless the user chose to
+    /// drop that text (`discard`).
+    pub fn close_note(&self, path: &str, discard: bool) -> Result<(), CommandError> {
         let path = note_path(path)?;
         let mut slot = self.editor().lock()?;
         match slot.as_ref() {
             Some(open) if open.session.is(&path) => {
-                if open.session.has_draft() || open.session.in_conflict() {
+                if !discard && (open.session.has_draft() || open.session.in_conflict()) {
                     return Err(CommandError::Unsaved);
                 }
                 *slot = None;
@@ -381,10 +461,20 @@ pub async fn update_note(
     path: String,
     text: String,
     save: bool,
+    revision: u64,
     workspace: State<'_, Workspace>,
 ) -> Result<SaveState, CommandError> {
     let workspace = workspace.inner().clone();
-    blocking(move || workspace.update_note(&path, &text, save)).await
+    blocking(move || workspace.update_note(&path, &text, save, revision)).await
+}
+
+#[tauri::command]
+pub async fn reconcile_note(
+    path: String,
+    workspace: State<'_, Workspace>,
+) -> Result<NoteCheck, CommandError> {
+    let workspace = workspace.inner().clone();
+    blocking(move || workspace.reconcile_note(&path)).await
 }
 
 #[tauri::command]
@@ -398,7 +488,11 @@ pub async fn resolve_note_conflict(
 }
 
 #[tauri::command]
-pub async fn close_note(path: String, workspace: State<'_, Workspace>) -> Result<(), CommandError> {
+pub async fn close_note(
+    path: String,
+    discard: bool,
+    workspace: State<'_, Workspace>,
+) -> Result<(), CommandError> {
     let workspace = workspace.inner().clone();
-    blocking(move || workspace.close_note(&path)).await
+    blocking(move || workspace.close_note(&path, discard)).await
 }

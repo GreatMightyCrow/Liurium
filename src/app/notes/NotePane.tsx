@@ -57,6 +57,8 @@ export const saveStatusText: Record<SaveStatus, string> = {
   saving: "Saving…",
   conflict: "Changed outside Liurium",
   failed: "Not saved",
+  gone: "Deleted outside Liurium",
+  updated: "Updated from outside",
 };
 
 function split(path: string): { folder: string; name: string } {
@@ -78,6 +80,10 @@ interface NotePaneProps {
   onCreated: () => void;
   /** Shows the notes of a tag (M3-007). */
   onTag: (tag: string) => void;
+  /** The note was closed from its own bar (deleted outside, M3-008). */
+  onClosed: () => void;
+  /** Counts changes outside Liurium; a new count makes the note look at its file. */
+  outside: number;
   /** Shown before the note's name, e.g. the button that shows the note list. */
   leading?: ReactNode;
 }
@@ -122,11 +128,12 @@ export function NotePane({
   onOpen,
   onCreated,
   onTag,
+  onClosed,
+  outside,
   leading,
 }: NotePaneProps) {
-  const { state, changed, save, resolve, unify } = useOpenNote(path, onMoved);
-  const { folder, name } = split(path);
   const editor = useRef<NoteEditor | null>(null);
+  const { folder, name } = split(path);
   const linkTimer = useRef<number | null>(null);
   const [question, setQuestion] = useState<LinkQuestion | null>(null);
   const suggestions = useRef<Suggestion[]>([]);
@@ -187,6 +194,33 @@ export function NotePane({
       },
     );
   };
+
+  const {
+    state,
+    changed,
+    save,
+    resolve,
+    unify,
+    reconcile,
+    close,
+    hasUnsavedText,
+  } = useOpenNote(path, onMoved, (text) => {
+    const current = editor.current;
+    if (current !== null) {
+      const before = current.text();
+      const change = textChange(before, text);
+      const [from, to] = toEditorPositions(before, [change.from, change.to]);
+      current.replaceFromOutside(from, to, change.insert);
+      refreshLinks(current.text());
+    }
+  });
+  const seenOutside = useRef(outside);
+  useEffect(() => {
+    if (seenOutside.current !== outside) {
+      seenOutside.current = outside;
+      void reconcile();
+    }
+  }, [outside, reconcile]);
 
   const editBox = (edit: PropertyEdit) => {
     const current = editor.current;
@@ -361,6 +395,16 @@ export function NotePane({
           {state.save === "conflict" && (
             <ConflictBar name={name} onChoose={resolve} />
           )}
+          {state.save === "gone" && (
+            <GoneBar
+              name={name}
+              canCreate={state.note.readOnly !== "project"}
+              error={state.saveError}
+              hasUnsavedText={hasUnsavedText}
+              onCreate={() => resolve("overwrite")}
+              onClose={(discard) => close(discard).then(onClosed)}
+            />
+          )}
           {state.note.readOnly !== null && (
             <ReadOnlyNotice
               name={name}
@@ -422,6 +466,7 @@ export function NotePane({
           </div>
           <Backlinks
             path={state.note.path}
+            refresh={outside}
             onOpenAt={(source, offset) => {
               pendingAnchor = {
                 path: source,
@@ -549,6 +594,90 @@ function ConflictBar({
                 }}
               >
                 Drop my changes
+              </Button>
+            </>
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+// The file is gone and no new note has its text (M3-008, owner decision Q3). The note
+// stays open and nothing is saved, so the file does not come back unasked.
+function GoneBar({
+  name,
+  canCreate,
+  error,
+  hasUnsavedText,
+  onCreate,
+  onClose,
+}: {
+  name: string;
+  canCreate: boolean;
+  error: CommandError | null;
+  hasUnsavedText: () => boolean;
+  onCreate: () => Promise<void>;
+  onClose: (discard: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const run = (work: () => Promise<void>) => {
+    setBusy(true);
+    work()
+      .catch(() => {
+        // Shown through `error`.
+      })
+      .finally(() => {
+        setBusy(false);
+        setAsking(false);
+      });
+  };
+  return (
+    <div className={styles.conflict} role="alert">
+      <p className={styles.conflictText}>
+        {`This note was deleted or moved outside Liurium. Its text stays here but is not saved. ${error === null ? "" : commandErrorMessage(error)}`}
+      </p>
+      <div className={styles.actions}>
+        {canCreate && (
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              run(onCreate);
+            }}
+          >
+            Create again
+          </Button>
+        )}
+        <Button
+          disabled={busy}
+          onClick={() => {
+            if (hasUnsavedText()) {
+              setAsking(true);
+            } else {
+              run(() => onClose(false));
+            }
+          }}
+        >
+          Close
+        </Button>
+        <Dialog
+          open={asking}
+          onOpenChange={setAsking}
+          title={`Close “${name}” without saving?`}
+          description="The file no longer exists, so the text you see here is the only copy. Closing drops it."
+          actions={
+            <>
+              <DialogClose>Cancel</DialogClose>
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={() => {
+                  run(() => onClose(true));
+                }}
+              >
+                Drop my text
               </Button>
             </>
           }

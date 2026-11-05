@@ -8,6 +8,7 @@ import {
   type NotesView,
   projectTags,
   type SkippedNotes,
+  waitNoteChanges,
 } from "../lib/ipc/commands";
 import { CommandFailure } from "../lib/ipc/errors";
 import {
@@ -22,10 +23,13 @@ vi.mock("../lib/ipc/commands", () => ({
   listNotes: vi.fn(),
   projectTags: vi.fn(),
   propertyKinds: vi.fn(() => Promise.resolve([])),
+  waitNoteChanges: vi.fn(),
+  checkNoteChanges: vi.fn(() => Promise.resolve()),
 }));
 
 const listNotesMock = vi.mocked(listNotes);
 const projectTagsMock = vi.mocked(projectTags);
+const waitMock = vi.mocked(waitNoteChanges);
 
 const NOTHING_SKIPPED: SkippedNotes = {
   linksOutside: 0,
@@ -82,6 +86,37 @@ function tree() {
 beforeEach(() => {
   listNotesMock.mockReset();
   projectTagsMock.mockReset();
+  waitMock.mockReset();
+  // No change outside unless a test says so.
+  waitMock.mockImplementation(
+    () =>
+      new Promise(() => {
+        // Stays open, as while nothing changes.
+      }),
+  );
+});
+
+test("a change outside refreshes the list and keeps the page in place", async () => {
+  listNotesMock.mockResolvedValueOnce(ready([note("a.md")]));
+  listNotesMock.mockResolvedValue(ready([note("a.md"), note("b.md")]));
+  let changed: (count: number) => void = () => {
+    // Set when the page waits.
+  };
+  waitMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        changed = resolve;
+      }),
+  );
+
+  renderPage();
+  await screen.findByText("1 note");
+
+  changed(1);
+
+  await screen.findByText("2 notes");
+  expect(within(tree()).getByRole("link", { name: "b.md" })).toBeDefined();
+  expect(screen.queryByText("Looking for notes…")).toBeNull();
 });
 
 test("tags are only asked for once the Tags tab is chosen", async () => {

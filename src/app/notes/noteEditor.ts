@@ -185,6 +185,7 @@ function linkAt(state: EditorState, pos: number): NoteLink | null {
 const setHidden = StateEffect.define<{ from: number; to: number } | null>();
 /** A change the box asked for; only those may touch the hidden block. */
 const fromBox = Annotation.define<boolean>();
+const fromOutside = Annotation.define<boolean>();
 const hiddenBlock = (from: number, to: number) =>
   Decoration.set(Decoration.replace({ block: true }).range(from, to));
 
@@ -358,6 +359,11 @@ export interface NoteEditor {
   replace: (from: number, to: number, insert: string) => void;
   /** The same for an edit from the properties box, which may touch the hidden block. */
   replaceFromBox: (from: number, to: number, insert: string) => void;
+  /** Takes over a change made outside Liurium (M3-008): only this span changes, so
+   *  the cursor stays where it can. It is not a user's edit and is not saved. Undo
+   *  starts over (owner decision Q5): undoing across it would bring old text back,
+   *  and saving that would overwrite the outside change. */
+  replaceFromOutside: (from: number, to: number, insert: string) => void;
   /** Puts the cursor at a position and scrolls it to the top. */
   goTo: (pos: number) => void;
   focus: () => void;
@@ -370,9 +376,10 @@ export function createNoteEditor(
 ): NoteEditor {
   const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   const editable = new Compartment();
+  const undo = new Compartment();
   const lineBreak = options.lineBreak;
   const extensions = [
-    history(),
+    undo.of(history()),
     keymap.of([
       {
         key: "Mod-Enter",
@@ -428,7 +435,12 @@ export function createNoteEditor(
     }),
     editable.of(readOnlyExtensions(options.readOnly)),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
+      if (
+        update.docChanged &&
+        !update.transactions.some(
+          (transaction) => transaction.annotation(fromOutside) === true,
+        )
+      ) {
         options.onChange(update.state.sliceDoc());
       }
     }),
@@ -470,6 +482,15 @@ export function createNoteEditor(
         annotations: fromBox.of(true),
         userEvent: "input",
       });
+    },
+    replaceFromOutside: (from, to, insert) => {
+      view.dispatch({
+        changes: { from, to, insert },
+        annotations: [fromBox.of(true), fromOutside.of(true)],
+      });
+      // Taking the history out and putting a new one in is how it is emptied.
+      view.dispatch({ effects: undo.reconfigure([]) });
+      view.dispatch({ effects: undo.reconfigure(history()) });
     },
     goTo: (pos) => {
       const at = Math.min(pos, view.state.doc.length);

@@ -4,6 +4,7 @@
 
 #[cfg(test)]
 mod bindings;
+pub mod changes;
 pub mod data;
 pub mod editor;
 mod error;

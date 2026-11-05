@@ -15,6 +15,7 @@ import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
 import type { Value as PropertyValue } from "./bindings/PropertyValue";
 import type { TagNotes } from "./bindings/TagNotes";
 import type { NotesView } from "./bindings/NotesView";
+import type { NoteCheck } from "./bindings/NoteCheck";
 import type { OpenedNote } from "./bindings/OpenedNote";
 import type { SaveState } from "./bindings/SaveState";
 import type { ProjectEntry } from "./bindings/ProjectEntry";
@@ -39,6 +40,7 @@ export type {
   PropertyKindChoice,
   PropertyValue,
   NotesView,
+  NoteCheck,
   OpenedNote,
   ProjectEntry,
   ProjectInfo,
@@ -160,13 +162,31 @@ export function openNote(path: string, unify = false): Promise<OpenedNote> {
   return call("open_note", { path, unify });
 }
 
-/** Hands Rust the editor's text; with `save`, Rust writes it. */
+/** Hands Rust the editor's text; with `save`, Rust writes it. `revision` is the one
+ *  the text is based on: text from before a reload cannot overwrite the file. */
 export function updateNote(
   path: string,
   text: string,
   save: boolean,
+  revision: number,
 ): Promise<SaveState> {
-  return call("update_note", { path, text, save });
+  return call("update_note", { path, text, save, revision });
+}
+
+/** Waits until something changed outside Liurium, or 30 seconds passed. Returns the
+ *  count of changes, nothing else (M3-008). */
+export function waitNoteChanges(seen: number): Promise<number> {
+  return call("wait_note_changes", { seen });
+}
+
+/** Looks at the disk now: the window got focus. */
+export function checkNoteChanges(): Promise<void> {
+  return call("check_note_changes");
+}
+
+/** Looks at the open note's file and brings Rust's state in line with it. */
+export function reconcileNote(path: string): Promise<NoteCheck> {
+  return call("reconcile_note", { path });
 }
 
 /** The user's answer after the note changed outside Liurium. */
@@ -177,9 +197,10 @@ export function resolveNoteConflict(
   return call("resolve_note_conflict", { path, choice });
 }
 
-/** Leaves the note; refused while its text is not saved. */
-export function closeNote(path: string): Promise<void> {
-  return call("close_note", { path });
+/** Leaves the note; refused while its text is not saved, unless the user chose to
+ *  drop that text (`discard`). */
+export function closeNote(path: string, discard = false): Promise<void> {
+  return call("close_note", { path, discard });
 }
 
 /** Creates an empty note in a folder ("" for the top). Returns its path. */

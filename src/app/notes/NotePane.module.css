@@ -73,7 +73,8 @@
   }
 
   .status[data-status="conflict"],
-  .status[data-status="failed"] {
+  .status[data-status="failed"],
+  .status[data-status="gone"] {
     color: var(--color-danger);
     font-weight: var(--font-weight-semibold);
   }

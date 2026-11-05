@@ -39,6 +39,9 @@
     "allow-project-tags",
     "allow-edit-property",
     "allow-property-kinds",
-    "allow-set-property-kind"
+    "allow-set-property-kind",
+    "allow-wait-note-changes",
+    "allow-check-note-changes",
+    "allow-reconcile-note"
   ]
 }

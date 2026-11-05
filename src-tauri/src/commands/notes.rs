@@ -5,8 +5,9 @@
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, PoisonError},
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -14,7 +15,7 @@ use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
 use crate::domain::notes::{self, Index, links::NoteSet};
-use crate::storage::fs::{Limits, ProjectRoot, Skipped};
+use crate::storage::fs::{Limits, ProjectRoot, RelPath, Skipped};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,15 +121,149 @@ struct Slot {
     result: Option<Result<NotesView, CommandError>>,
     /// The notes of the last walk, for resolving links (M3-005).
     set: Option<Arc<NoteSet>>,
+    /// Notes that appeared at a walk after a change outside, oldest first; a note
+    /// that lost its file may have moved to one of them (M3-008).
+    recent: Vec<(String, Instant)>,
+}
+
+/// How long a new note counts as new. Tools that move a file by copying it and then
+/// deleting the original report the two apart.
+const RECENT_FOR: Duration = Duration::from_secs(10);
+
+/// Whether two lists show the same, apart from the size and time of the open note,
+/// which change with every save of its own (M3-008).
+fn same_list(old: &NotesView, new: &NotesView, open: Option<&str>) -> bool {
+    match (old, new) {
+        (
+            NotesView::Ready {
+                notes: old_notes,
+                skipped: old_skipped,
+                truncated: old_truncated,
+                empty_folders: old_empty,
+                ..
+            },
+            NotesView::Ready {
+                notes: new_notes,
+                skipped: new_skipped,
+                truncated: new_truncated,
+                empty_folders: new_empty,
+                ..
+            },
+        ) => {
+            old_skipped == new_skipped
+                && old_truncated == new_truncated
+                && old_empty == new_empty
+                && old_notes.len() == new_notes.len()
+                && old_notes.iter().zip(new_notes).all(|(old, new)| {
+                    old == new
+                        || (old.path == new.path
+                            && old.link == new.link
+                            && open == Some(old.path.as_str()))
+                })
+        }
+        _ => old == new,
+    }
+}
+
+fn paths_of(view: &NotesView) -> Vec<&str> {
+    match view {
+        NotesView::Ready { notes, .. } => notes.iter().map(|note| note.path.as_str()).collect(),
+        NotesView::NoProject => Vec::new(),
+    }
 }
 
 impl NoteIndex {
+    /// Walks again after a change outside and returns whether the list differs (M3-008).
+    /// Unlike `start`, the old list stays usable until the new one is ready, and a
+    /// failed walk keeps it. A missing project folder is no reason to empty the list.
+    pub fn rescan(
+        &self,
+        app_dir: &Path,
+        project_id: &str,
+        root: &ProjectRoot,
+        open: Option<&str>,
+    ) -> bool {
+        if !root.path().exists() {
+            return false;
+        }
+        let _one_at_a_time = self.walking.lock().unwrap_or_else(PoisonError::into_inner);
+        let (lock, ready) = &*self.shared;
+        let (generation, old) = {
+            let Ok(slot) = lock.lock() else {
+                return false;
+            };
+            if slot.project.as_deref() != Some(project_id) {
+                return false;
+            }
+            (slot.generation, slot.result.clone())
+        };
+        let walked = catch_unwind(AssertUnwindSafe(|| {
+            notes::refresh(app_dir, project_id, root).map(|index| {
+                let set = NoteSet::with_aliases(
+                    index.notes.iter().map(|note| note.path.clone()),
+                    &index.aliases,
+                );
+                let view = NotesView::of(index, &set);
+                (view, Arc::new(set))
+            })
+        }));
+        let Ok(Ok((view, set))) = walked else {
+            return false;
+        };
+        let Ok(mut slot) = lock.lock() else {
+            return false;
+        };
+        if slot.generation != generation {
+            return false;
+        }
+        let differs = match &old {
+            Some(Ok(old)) => {
+                let known = paths_of(old);
+                let now = Instant::now();
+                slot.recent
+                    .retain(|(_, since)| now.duration_since(*since) < RECENT_FOR);
+                for path in paths_of(&view) {
+                    if !known.contains(&path) {
+                        slot.recent.retain(|(other, _)| other != path);
+                        slot.recent.push((path.to_owned(), now));
+                    }
+                }
+                !same_list(old, &view, open)
+            }
+            _ => true,
+        };
+        slot.result = Some(Ok(view));
+        slot.set = Some(set);
+        drop(slot);
+        ready.notify_all();
+        differs
+    }
+
+    /// Notes that appeared lately, oldest first.
+    pub fn recent_added(&self, project_id: &str) -> Vec<RelPath> {
+        let (lock, _) = &*self.shared;
+        let Ok(slot) = lock.lock() else {
+            return Vec::new();
+        };
+        if slot.project.as_deref() != Some(project_id) {
+            return Vec::new();
+        }
+        slot.recent
+            .iter()
+            .filter(|(_, since)| since.elapsed() < RECENT_FOR)
+            .filter_map(|(path, _)| RelPath::parse(path).ok())
+            .collect()
+    }
+
     /// Starts walking a project on its own thread.
     pub fn start(&self, app_dir: PathBuf, project_id: String, root: ProjectRoot) {
         let (lock, _) = &*self.shared;
         let Ok(mut slot) = lock.lock() else {
             return;
         };
+        if slot.project.as_deref() != Some(project_id.as_str()) {
+            slot.recent.clear();
+        }
         slot.generation += 1;
         slot.project = Some(project_id.clone());
         slot.result = None;
@@ -189,6 +324,7 @@ impl NoteIndex {
             slot.project = None;
             slot.result = None;
             slot.set = None;
+            slot.recent.clear();
         }
         ready.notify_all();
     }

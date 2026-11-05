@@ -11,7 +11,9 @@ use std::{
 use ts_rs::{Config, TS};
 
 use super::data::AppDataInfo;
-use super::editor::{ConflictChoice, NoteLineEnding, NoteReadOnly, OpenedNote, SaveState};
+use super::editor::{
+    ConflictChoice, NoteCheck, NoteLineEnding, NoteOutcome, NoteReadOnly, OpenedNote, SaveState,
+};
 use super::links::{
     BacklinkLine, BacklinkSource, LinkCandidate, LinkTarget, NoteLink, NoteMarks, NoteTag, TagNotes,
 };
@@ -65,6 +67,8 @@ fn typescript_bindings_match_the_rust_types() {
         output::<NoteReadOnly>(&config),
         output::<SaveState>(&config),
         output::<ConflictChoice>(&config),
+        output::<NoteCheck>(&config),
+        output::<NoteOutcome>(&config),
         output::<NoteLink>(&config),
         output::<LinkTarget>(&config),
         output::<LinkCandidate>(&config),

@@ -34,6 +34,9 @@ const COMMANDS: &[&str] = &[
     "edit_property",
     "property_kinds",
     "set_property_kind",
+    "wait_note_changes",
+    "check_note_changes",
+    "reconcile_note",
 ];
 
 fn main() {

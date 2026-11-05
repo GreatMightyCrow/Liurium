@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   backlinksOf,
+  checkNoteChanges,
   closeNote,
   createFolder,
   createNote,
@@ -12,6 +13,7 @@ import {
   noteLinks,
   openAppDataFolder,
   openNote,
+  reconcileNote,
   projectTags,
   pruneBackups,
   renameEntry,
@@ -19,6 +21,7 @@ import {
   resolveNoteConflict,
   trashEntry,
   updateNote,
+  waitNoteChanges,
   updateSettings,
 } from "./commands";
 import { CommandFailure } from "./errors";
@@ -105,16 +108,27 @@ test("the note commands send the path and their arguments under Rust's names", a
 
   await openNote("Ideas/Plan.md");
   await openNote("Ideas/Plan.md", true);
-  await updateNote("Ideas/Plan.md", "text", false);
+  await updateNote("Ideas/Plan.md", "text", false, 2);
   await resolveNoteConflict("Ideas/Plan.md", "keepBoth");
   await closeNote("Ideas/Plan.md");
+  await closeNote("Ideas/Plan.md", true);
+  await reconcileNote("Ideas/Plan.md");
+  await waitNoteChanges(4);
+  await checkNoteChanges();
 
   expect(invokeMock.mock.calls).toEqual([
     ["open_note", { path: "Ideas/Plan.md", unify: false }],
     ["open_note", { path: "Ideas/Plan.md", unify: true }],
-    ["update_note", { path: "Ideas/Plan.md", text: "text", save: false }],
+    [
+      "update_note",
+      { path: "Ideas/Plan.md", text: "text", save: false, revision: 2 },
+    ],
     ["resolve_note_conflict", { path: "Ideas/Plan.md", choice: "keepBoth" }],
-    ["close_note", { path: "Ideas/Plan.md" }],
+    ["close_note", { path: "Ideas/Plan.md", discard: false }],
+    ["close_note", { path: "Ideas/Plan.md", discard: true }],
+    ["reconcile_note", { path: "Ideas/Plan.md" }],
+    ["wait_note_changes", { seen: 4 }],
+    ["check_note_changes", undefined],
   ]);
 });
 

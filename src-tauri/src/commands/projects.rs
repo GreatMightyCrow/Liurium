@@ -10,7 +10,7 @@ use std::{
 use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
-use super::{CommandError, DataStatus, editor::Editor, notes::NoteIndex};
+use super::{CommandError, DataStatus, changes::Changes, editor::Editor, notes::NoteIndex};
 use crate::domain::{
     projects::{self, Project, ProjectCopy, ProjectError},
     settings::StartWith,
@@ -164,6 +164,8 @@ pub struct Workspace {
     notes: NoteIndex,
     /// The note open in the editor (M3-003).
     editor: Editor,
+    /// Watching the open project for changes outside (M3-008).
+    changes: Changes,
 }
 
 impl Workspace {
@@ -187,7 +189,12 @@ impl Workspace {
             start_with,
             notes: NoteIndex::default(),
             editor: Editor::default(),
+            changes: Changes::default(),
         }
+    }
+
+    pub(super) fn changes(&self) -> &Changes {
+        &self.changes
     }
 
     pub(super) fn app_dir(&self) -> Result<&Path, CommandError> {
@@ -253,6 +260,7 @@ impl Workspace {
             self.notes
                 .start(dir.to_path_buf(), project.id.clone(), project.root.clone());
         }
+        self.watch(project.id.clone(), project.root.clone());
         Current::open(project, info)
     }
 
@@ -373,6 +381,7 @@ impl Workspace {
         if current.id() == Some(id) {
             *current = Current::none();
             self.notes.clear();
+            self.stop_watching();
             self.editor.leave_project();
         }
         Ok(())

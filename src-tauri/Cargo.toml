@@ -35,6 +35,7 @@ pulldown-cmark = { version = "=0.13.6", default-features = false }
 # Front matter (M3-007), read with its event parser only: no recursion, no alias
 # expansion. Without default features: no encoding detection.
 yaml-rust2 = { version = "=0.13.0", default-features = false }
+notify = { version = "8.2.1", default-features = false }
 
 # Reads OneDrive's account folders for the sync-folder warning (M2-010). Already built
 # for tauri-build's resource step.

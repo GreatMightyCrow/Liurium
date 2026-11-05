@@ -67,6 +67,8 @@ interface LaunchOptions {
   pick?: string;
   /** A folder the app treats as OneDrive's (M2-010); real sync folders are ignored. */
   oneDrive?: string;
+  /** No watcher, as on a drive without change reports (M3-008). */
+  noWatch?: boolean;
 }
 
 interface Running {
@@ -99,6 +101,7 @@ async function start(
       ...(options.oneDrive === undefined
         ? {}
         : { LIURIUM_E2E_ONEDRIVE: options.oneDrive }),
+      ...(options.noWatch === true ? { LIURIUM_E2E_NO_WATCH: "1" } : {}),
     },
     stdio: "ignore",
   });
