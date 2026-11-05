@@ -64,6 +64,12 @@
     text-decoration: underline;
   }
 
+  .headerEnd {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
   /* Saved is quiet; only states that need the user stand out. */
   .status {
     margin: 0;

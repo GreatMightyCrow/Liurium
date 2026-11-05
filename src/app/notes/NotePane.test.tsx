@@ -59,6 +59,7 @@ const fakeEditor = {
   setHidden: vi.fn(),
   replaceFromBox: vi.fn(),
   replaceFromOutside: vi.fn(),
+  setLivePreview: vi.fn(),
   replace: vi.fn(),
   goTo: vi.fn(),
   focus: vi.fn(),
@@ -1122,4 +1123,34 @@ test("a link that does not open says why", async () => {
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("The link did not open.");
   expect(alert.textContent).toContain("Windows could not open this address.");
+});
+
+// Live preview (M3-017).
+
+test("the note opens in live preview and the source view is one button away", async () => {
+  window.localStorage.clear();
+  render(pane());
+  await noteOpened();
+  expect(editor().livePreview).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Show source" }));
+
+  expect(fakeEditor.setLivePreview).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole("button", { name: "Show live preview" }));
+  expect(fakeEditor.setLivePreview).toHaveBeenLastCalledWith(true);
+});
+
+test("the choice of view is remembered for the next note", async () => {
+  window.localStorage.clear();
+  const { unmount } = render(pane());
+  await noteOpened();
+  fireEvent.click(screen.getByRole("button", { name: "Show source" }));
+  unmount();
+  vi.mocked(createNoteEditor).mockClear();
+
+  render(pane("Unique.md"));
+
+  await noteOpened();
+  expect(editor().livePreview).toBe(false);
+  window.localStorage.clear();
 });

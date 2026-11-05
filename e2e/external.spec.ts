@@ -46,11 +46,6 @@ test("external links open by Ctrl + click and Ctrl + Enter; a misleading one ask
     /^https:\/\/example\.org\/docs\n/,
   );
 
-  // A plain click only places the cursor.
-  await links.nth(0).click();
-  await page.waitForTimeout(300);
-  expect(opened(record)).toEqual([]);
-
   await links.nth(0).click({ modifiers: ["Control"] });
   await expect.poll(() => opened(record)).toEqual(["https://example.org/docs"]);
 

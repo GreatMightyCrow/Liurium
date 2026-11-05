@@ -46,9 +46,9 @@ test("links are followed with Ctrl + click and Ctrl + Enter; missing and ambiguo
   await openNote(page, "Home.md");
 
   // Rust's parse styles the links: found, missing, ambiguous.
-  await expect(page.locator(".cm-link-note")).toHaveText("[[Plan#Next steps]]");
-  await expect(page.locator(".cm-link-missing")).toHaveText("[[New idea]]");
-  await expect(page.locator(".cm-link-ambiguous")).toHaveText("[[Dup]]");
+  await expect(page.locator(".cm-link-note")).toHaveText("Plan#Next steps");
+  await expect(page.locator(".cm-link-missing")).toHaveText("New idea");
+  await expect(page.locator(".cm-link-ambiguous")).toHaveText("Dup");
 
   // Ctrl + click opens the note at the heading.
   await page.locator(".cm-link-note").click({ modifiers: ["Control"] });
@@ -71,9 +71,14 @@ test("links are followed with Ctrl + click and Ctrl + Enter; missing and ambiguo
     )
     .toBe("## Next steps");
 
-  // Ctrl + Enter on a missing link asks, then creates and opens the note.
+  // Ctrl + Enter on a missing link asks, then creates and opens the note. In the
+  // source view a plain click only places the cursor (live preview: preview.spec.ts).
   await openNote(page, "Home.md");
+  await page.getByRole("button", { name: "Show source" }).click();
+  await expect(page.locator(".cm-link-missing")).toHaveText("[[New idea]]");
   await page.locator(".cm-link-missing").click();
+  await page.waitForTimeout(100);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.keyboard.press("Control+Enter");
   const create = page.getByRole("dialog", { name: "Create “New idea.md”?" });
   await create.getByRole("button", { name: "Create note" }).click();
@@ -81,6 +86,7 @@ test("links are followed with Ctrl + click and Ctrl + Enter; missing and ambiguo
     page.getByRole("heading", { level: 2, name: "New idea.md", exact: true }),
   ).toBeVisible();
   expect(existsSync(join(folder, "New idea.md"))).toBe(true);
+  await page.getByRole("button", { name: "Show live preview" }).click();
 
   // An ambiguous link asks which note and writes its path into the link.
   await openNote(page, "Home.md");

@@ -1,3 +1,4 @@
+import { CodeXml, Eye } from "lucide-react";
 import {
   type ReactNode,
   useEffect,
@@ -34,6 +35,8 @@ import {
 } from "./links";
 import { PropertiesBox } from "./PropertiesBox";
 import { Button } from "../../ui/Button";
+import { IconButton } from "../../ui/IconButton";
+import { useLayoutChoice } from "../layoutChoice";
 import { Dialog, DialogClose } from "../../ui/Dialog";
 import { ErrorState, LoadingState } from "../../ui/StateView";
 import { commandErrorMessage } from "../commandErrorMessage";
@@ -137,6 +140,14 @@ export function NotePane({
   const editor = useRef<NoteEditor | null>(null);
   const { folder, name } = split(path);
   const linkTimer = useRef<number | null>(null);
+  /** Live preview by default, or the plain source (M3-017), remembered. */
+  const [sourceView, setSourceView] = useLayoutChoice(
+    "liurium.notes.sourceView",
+    false,
+  );
+  useEffect(() => {
+    editor.current?.setLivePreview(!sourceView);
+  }, [sourceView]);
   const [question, setQuestion] = useState<LinkQuestion | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const suggestions = useRef<Suggestion[]>([]);
@@ -393,9 +404,19 @@ export function NotePane({
           )}
         </div>
         {state.status === "ready" && (
-          <p className={styles.status} data-status={state.save} role="status">
-            {saveStatusText[state.save]}
-          </p>
+          <div className={styles.headerEnd}>
+            <p className={styles.status} data-status={state.save} role="status">
+              {saveStatusText[state.save]}
+            </p>
+            <IconButton
+              label={sourceView ? "Show live preview" : "Show source"}
+              icon={sourceView ? Eye : CodeXml}
+              size="sm"
+              onClick={() => {
+                setSourceView(!sourceView);
+              }}
+            />
+          </div>
         )}
       </header>
       {state.status === "loading" && <LoadingState label="Opening note…" />}
@@ -480,6 +501,7 @@ export function NotePane({
               key={`${state.note.path}:${String(state.version)}`}
               note={state.note}
               label={name}
+              livePreview={!sourceView}
               onChange={edited}
               onSave={() => {
                 void save();
@@ -911,6 +933,7 @@ function MissingDialog({
 function EditorHost({
   note,
   label,
+  livePreview,
   onChange,
   onSave,
   onFollow,
@@ -919,6 +942,7 @@ function EditorHost({
 }: {
   note: OpenedNote;
   label: string;
+  livePreview: boolean;
   onChange: (text: string) => void;
   onSave: () => void;
   onFollow: (link: NoteLink) => void;
@@ -929,7 +953,7 @@ function EditorHost({
   const handlers = useRef({ onChange, onSave, onFollow, suggestions, onReady });
   // The editor starts once with these; the key on this component starts a new one
   // for a new text.
-  const initial = useRef({ note, label });
+  const initial = useRef({ note, label, livePreview });
 
   useLayoutEffect(() => {
     handlers.current = { onChange, onSave, onFollow, suggestions, onReady };
@@ -940,7 +964,7 @@ function EditorHost({
     if (element === null) {
       return;
     }
-    const { note, label } = initial.current;
+    const { note, label, livePreview } = initial.current;
     let editor: NoteEditor | null = createNoteEditor(element, {
       text: note.text,
       lineBreak:
@@ -951,6 +975,7 @@ function EditorHost({
             : null,
       readOnly: note.readOnly !== null,
       label,
+      livePreview,
       onChange: (text) => {
         handlers.current.onChange(text);
       },

@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import {
   autocompletion,
@@ -25,6 +25,12 @@ import {
 } from "@codemirror/view";
 import type { NoteLink, NoteTag } from "../../lib/ipc/commands";
 import { tags } from "@lezer/highlight";
+import {
+  livePreview,
+  livePreviewOn,
+  toggleTaskAtCursor,
+  touched,
+} from "./livePreview";
 
 // The note editor (ADR-0020): CodeMirror as the engine, everything visible from
 // Liurium's tokens. It lives in a shadow root: there CodeMirror's styles become
@@ -66,6 +72,36 @@ const theme = EditorView.theme({
     textDecorationLine: "underline",
     textDecorationThickness: "var(--border-width)",
     textUnderlineOffset: "var(--space-1)",
+  },
+  // Live preview (M3-017). Line padding, not margin: CodeMirror measures lines.
+  ".cm-heading": { paddingTop: "var(--space-3)" },
+  ".cm-quote": {
+    borderLeft: "var(--focus-ring-width) solid var(--color-border-control)",
+    paddingLeft: "var(--space-3)",
+    color: "var(--color-text-secondary)",
+  },
+  ".cm-code-block": {
+    backgroundColor: "var(--color-surface)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--font-size-base)",
+  },
+  ".cm-inline-code": {
+    borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--color-surface)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--font-size-base)",
+  },
+  ".cm-bullet": { color: "var(--color-text-secondary)" },
+  ".cm-rule": {
+    display: "inline-block",
+    width: "100%",
+    verticalAlign: "middle",
+    borderTop: "var(--border-width) solid var(--color-border-control)",
+  },
+  ".cm-task": {
+    margin: "0",
+    verticalAlign: "middle",
+    accentColor: "var(--color-accent)",
   },
   // A link that leaves Liurium says so with an arrow (M3-012).
   ".cm-link-external::after": { content: '"\\2197"' },
@@ -109,6 +145,11 @@ const linkClass: Record<NoteLink["target"]["state"], string | null> = {
   external: "cm-link-external",
   other: null,
 };
+
+const LINK_CLASSES =
+  ".cm-link-note, .cm-link-missing, .cm-link-ambiguous, .cm-link-external";
+/** More mouse movement than this makes a press a selection, not a click. */
+const CLICK_SLOP = 4;
 
 const FOLLOW_HINT = "Ctrl + click or Ctrl + Enter to follow";
 
@@ -352,6 +393,8 @@ export interface NoteEditorOptions {
   onSave: () => void;
   /** Read out as the editor's name. */
   label: string;
+  /** Formatted text, with marks only where the cursor is (M3-017); else plain source. */
+  livePreview: boolean;
   /** Ctrl + click or Ctrl + Enter on a link (M3-005). */
   onFollow: (link: NoteLink) => void;
   /** Notes offered after `[[`. */
@@ -363,6 +406,7 @@ export interface NoteEditor {
    *  which always joins with `\n` (ADR-0020). */
   text: () => string;
   setReadOnly: (readOnly: boolean) => void;
+  setLivePreview: (on: boolean) => void;
   /** Links and tags from Rust, ranges in editor positions. */
   setMarks: (links: readonly NoteLink[], tags: readonly NoteTag[]) => void;
   /** Hides the front matter while the properties box shows it; `null` shows it. */
@@ -389,6 +433,12 @@ export function createNoteEditor(
   const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   const editable = new Compartment();
   const undo = new Compartment();
+  const preview = new Compartment();
+  const previewExtension = () =>
+    livePreview((state) => state.field(linksField).links);
+  /** A plain press on a link, followed on release unless it became a selection. */
+  let pressed: { link: NoteLink; x: number; y: number; head: number } | null =
+    null;
   const lineBreak = options.lineBreak;
   const extensions = [
     undo.of(history()),
@@ -398,7 +448,7 @@ export function createNoteEditor(
         run: (view) => {
           const link = linkAt(view.state, view.state.selection.main.head);
           if (link === null || link.target.state === "other") {
-            return false;
+            return livePreviewOn(view) && toggleTaskAtCursor(view);
           }
           options.onFollow(link);
           return true;
@@ -415,7 +465,8 @@ export function createNoteEditor(
       ...defaultKeymap,
       ...historyKeymap,
     ]),
-    markdown(),
+    // With GitHub's tables, strikethrough, and task lists.
+    markdown({ base: markdownLanguage }),
     syntaxHighlighting(markdownLook),
     linksField,
     hiddenField,
@@ -426,7 +477,8 @@ export function createNoteEditor(
     }),
     EditorView.domEventHandlers({
       mousedown: (event, view) => {
-        if (!(event.ctrlKey || event.metaKey) || event.button !== 0) {
+        pressed = null;
+        if (event.button !== 0) {
           return false;
         }
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -434,9 +486,43 @@ export function createNoteEditor(
         if (link === null || link.target.state === "other") {
           return false;
         }
-        event.preventDefault();
-        options.onFollow(link);
-        return true;
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          options.onFollow(link);
+          return true;
+        }
+        // In live preview a plain click follows (owner decision Q1), but only on the
+        // link itself, and not while its marks show: then the click is for editing.
+        if (
+          !event.shiftKey &&
+          livePreviewOn(view) &&
+          event.target instanceof Element &&
+          event.target.closest(LINK_CLASSES) !== null &&
+          !(view.hasFocus && touched(view.state.selection, link.from, link.to))
+        ) {
+          pressed = {
+            link,
+            x: event.clientX,
+            y: event.clientY,
+            head: view.state.selection.main.head,
+          };
+        }
+        return false;
+      },
+      mouseup: (event, view) => {
+        const press = pressed;
+        pressed = null;
+        if (
+          press === null ||
+          Math.abs(event.clientX - press.x) > CLICK_SLOP ||
+          Math.abs(event.clientY - press.y) > CLICK_SLOP
+        ) {
+          return false;
+        }
+        // The press placed the cursor in the link; it goes back, so the link stays shown.
+        view.dispatch({ selection: { anchor: press.head } });
+        options.onFollow(press.link);
+        return false;
       },
     }),
     theme,
@@ -446,6 +532,7 @@ export function createNoteEditor(
       spellcheck: "false",
     }),
     editable.of(readOnlyExtensions(options.readOnly)),
+    preview.of(options.livePreview ? previewExtension() : []),
     EditorView.updateListener.of((update) => {
       if (
         update.docChanged &&
@@ -477,6 +564,11 @@ export function createNoteEditor(
     setReadOnly: (readOnly) => {
       view.dispatch({
         effects: editable.reconfigure(readOnlyExtensions(readOnly)),
+      });
+    },
+    setLivePreview: (on) => {
+      view.dispatch({
+        effects: preview.reconfigure(on ? previewExtension() : []),
       });
     },
     setMarks: (links, tags) => {
