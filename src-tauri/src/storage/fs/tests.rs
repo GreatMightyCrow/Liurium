@@ -446,6 +446,44 @@ fn symlinks_out_of_the_project_are_refused() {
 }
 
 #[test]
+fn reading_for_the_page_refuses_protected_places() {
+    let f = fixture();
+    fs::create_dir_all(f.project.join(".liurium")).expect("folder");
+    fs::write(f.project.join(".liurium/inside.png"), b"x").expect("write");
+    fs::write(f.project.join("pic.png"), b"x").expect("write");
+
+    assert!(f.root.read_unprotected(&rel("pic.png"), MAX).is_ok());
+    assert!(matches!(
+        f.root.read_unprotected(&rel(".liurium/inside.png"), MAX),
+        Err(FsError::Protected)
+    ));
+    assert!(matches!(
+        f.root.read_unprotected(&rel("pic.png"), 0),
+        Err(FsError::TooLarge { .. })
+    ));
+}
+
+#[test]
+#[ignore = "needs the right to create symbolic links; runs in CI"]
+fn reading_for_the_page_refuses_a_link_into_a_protected_place() {
+    let f = fixture();
+    fs::create_dir_all(f.project.join(".liurium")).expect("folder");
+    fs::write(f.project.join(".liurium/inside.png"), b"x").expect("write");
+    std::os::windows::fs::symlink_file(
+        f.project.join(".liurium/inside.png"),
+        f.project.join("link.png"),
+    )
+    .expect("symbolic link");
+
+    // `read` goes through, as it stays inside the project.
+    assert!(f.root.read(&rel("link.png"), MAX).is_ok());
+    assert!(matches!(
+        f.root.read_unprotected(&rel("link.png"), MAX),
+        Err(FsError::Protected)
+    ));
+}
+
+#[test]
 fn only_names_made_by_create_temp_count_as_temp_files() {
     let dir = temp_dir();
     let (temp, file) = create_temp(dir.path()).expect("temp file");

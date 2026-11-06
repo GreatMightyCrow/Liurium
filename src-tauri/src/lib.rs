@@ -63,6 +63,12 @@ pub fn run() {
             commands::closing::answer_close_question,
             commands::links::open_external_link
         ])
+        // Reachable from the page without a permission, so it is reviewed like a command:
+        // only images the walk listed, in the open project (M3-013).
+        .register_asynchronous_uri_scheme_protocol(
+            commands::images::SCHEME,
+            commands::images::handle,
+        )
         .setup(|app| {
             let app_dir = app_data_dir(app);
             let startup = Startup::open(app_dir.as_deref());

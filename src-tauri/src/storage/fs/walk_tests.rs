@@ -304,6 +304,70 @@ fn symbolic_links_follow_the_same_rules_as_junctions() {
 }
 
 #[test]
+fn images_are_listed_apart_from_notes_by_the_same_rules() {
+    let f = fixture();
+    f.file("a.md");
+    f.file("pics/One.PNG");
+    f.file("pics/two.jpeg");
+    for skipped in [
+        "pics/.hidden.png",
+        ".liurium/x.png",
+        ".git/x.png",
+        "node_modules/x.png",
+        "target/x.webp",
+        "pics/x.svg",
+        "pics/x.pdf",
+    ] {
+        f.file(skipped);
+    }
+
+    let walk = f.walk();
+
+    assert_eq!(paths(&walk), ["a.md"]);
+    let images: Vec<String> = walk.images.iter().map(|i| i.path.to_string()).collect();
+    assert_eq!(images, ["pics/One.PNG", "pics/two.jpeg"]);
+    assert_eq!(walk.images[0].stamp.len, "pics/One.PNG".len() as u64);
+}
+
+#[test]
+fn the_note_limit_counts_notes_not_images() {
+    let f = fixture();
+    f.file("a.png");
+    f.file("b.png");
+    f.file("c.md");
+
+    let walk = f.walk_with(Limits { notes: 1, depth: 8 });
+
+    assert_eq!(paths(&walk), ["c.md"]);
+    assert_eq!(walk.images.len(), 2);
+    assert!(!walk.truncated);
+}
+
+#[test]
+#[ignore = "needs the right to create symbolic links; runs in CI"]
+fn an_image_link_follows_the_same_rules_as_a_note_link() {
+    use std::os::windows::fs::symlink_file;
+
+    let f = fixture();
+    f.file("real.png");
+    f.file(".liurium/inside.png");
+    fs::write(f.outside.join("secret.png"), b"secret").expect("file");
+    symlink_file(f.project.join("real.png"), f.project.join("again.png")).expect("link");
+    symlink_file(f.outside.join("secret.png"), f.project.join("out.png")).expect("link");
+    symlink_file(
+        f.project.join(".liurium/inside.png"),
+        f.project.join("db.png"),
+    )
+    .expect("link");
+
+    let walk = f.walk();
+
+    let images: Vec<String> = walk.images.iter().map(|i| i.path.to_string()).collect();
+    assert_eq!(images, ["real.png"], "already found through its real path");
+    assert_eq!(walk.skipped.links_outside, 2);
+}
+
+#[test]
 fn empty_folders_are_reported_but_folders_with_other_files_are_not() {
     let f = fixture();
     fs::create_dir_all(f.project.join("New/Inner")).expect("folders");

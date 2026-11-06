@@ -16,7 +16,7 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import { bodyStart, linksIn, trustedEdit } from "./liveShared";
+import { bodyStart, imagesIn, linksIn, trustedEdit } from "./liveShared";
 import { parseTable } from "./tableModel";
 import { focusTable, lineAfterTable, TableWidget } from "./tableWidget";
 
@@ -106,6 +106,7 @@ function build(
   const folds: Foldable[] = [];
   const body = bodyStart(state);
   const links = linksIn(state);
+  const images = imagesIn(state);
   for (
     let node = syntaxTree(state).topNode.firstChild;
     node !== null;
@@ -133,10 +134,17 @@ function build(
             to: link.to - from,
             link,
           }));
+        const pictures = images
+          .filter((image) => image.from >= from && image.to <= to)
+          .map((image) => ({
+            from: image.from - from,
+            to: image.to - from,
+            image,
+          }));
         tables.push({ from, to });
         ranges.push(
           Decoration.replace({
-            widget: new TableWidget(source, state.readOnly, inside),
+            widget: new TableWidget(source, state.readOnly, inside, pictures),
             block: true,
           }).range(from, to),
         );
@@ -192,6 +200,7 @@ export const blocksField = StateField.define<Blocks>({
       !transaction.docChanged &&
       syntaxTree(state) === syntaxTree(startState) &&
       linksIn(state) === linksIn(startState) &&
+      imagesIn(state) === imagesIn(startState) &&
       state.readOnly === startState.readOnly
     ) {
       return value;

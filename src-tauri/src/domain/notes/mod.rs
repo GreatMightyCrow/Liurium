@@ -4,6 +4,7 @@
 
 pub mod backlinks;
 pub mod external;
+pub mod images;
 pub mod links;
 pub mod meta;
 pub mod organize;
@@ -64,6 +65,8 @@ pub struct Index {
     pub empty_folders: Vec<String>,
     /// (note, alias) from the notes' front matter (M3-007).
     pub aliases: Vec<(String, String)>,
+    /// The project's images (M3-013); from the walk only, never in the cache.
+    pub images: images::ImageSet,
 }
 
 /// What Liurium keeps from one note's text (M3-005, M3-007).
@@ -73,6 +76,8 @@ pub struct NoteFacts {
     pub tags: Vec<links::InlineTag>,
     /// Links that leave Liurium (M3-012); shown in the editor, not kept in the cache.
     pub external: Vec<links::ExternalLink>,
+    /// Images to show (M3-013); shown in the editor, not kept in the cache.
+    pub images: Vec<images::ImageLink>,
     pub front: meta::FrontMatter,
 }
 
@@ -83,6 +88,7 @@ impl NoteFacts {
             links: scan.links,
             tags: scan.tags,
             external: scan.external,
+            images: scan.images,
             front: meta::read(text),
         }
     }
@@ -111,6 +117,7 @@ pub fn refresh_with(
         truncated: walk.truncated,
         empty_folders: walk.empty_folders.iter().map(ToString::to_string).collect(),
         aliases: read_aliases(&cache.connection)?,
+        images: images::ImageSet::new(walk.images),
     })
 }
 

@@ -1,5 +1,5 @@
-//! Finding the Markdown notes of a project (M3-002, owner decisions Q1 and Q2). Only
-//! reads. Real folders are walked first; links and junctions afterwards, and only
+//! Finding the Markdown notes and the images of a project (M3-002, owner decisions Q1
+//! and Q2; images M3-013). Only reads. Real folders are walked first; links and junctions afterwards, and only
 //! when their real target is inside the project and was not walked yet, so no note
 //! is found twice and link loops end.
 
@@ -29,6 +29,19 @@ pub const SKIPPED_FOLDERS: [&str; 7] = [
 /// File endings that make a note, compared without case.
 pub const NOTE_ENDINGS: [&str; 2] = [".md", ".markdown"];
 
+/// File endings of images Liurium shows, compared without case (M3-013). No SVG: it is a
+/// document that can hold scripts, and needs its own decision.
+pub const IMAGE_ENDINGS: [&str; 7] = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"];
+
+/// The walk lists at most this many images; one past it shows as not found.
+const MAX_IMAGES: usize = 100_000;
+
+/// Whether a file's name makes it an image Liurium shows.
+pub fn is_image_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    IMAGE_ENDINGS.iter().any(|ending| lower.ends_with(ending))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// The walk stops after this many notes.
@@ -46,6 +59,12 @@ impl Limits {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoundNote {
+    pub path: RelPath,
+    pub stamp: Stamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundImage {
     pub path: RelPath,
     pub stamp: Stamp,
 }
@@ -82,6 +101,8 @@ pub struct Walk {
     pub truncated: bool,
     /// Folders with nothing in them at all, so a new folder shows up (M3-004).
     pub empty_folders: Vec<RelPath>,
+    /// Sorted like the notes; the only images the page can be given (M3-013).
+    pub images: Vec<FoundImage>,
 }
 
 /// A folder still to read: where it really is, and its path below the root.
@@ -96,7 +117,8 @@ struct Link {
     path: PathBuf,
     rel: RelPath,
     depth: usize,
-    note: bool,
+    /// A link to a file, not a folder.
+    file: bool,
 }
 
 struct Walker<'a> {
@@ -109,10 +131,11 @@ struct Walker<'a> {
     seen: HashSet<String>,
     links: VecDeque<Link>,
     empty_folders: Vec<RelPath>,
+    images: Vec<FoundImage>,
 }
 
 impl ProjectRoot {
-    /// Every note in the project by the rules above. Never writes.
+    /// Every note and image in the project by the rules above. Never writes.
     pub fn find_notes(&self, limits: Limits) -> Walk {
         let mut walker = Walker {
             root: self,
@@ -123,6 +146,7 @@ impl ProjectRoot {
             seen: HashSet::new(),
             links: VecDeque::new(),
             empty_folders: Vec::new(),
+            images: Vec::new(),
         };
         walker.seen.insert(key(self.path()));
         walker.walk(Folder {
@@ -143,11 +167,16 @@ impl ProjectRoot {
         walker
             .empty_folders
             .sort_by_cached_key(|path| (path.to_string().to_lowercase(), path.to_string()));
+        walker.images.sort_by_cached_key(|image| {
+            let path = image.path.to_string();
+            (path.to_lowercase(), path)
+        });
         Walk {
             notes: walker.notes,
             skipped: walker.skipped,
             truncated: walker.truncated,
             empty_folders: walker.empty_folders,
+            images: walker.images,
         }
     }
 }
@@ -194,7 +223,7 @@ impl Walker<'_> {
                         path: entry.path(),
                         rel,
                         depth,
-                        note: !is_folder,
+                        file: !is_folder,
                     });
                 } else if is_folder {
                     if depth > self.limits.depth {
@@ -252,12 +281,12 @@ impl Walker<'_> {
             self.skipped.unreadable += 1;
             return;
         };
-        if link.note && metadata.is_file() {
+        if link.file && metadata.is_file() {
             match Stamp::of(&metadata) {
                 Ok(stamp) => self.add(link.rel, stamp),
                 Err(_) => self.skipped.unreadable += 1,
             }
-        } else if !link.note && metadata.is_dir() {
+        } else if !link.file && metadata.is_dir() {
             if link.depth > self.limits.depth {
                 self.skipped.too_deep += 1;
                 return;
@@ -271,6 +300,12 @@ impl Walker<'_> {
     }
 
     fn add(&mut self, path: RelPath, stamp: Stamp) {
+        if is_image_name(path.file_name()) {
+            if self.images.len() < MAX_IMAGES {
+                self.images.push(FoundImage { path, stamp });
+            }
+            return;
+        }
         if self.notes.len() >= self.limits.notes {
             self.truncated = true;
             return;
@@ -309,7 +344,7 @@ impl Walker<'_> {
     }
 }
 
-/// Whether a folder is entered or a file counts as a note, by its name alone.
+/// Whether a folder is entered or a file counts as a note or image, by its name alone.
 fn wanted(name: &str, is_folder: bool) -> bool {
     if name.starts_with('.') {
         return false;
@@ -318,7 +353,7 @@ fn wanted(name: &str, is_folder: bool) -> bool {
     if is_folder {
         !SKIPPED_FOLDERS.contains(&lower.as_str())
     } else {
-        NOTE_ENDINGS.iter().any(|ending| lower.ends_with(ending))
+        NOTE_ENDINGS.iter().any(|ending| lower.ends_with(ending)) || is_image_name(name)
     }
 }
 

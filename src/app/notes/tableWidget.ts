@@ -3,8 +3,9 @@ import { markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
-import type { NoteLink } from "../../lib/ipc/commands";
-import { actionsOf, linksIn, trustedEdit } from "./liveShared";
+import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import { imageElement, imageKey } from "./liveImages";
+import { actionsOf, imagesIn, linksIn, trustedEdit } from "./liveShared";
 import {
   addColumn,
   addRow,
@@ -37,6 +38,13 @@ interface RelativeLink {
   from: number;
   to: number;
   link: NoteLink;
+}
+
+/** An image's place inside the table's text (M3-013). */
+interface RelativeImage {
+  from: number;
+  to: number;
+  image: NoteImage;
 }
 
 const INLINE_ELEMENT: Record<string, string> = {
@@ -110,21 +118,52 @@ function linkText(source: string): string {
   return markdown === null ? source : markdown[1];
 }
 
+/** What each cell shows now. Every key typed refills the table; a cell that would show
+ *  the same stays untouched, or every image in it would load again (M3-013). */
+const shownInCell = new WeakMap<HTMLElement, string>();
+
 function fillCell(
   cell: HTMLElement,
   text: string,
   from: number,
   links: readonly RelativeLink[],
+  images: readonly RelativeImage[],
 ): void {
+  // A wikilink image is also an unfollowable link at the same place: the image wins.
+  const realLinks = links.filter(
+    (link) =>
+      !images.some((image) => image.from <= link.from && image.to >= link.to),
+  );
+  const shownNow = JSON.stringify([
+    text,
+    // A link's place is on the element, so it counts; an image's only inside its cell.
+    realLinks.map((each) => [each.from, each.to, each.link.target]),
+    images.map((each) => [each.from - from, imageKey(each.image)]),
+  ]);
+  if (shownInCell.get(cell) === shownNow) {
+    return;
+  }
+  shownInCell.set(cell, shownNow);
   cell.replaceChildren();
+  const pieces: readonly (RelativeLink | RelativeImage)[] = [
+    ...images,
+    ...realLinks,
+  ].sort((a, b) => a.from - b.from);
   let at = 0;
-  for (const { from: linkFrom, to, link } of links) {
+  for (const piece of pieces) {
+    const { from: linkFrom, to } = piece;
     const start = linkFrom - from;
     const end = to - from;
     if (start < at || end > text.length) {
       continue;
     }
     appendInline(cell, text.slice(at, start));
+    if ("image" in piece) {
+      cell.appendChild(imageElement(piece.image));
+      at = end;
+      continue;
+    }
+    const { link } = piece;
     const shown = document.createElement("span");
     const className = LINK_CLASS[link.target.state];
     if (className === undefined) {
@@ -229,13 +268,16 @@ function leaveCell(
   const [row, column] = (cell.dataset.cell ?? "0:0").split(":").map(Number);
   const data = found?.table.rows[row]?.cells[column];
   const text = data?.text ?? "";
+  const inCell = (each: { from: number; to: number }) =>
+    data !== undefined && each.from >= data.from && each.to <= data.to;
+  // Places relative to the table, as everywhere else: a click adds its position.
   const links = linksIn(view.state)
-    .filter(
-      (link) =>
-        data !== undefined && link.from >= data.from && link.to <= data.to,
-    )
-    .map((link) => ({ from: link.from, to: link.to, link }));
-  fillCell(cell, text, data?.from ?? pos, links);
+    .filter(inCell)
+    .map((link) => ({ from: link.from - pos, to: link.to - pos, link }));
+  const images = imagesIn(view.state)
+    .filter(inCell)
+    .map((image) => ({ from: image.from - pos, to: image.to - pos, image }));
+  fillCell(cell, text, (data?.from ?? pos) - pos, links, images);
 }
 
 function commit(
@@ -277,6 +319,7 @@ export function enterCell(
     `${row === 0 ? "Header" : `Row ${String(row)}`}, column ${String(column + 1)}`,
   );
   input.value = cellValue(found?.table.rows[row]?.cells[column]?.text ?? "");
+  shownInCell.delete(cell);
   cell.replaceChildren(input);
   input.focus();
   const at = caret === "start" ? 0 : input.value.length;
@@ -579,6 +622,7 @@ export class TableWidget extends WidgetType {
     private readonly readOnly: boolean,
     /** Places inside the table's text. */
     private readonly links: readonly RelativeLink[],
+    private readonly images: readonly RelativeImage[] = [],
   ) {
     super();
     this.table = parseTable(source);
@@ -593,16 +637,27 @@ export class TableWidget extends WidgetType {
       .join(",");
   }
 
+  private get imagesKey(): string {
+    return this.images
+      .map(({ from, to, image }) => [from, to, imageKey(image)].join("-"))
+      .join(",");
+  }
+
   override eq(other: TableWidget): boolean {
     return (
       other.source === this.source &&
       other.readOnly === this.readOnly &&
-      other.linksKey === this.linksKey
+      other.linksKey === this.linksKey &&
+      other.imagesKey === this.imagesKey
     );
   }
 
   private linksIn(from: number, to: number): RelativeLink[] {
     return this.links.filter((link) => link.from >= from && link.to <= to);
+  }
+
+  private imagesIn(from: number, to: number): RelativeImage[] {
+    return this.images.filter((image) => image.from >= from && image.to <= to);
   }
 
   private build(wrap: HTMLElement): void {
@@ -631,6 +686,7 @@ export class TableWidget extends WidgetType {
             data.text,
             data.from,
             this.linksIn(data.from, data.to),
+            this.imagesIn(data.from, data.to),
           );
         }
         line.appendChild(cell);
@@ -704,8 +760,10 @@ export class TableWidget extends WidgetType {
             data.text,
             data.from,
             this.linksIn(data.from, data.to),
+            this.imagesIn(data.from, data.to),
           );
         } else {
+          shownInCell.delete(cell);
           cell.replaceChildren();
         }
       }

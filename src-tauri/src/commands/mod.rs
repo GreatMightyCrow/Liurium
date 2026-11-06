@@ -9,6 +9,7 @@ pub mod closing;
 pub mod data;
 pub mod editor;
 mod error;
+pub mod images;
 pub mod links;
 pub mod notes;
 pub mod organize;

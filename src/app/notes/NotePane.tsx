@@ -27,6 +27,7 @@ import { RadioGroup } from "../../ui/RadioGroup";
 import { Backlinks } from "./Backlinks";
 import {
   anchorIndex,
+  imagesInEditor,
   inEditor,
   noteTagsOf,
   tagsInEditor,
@@ -198,6 +199,7 @@ export function NotePane({
           current.setMarks(
             inEditor(text, found.links),
             tagsInEditor(text, found.tags),
+            imagesInEditor(text, found.images),
           );
           applyHidden(current, text, found, blockAsTextRef.current);
           setMarks(found);
@@ -228,11 +230,20 @@ export function NotePane({
       refreshLinks(current.text());
     }
   });
+  const latestRefresh = useRef(refreshLinks);
+  useLayoutEffect(() => {
+    latestRefresh.current = refreshLinks;
+  });
   const seenOutside = useRef(outside);
   useEffect(() => {
     if (seenOutside.current !== outside) {
       seenOutside.current = outside;
       void reconcile();
+      // An image may have changed, and its address holds its stamp (M3-013).
+      const current = editor.current;
+      if (current !== null) {
+        latestRefresh.current(current.text());
+      }
     }
   }, [outside, reconcile]);
 

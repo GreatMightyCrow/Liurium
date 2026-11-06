@@ -28,7 +28,10 @@ use std::{
 pub use error::FsError;
 pub use organize::{TRASH_DIR, utc_stamp};
 pub use path::{PathRule, RelPath};
-pub use walk::{FoundNote, Limits, NOTE_ENDINGS, SKIPPED_FOLDERS, Skipped, Walk};
+pub use walk::{
+    FoundImage, FoundNote, IMAGE_ENDINGS, Limits, NOTE_ENDINGS, SKIPPED_FOLDERS, Skipped, Walk,
+    is_image_name,
+};
 
 /// Liurium's own folder in every project (ADR-0016).
 pub const LIURIUM_DIR: &str = ".liurium";
@@ -94,26 +97,17 @@ impl ProjectRoot {
 
     /// Reads a whole file, refusing files larger than `max_len` bytes.
     pub fn read(&self, rel: &RelPath, max_len: u64) -> Result<(Vec<u8>, Stamp), FsError> {
-        let real = self.resolve(rel)?;
-        if !fs::metadata(&real)?.is_file() {
-            return Err(FsError::WrongKind);
-        }
-        let file = File::open(&real)?;
-        // Taken before reading: a change during the read makes a later write fail
-        // with `Changed` instead of hiding it.
-        let metadata = file.metadata()?;
-        let too_large = |len| FsError::TooLarge { len, max: max_len };
-        if metadata.len() > max_len {
-            return Err(too_large(metadata.len()));
-        }
-        let mut bytes = Vec::new();
-        file.take(max_len.saturating_add(1))
-            .read_to_end(&mut bytes)?;
-        let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        if len > max_len {
-            return Err(too_large(len));
-        }
-        Ok((bytes, Stamp::of(&metadata)?))
+        read_whole(&self.resolve(rel)?, max_len)
+    }
+
+    /// The same for a file the page asks for (M3-013): a link into `.liurium` or `.git`
+    /// is refused too, though it stays inside the project.
+    pub fn read_unprotected(
+        &self,
+        rel: &RelPath,
+        max_len: u64,
+    ) -> Result<(Vec<u8>, Stamp), FsError> {
+        read_whole(&self.writable(rel)?, max_len)
     }
 
     /// Size and modified time of an existing file, without reading it.
@@ -431,6 +425,29 @@ pub fn inside(root: &Path, path: &Path) -> Result<bool, FsError> {
 
 /// Both paths canonical. Compared part by part, ignoring case as Windows does for
 /// names (Unicode lowercase, close to NTFS's own case table).
+/// A whole file, refusing files larger than `max_len` bytes.
+fn read_whole(real: &Path, max_len: u64) -> Result<(Vec<u8>, Stamp), FsError> {
+    if !fs::metadata(real)?.is_file() {
+        return Err(FsError::WrongKind);
+    }
+    let file = File::open(real)?;
+    // Taken before reading: a change during the read makes a later write fail
+    // with `Changed` instead of hiding it.
+    let metadata = file.metadata()?;
+    let too_large = |len| FsError::TooLarge { len, max: max_len };
+    if metadata.len() > max_len {
+        return Err(too_large(metadata.len()));
+    }
+    let mut bytes = Vec::new();
+    file.take(max_len.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    if len > max_len {
+        return Err(too_large(len));
+    }
+    Ok((bytes, Stamp::of(&metadata)?))
+}
+
 fn is_inside(root: &Path, path: &Path) -> bool {
     let mut parts = path.components();
     root.components().all(|root_part| {

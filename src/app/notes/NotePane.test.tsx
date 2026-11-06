@@ -157,6 +157,7 @@ beforeEach(() => {
   updateNoteMock.mockResolvedValue("saved");
   vi.mocked(closeNote).mockResolvedValue(undefined);
   vi.mocked(noteLinks).mockResolvedValue({
+    images: [],
     links: [],
     tags: [],
     frontTags: [],
@@ -383,7 +384,13 @@ function link(target: NoteLink["target"], from = 0, to = 8): NoteLink {
 const BLOCK = "---\r\ndue: 2026-10-20\r\ntags:\r\n  - idee\r\n---\r\n";
 
 function boxMarks(fields: NoteMarks["properties"]): NoteMarks {
-  return { links: [], tags: [], frontTags: ["idee"], properties: fields };
+  return {
+    links: [],
+    images: [],
+    tags: [],
+    frontTags: ["idee"],
+    properties: fields,
+  };
 }
 
 const FIELDS: NoteMarks["properties"] = {
@@ -610,6 +617,7 @@ test("the note's tags show once in its header and choose that tag", async () => 
   const text = "a\r\n#idee #Idee";
   fakeEditor.text.mockReturnValue(text);
   vi.mocked(noteLinks).mockResolvedValue({
+    images: [],
     links: [],
     tags: [
       { from: 3, to: 8, tag: "idee" },
@@ -634,6 +642,7 @@ test("the note's tags show once in its header and choose that tag", async () => 
       { from: 2, to: 7, tag: "idee" },
       { from: 8, to: 13, tag: "Idee" },
     ],
+    [],
   );
 
   fireEvent.click(screen.getByRole("button", { name: "#idee" }));
@@ -644,6 +653,7 @@ test("Rust's links reach the editor, CRLF counted as one position", async () => 
   const text = "a\r\n[[Unique]]";
   fakeEditor.text.mockReturnValue(text);
   vi.mocked(noteLinks).mockResolvedValue({
+    images: [],
     links: [
       link(
         { state: "note", path: "Unique.md", heading: null, block: null },
@@ -667,6 +677,7 @@ test("Rust's links reach the editor, CRLF counted as one position", async () => 
           12,
         ),
       ],
+      [],
       [],
     );
   });
@@ -1153,4 +1164,42 @@ test("the choice of view is remembered for the next note", async () => {
   await noteOpened();
   expect(editor().livePreview).toBe(false);
   window.localStorage.clear();
+});
+
+test("a change outside asks for the marks again, as an image's address holds its stamp", async () => {
+  const { rerender } = render(pane("Ideas/Plan.md", vi.fn(), 0));
+  await noteOpened();
+  await waitFor(() => {
+    expect(fakeEditor.setMarks).toHaveBeenCalled();
+  });
+  vi.mocked(noteLinks).mockClear();
+  vi.mocked(noteLinks).mockResolvedValue({
+    images: [
+      {
+        from: 0,
+        to: 5,
+        alt: "a",
+        width: null,
+        height: null,
+        source: { state: "local", address: "http://x/1" },
+      },
+    ],
+    links: [],
+    tags: [],
+    frontTags: [],
+    properties: { state: "none" },
+  });
+
+  rerender(pane("Ideas/Plan.md", vi.fn(), 1));
+
+  await waitFor(() => {
+    expect(vi.mocked(noteLinks)).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(fakeEditor.setMarks).toHaveBeenLastCalledWith(
+      [],
+      [],
+      [expect.objectContaining({ alt: "a" })],
+    );
+  });
 });

@@ -7,7 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// CSP sources the webview may use: its own bundle and Tauri's IPC channel.
-const ALLOWED_CSP_SOURCES: [&str; 4] = ["'self'", "'none'", "ipc:", "http://ipc.localhost"];
+const ALLOWED_CSP_SOURCES: [&str; 5] = [
+    "'self'",
+    "'none'",
+    "ipc:",
+    "http://ipc.localhost",
+    // Images from the open project, each one checked by Rust (M3-013, ADR-0020).
+    "http://liurium-image.localhost",
+];
 
 /// Permissions with a row in the security model's permission table.
 const REVIEWED_PERMISSIONS: [&str; 42] = [

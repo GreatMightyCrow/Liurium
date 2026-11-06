@@ -14,7 +14,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import type { NoteLink } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
 import {
   blocksField,
   calloutOf,
@@ -22,9 +22,13 @@ import {
   liveBlocks,
   toggleCallout,
 } from "./liveBlocks";
+import { ImageWidget } from "./liveImages";
 import {
   actionsOf,
   bodyStart,
+  imagesIn,
+  imagesOf,
+  type ImagesOf,
   type LiveActions,
   linksIn,
   linksOf,
@@ -209,6 +213,7 @@ export function previewRanges(
   visible: readonly { from: number; to: number }[],
   links: readonly NoteLink[],
   focused = true,
+  images: readonly NoteImage[] = [],
 ): Range<Decoration>[] {
   const ranges: Range<Decoration>[] = [];
   // Without focus there is no cursor to show marks for: a note that just opened has
@@ -323,7 +328,7 @@ export function previewRanges(
               }
             }
             return false;
-          // Shown as written until images come (M3-013).
+          // Rust decides what shows, below; anything else stays as written.
           case "Image":
             return false;
           case "Blockquote": {
@@ -452,6 +457,26 @@ export function previewRanges(
       hidden(link.to - 2, link.to);
     }
   }
+
+  // Images (M3-013): Rust found them. One written across two lines stays source: the
+  // view plugin that makes these may not replace a line break.
+  for (const image of images) {
+    if (
+      image.to > image.from &&
+      image.to <= state.doc.length &&
+      image.from >= body &&
+      visible.some((part) => image.from <= part.to && image.to >= part.from) &&
+      !near(image.from, image.to) &&
+      state.doc.lineAt(image.from).to >= image.to
+    ) {
+      ranges.push(
+        Decoration.replace({ widget: new ImageWidget(image) }).range(
+          image.from,
+          image.to,
+        ),
+      );
+    }
+  }
   return ranges;
 }
 
@@ -469,11 +494,20 @@ const previewPlugin = ViewPlugin.fromClass(
         this.view.dispatch({ effects: dragEnded.of(null) });
       }
     };
+    /** An image's real size is known only now; CodeMirror must measure again. */
+    private readonly imageSettled = (event: Event) => {
+      if (event.target instanceof HTMLImageElement) {
+        this.view.requestMeasure();
+      }
+    };
 
     constructor(view: EditorView) {
       this.view = view;
       this.decorations = this.build(view.state);
       window.addEventListener("mouseup", this.mouseUp);
+      // These do not bubble, so on the way down; also for images in table cells.
+      view.contentDOM.addEventListener("load", this.imageSettled, true);
+      view.contentDOM.addEventListener("error", this.imageSettled, true);
     }
 
     build(state: EditorState): DecorationSet {
@@ -483,6 +517,7 @@ const previewPlugin = ViewPlugin.fromClass(
           this.view.visibleRanges,
           linksIn(state),
           this.view.hasFocus,
+          imagesIn(state),
         ),
         true,
       );
@@ -494,6 +529,7 @@ const previewPlugin = ViewPlugin.fromClass(
         update.viewportChanged ||
         update.focusChanged ||
         linksIn(update.state) !== linksIn(update.startState) ||
+        imagesIn(update.state) !== imagesIn(update.startState) ||
         // A callout opened or closed: its button shows the other way now.
         update.state.field(blocksField, false) !==
           update.startState.field(blocksField, false) ||
@@ -511,6 +547,12 @@ const previewPlugin = ViewPlugin.fromClass(
 
     destroy() {
       window.removeEventListener("mouseup", this.mouseUp);
+      this.view.contentDOM.removeEventListener("load", this.imageSettled, true);
+      this.view.contentDOM.removeEventListener(
+        "error",
+        this.imageSettled,
+        true,
+      );
     }
   },
   {
@@ -525,10 +567,15 @@ const previewPlugin = ViewPlugin.fromClass(
   },
 );
 
-/** The extension; `source` gives Rust's links for a state. */
-export function livePreview(source: LinksOf, actions: LiveActions): Extension {
+/** The extension; `source` and `images` give Rust's findings for a state. */
+export function livePreview(
+  source: LinksOf,
+  images: ImagesOf,
+  actions: LiveActions,
+): Extension {
   return [
     linksOf.of(source),
+    imagesOf.of(images),
     actionsOf.of(actions),
     previewPlugin,
     liveBlocks(),

@@ -1,4 +1,4 @@
-import type { NoteLink, NoteTag } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink, NoteTag } from "../../lib/ipc/commands";
 
 // Links in the editor (M3-005). Rust reports ranges in UTF-16 units of the text it
 // got, which has the file's line breaks; CodeMirror counts every line break as one
@@ -35,6 +35,22 @@ export function inEditor(text: string, links: readonly NoteLink[]): NoteLink[] {
   );
   return links.map((link, i) => ({
     ...link,
+    from: positions[2 * i],
+    to: positions[2 * i + 1],
+  }));
+}
+
+/** Images with their ranges in CodeMirror positions. */
+export function imagesInEditor(
+  text: string,
+  images: readonly NoteImage[],
+): NoteImage[] {
+  const positions = toEditorPositions(
+    text,
+    images.flatMap((image) => [image.from, image.to]),
+  );
+  return images.map((image, i) => ({
+    ...image,
     from: positions[2 * i],
     to: positions[2 * i + 1],
   }));

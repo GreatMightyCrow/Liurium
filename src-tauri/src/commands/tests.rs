@@ -208,7 +208,7 @@ fn project_errors_map_to_what_the_user_can_act_on() {
 }
 
 /// Like the app's start: the stored settings decide whether the last project reopens.
-fn workspace(app_dir: &Path) -> Workspace {
+pub(super) fn workspace(app_dir: &Path) -> Workspace {
     let startup = Startup::open(Some(app_dir));
     Workspace::new(
         Some(app_dir.to_owned()),
@@ -220,7 +220,7 @@ fn workspace(app_dir: &Path) -> Workspace {
 
 /// Adds a folder that is no copy.
 #[track_caller]
-fn added(workspace: &Workspace, folder: &Path) -> ProjectInfo {
+pub(super) fn added(workspace: &Workspace, folder: &Path) -> ProjectInfo {
     match workspace.add(folder).expect("added") {
         AddOutcome::Added { project } => project,
         outcome => panic!("{outcome:?}"),
@@ -1642,6 +1642,7 @@ fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
                 "from": 10, "to": 21,
                 "target": { "state": "note", "path": "Plan.md", "heading": null, "block": null }
             }],
+            "images": [],
             "tags": [{ "from": 0, "to": 5, "tag": "idee" }],
             "frontTags": [],
             "properties": { "state": "none" },
@@ -1671,6 +1672,8 @@ fn note_marks_carry_the_properties_and_their_range_in_the_editors_units() {
         "Home.md",
         text,
         &NoteSet::with_aliases(std::iter::empty(), &[]),
+        &crate::domain::notes::images::ImageSet::default(),
+        "p",
     )
     .expect("marks");
     let NoteProperties::Fields { from, to, fields } = marks.properties else {
@@ -2033,6 +2036,8 @@ fn external_links_reach_the_page_with_their_place_in_utf16_and_their_address() {
         "Plan.md",
         "äö [[Plan]] [b](https://example.org) #tag [www.a.example](https://b.example)",
         &set,
+        &crate::domain::notes::images::ImageSet::default(),
+        "p",
     )
     .expect("marks");
     assert_eq!(marks.tags.len(), 1);

@@ -10,6 +10,7 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use super::external::{
     bare_address_end, bare_address_start, checked_address, claimed_other_address,
 };
+use super::images::{ImageLink, image_of};
 use super::organize::is_note_name;
 use crate::storage::fs::{RelPath, SKIPPED_FOLDERS};
 
@@ -74,6 +75,8 @@ pub struct Scan {
     pub links: Vec<Link>,
     pub tags: Vec<InlineTag>,
     pub external: Vec<ExternalLink>,
+    /// Images to show (M3-013); shown in the editor, not kept in the cache.
+    pub images: Vec<ImageLink>,
 }
 
 /// A link that leaves Liurium (M3-012): never a note link, not kept in the cache.
@@ -159,6 +162,11 @@ pub fn scan(text: &str) -> Scan {
     let mut links = Vec::new();
     let mut tags = Vec::new();
     let mut external: Vec<ExternalLink> = Vec::new();
+    let mut images: Vec<ImageLink> = Vec::new();
+    // Images inside the one being read; only the outermost shows, the rest is its text.
+    let mut image_depth = 0_usize;
+    // The text of the outermost image, for as long as it is being read.
+    let mut image_text: Option<String> = None;
     let mut code: Vec<Range<usize>> = Vec::new();
     let mut in_code_block = false;
     // Inside a link or image a bare address is that link's text, not a link of its own.
@@ -173,6 +181,11 @@ pub fn scan(text: &str) -> Scan {
             && let Event::Text(piece) | Event::Code(piece) = &event
         {
             visible.push_str(piece);
+        }
+        if let Some(image_text) = &mut image_text
+            && let Event::Text(piece) | Event::Code(piece) = &event
+        {
+            image_text.push_str(piece);
         }
         match event {
             Event::Code(_) | Event::InlineMath(_) | Event::DisplayMath(_) => code.push(range),
@@ -236,13 +249,29 @@ pub fn scan(text: &str) -> Scan {
                 ..
             }) => {
                 in_link += 1;
+                image_depth += 1;
+                if image_depth == 1
+                    && let Some(image) = image_of(link_type, &dest_url, range.clone())
+                {
+                    images.push(image);
+                    image_text = Some(String::new());
+                }
                 if matches!(link_type, LinkType::WikiLink { .. })
                     && let Some(link) = link_of(link_type, &dest_url, range, true)
                 {
                     links.push(link);
                 }
             }
-            Event::End(TagEnd::Image) => in_link = in_link.saturating_sub(1),
+            Event::End(TagEnd::Image) => {
+                in_link = in_link.saturating_sub(1);
+                image_depth = image_depth.saturating_sub(1);
+                if image_depth == 0
+                    && let Some(written) = image_text.take()
+                    && let Some(image) = images.last_mut()
+                {
+                    image.set_text(&written);
+                }
+            }
             _ => {}
         }
     }
@@ -255,6 +284,7 @@ pub fn scan(text: &str) -> Scan {
     links.retain(|link| outside(&link.range));
     tags.retain(|tag| outside(&tag.range));
     external.retain(|link| outside(&link.range));
+    images.retain(|image| outside(&image.range));
     // A `#` inside an address is its fragment, not a tag.
     tags.retain(|tag| {
         !external
@@ -265,6 +295,7 @@ pub fn scan(text: &str) -> Scan {
         links,
         tags,
         external,
+        images,
     }
 }
 
@@ -312,7 +343,7 @@ fn link_of(link_type: LinkType, dest: &str, range: Range<usize>, embed: bool) ->
     }
 }
 
-fn split_anchor(dest: &str) -> (&str, Option<Anchor>) {
+pub(super) fn split_anchor(dest: &str) -> (&str, Option<Anchor>) {
     match dest.split_once('#') {
         Some((target, anchor)) => {
             let anchor = anchor.trim();
@@ -328,7 +359,7 @@ fn split_anchor(dest: &str) -> (&str, Option<Anchor>) {
 }
 
 /// `http:`, `javascript:`, `C:` … — anything with a scheme is not a note path.
-fn has_scheme(dest: &str) -> bool {
+pub(super) fn has_scheme(dest: &str) -> bool {
     let Some((scheme, _)) = dest.split_once(':') else {
         return false;
     };
@@ -338,7 +369,7 @@ fn has_scheme(dest: &str) -> bool {
 }
 
 /// `%20` and friends; `None` for broken escapes or bytes that are not UTF-8.
-fn percent_decode(text: &str) -> Option<String> {
+pub fn percent_decode(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -534,7 +565,7 @@ fn without_ending(path: &str) -> &str {
     path
 }
 
-fn allowed(path: &RelPath) -> bool {
+pub(super) fn allowed(path: &RelPath) -> bool {
     path.parts().all(|part| {
         !part.starts_with('.') && !SKIPPED_FOLDERS.contains(&part.to_lowercase().as_str())
     })

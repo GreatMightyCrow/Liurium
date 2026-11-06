@@ -23,7 +23,7 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import type { NoteLink, NoteTag } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink, NoteTag } from "../../lib/ipc/commands";
 import { tags } from "@lezer/highlight";
 import {
   livePreview,
@@ -193,6 +193,25 @@ const theme = EditorView.theme({
     font: "inherit",
     cursor: "pointer",
   },
+  // Images (M3-013). Never wider than the text; the file's own colors stay.
+  ".cm-image": {
+    display: "inline-block",
+    maxWidth: "100%",
+    verticalAlign: "bottom",
+    objectFit: "contain",
+    borderRadius: "var(--radius-sm)",
+  },
+  ".cm-image-auto": { height: "auto" },
+  ".cm-image-note": {
+    display: "inline-block",
+    maxWidth: "100%",
+    padding: "0 var(--space-2)",
+    border: "var(--border-width) dashed var(--color-border-control)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--color-text-secondary)",
+    fontSize: "var(--font-size-sm)",
+    overflowWrap: "anywhere",
+  },
   ".cm-task": {
     margin: "0",
     verticalAlign: "middle",
@@ -231,6 +250,7 @@ const theme = EditorView.theme({
 const setLinks = StateEffect.define<{
   links: readonly NoteLink[];
   tags: readonly NoteTag[];
+  images: readonly NoteImage[];
 }>();
 
 const linkClass: Record<NoteLink["target"]["state"], string | null> = {
@@ -292,14 +312,16 @@ function decorate(
 /** The links Rust found, moved along with every edit until Rust sends new ones. */
 const linksField = StateField.define<{
   links: readonly NoteLink[];
+  images: readonly NoteImage[];
   marks: DecorationSet;
 }>({
-  create: () => ({ links: [], marks: Decoration.none }),
+  create: () => ({ links: [], images: [], marks: Decoration.none }),
   update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setLinks)) {
         return {
           links: effect.value.links,
+          images: effect.value.images,
           marks: decorate(effect.value.links, effect.value.tags),
         };
       }
@@ -313,6 +335,11 @@ const linksField = StateField.define<{
         ...link,
         from: changes.mapPos(link.from, 1),
         to: changes.mapPos(link.to, -1),
+      })),
+      images: value.images.map((image) => ({
+        ...image,
+        from: changes.mapPos(image.from, 1),
+        to: changes.mapPos(image.to, -1),
       })),
       marks: value.marks.map(changes),
     };
@@ -502,8 +529,12 @@ export interface NoteEditor {
   text: () => string;
   setReadOnly: (readOnly: boolean) => void;
   setLivePreview: (on: boolean) => void;
-  /** Links and tags from Rust, ranges in editor positions. */
-  setMarks: (links: readonly NoteLink[], tags: readonly NoteTag[]) => void;
+  /** Links, tags, and images from Rust, ranges in editor positions. */
+  setMarks: (
+    links: readonly NoteLink[],
+    tags: readonly NoteTag[],
+    images: readonly NoteImage[],
+  ) => void;
   /** Hides the front matter while the properties box shows it; `null` shows it. */
   setHidden: (range: { from: number; to: number } | null) => void;
   /** Writes `insert` over an editor range, as if typed. */
@@ -530,14 +561,18 @@ export function createNoteEditor(
   const undo = new Compartment();
   const preview = new Compartment();
   const previewExtension = () =>
-    livePreview((state) => state.field(linksField).links, {
-      follow: (link) => {
-        options.onFollow(link);
+    livePreview(
+      (state) => state.field(linksField).links,
+      (state) => state.field(linksField).images,
+      {
+        follow: (link) => {
+          options.onFollow(link);
+        },
+        save: () => {
+          options.onSave();
+        },
       },
-      save: () => {
-        options.onSave();
-      },
-    });
+    );
   /** A plain press on a link, followed on release unless it became a selection. */
   let pressed: { link: NoteLink; x: number; y: number; head: number } | null =
     null;
@@ -676,8 +711,8 @@ export function createNoteEditor(
         effects: preview.reconfigure(on ? previewExtension() : []),
       });
     },
-    setMarks: (links, tags) => {
-      view.dispatch({ effects: setLinks.of({ links, tags }) });
+    setMarks: (links, tags, images) => {
+      view.dispatch({ effects: setLinks.of({ links, tags, images }) });
     },
     setHidden: (range) => {
       view.dispatch({ effects: setHidden.of(range) });

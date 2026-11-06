@@ -14,7 +14,7 @@ use serde::Serialize;
 use tauri::State;
 
 use super::{CommandError, Workspace, projects::blocking};
-use crate::domain::notes::{self, Index, links::NoteSet};
+use crate::domain::notes::{self, Index, images::ImageSet, links::NoteSet};
 use crate::storage::fs::{Limits, ProjectRoot, RelPath, Skipped};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -121,6 +121,8 @@ struct Slot {
     result: Option<Result<NotesView, CommandError>>,
     /// The notes of the last walk, for resolving links (M3-005).
     set: Option<Arc<NoteSet>>,
+    /// The images of the last walk: all the page can be given (M3-013).
+    images: Option<Arc<ImageSet>>,
     /// Notes that appeared at a walk after a change outside, oldest first; a note
     /// that lost its file may have moved to one of them (M3-008).
     recent: Vec<(String, Instant)>,
@@ -165,6 +167,22 @@ fn same_list(old: &NotesView, new: &NotesView, open: Option<&str>) -> bool {
     }
 }
 
+/// One walk, as a list for the page and sets for looking things up.
+fn walked(
+    app_dir: &Path,
+    project_id: &str,
+    root: &ProjectRoot,
+) -> Result<(NotesView, Arc<NoteSet>, Arc<ImageSet>), crate::storage::db::DbError> {
+    let mut index = notes::refresh(app_dir, project_id, root)?;
+    let images = Arc::new(std::mem::take(&mut index.images));
+    let set = NoteSet::with_aliases(
+        index.notes.iter().map(|note| note.path.clone()),
+        &index.aliases,
+    );
+    let view = NotesView::of(index, &set);
+    Ok((view, Arc::new(set), images))
+}
+
 fn paths_of(view: &NotesView) -> Vec<&str> {
     match view {
         NotesView::Ready { notes, .. } => notes.iter().map(|note| note.path.as_str()).collect(),
@@ -197,17 +215,8 @@ impl NoteIndex {
             }
             (slot.generation, slot.result.clone())
         };
-        let walked = catch_unwind(AssertUnwindSafe(|| {
-            notes::refresh(app_dir, project_id, root).map(|index| {
-                let set = NoteSet::with_aliases(
-                    index.notes.iter().map(|note| note.path.clone()),
-                    &index.aliases,
-                );
-                let view = NotesView::of(index, &set);
-                (view, Arc::new(set))
-            })
-        }));
-        let Ok(Ok((view, set))) = walked else {
+        let walk = catch_unwind(AssertUnwindSafe(|| walked(app_dir, project_id, root)));
+        let Ok(Ok((view, set, images))) = walk else {
             return false;
         };
         let Ok(mut slot) = lock.lock() else {
@@ -228,12 +237,14 @@ impl NoteIndex {
                         slot.recent.push((path.to_owned(), now));
                     }
                 }
-                !same_list(old, &view, open)
+                // An image's address holds its stamp, so a changed image is a new address.
+                !same_list(old, &view, open) || slot.images.as_ref() != Some(&images)
             }
             _ => true,
         };
         slot.result = Some(Ok(view));
         slot.set = Some(set);
+        slot.images = Some(images);
         drop(slot);
         ready.notify_all();
         differs
@@ -268,6 +279,7 @@ impl NoteIndex {
         slot.project = Some(project_id.clone());
         slot.result = None;
         slot.set = None;
+        slot.images = None;
         let generation = slot.generation;
         drop(slot);
 
@@ -278,20 +290,11 @@ impl NoteIndex {
             // written in one transaction, so walking on is safe.
             let _one_at_a_time = walking.lock().unwrap_or_else(PoisonError::into_inner);
             // A panic must not leave `wait` waiting forever.
-            let walked = catch_unwind(AssertUnwindSafe(|| {
-                notes::refresh(&app_dir, &project_id, &root).map(|index| {
-                    let set = NoteSet::with_aliases(
-                        index.notes.iter().map(|note| note.path.clone()),
-                        &index.aliases,
-                    );
-                    let view = NotesView::of(index, &set);
-                    (view, Arc::new(set))
-                })
-            }));
-            let (result, set) = match walked {
-                Ok(Ok((view, set))) => (Ok(view), Some(set)),
-                Ok(Err(error)) => (Err(CommandError::from(error)), None),
-                Err(_) => (Err(CommandError::Internal), None),
+            let walk = catch_unwind(AssertUnwindSafe(|| walked(&app_dir, &project_id, &root)));
+            let (result, set, images) = match walk {
+                Ok(Ok((view, set, images))) => (Ok(view), Some(set), Some(images)),
+                Ok(Err(error)) => (Err(CommandError::from(error)), None, None),
+                Err(_) => (Err(CommandError::Internal), None, None),
             };
             let (lock, ready) = &*shared;
             if let Ok(mut slot) = lock.lock()
@@ -299,6 +302,7 @@ impl NoteIndex {
             {
                 slot.result = Some(result);
                 slot.set = set;
+                slot.images = images;
             }
             ready.notify_all();
         });
@@ -324,6 +328,7 @@ impl NoteIndex {
             slot.project = None;
             slot.result = None;
             slot.set = None;
+            slot.images = None;
             slot.recent.clear();
         }
         ready.notify_all();
@@ -360,6 +365,17 @@ impl NoteIndex {
             }
             slot = ready.wait(slot).ok()?;
         }
+    }
+
+    /// The images of this project's last walk, without waiting for one: `None` while
+    /// there is no result, so a request during a walk gets no image rather than a wait.
+    pub fn image_set(&self, project_id: &str) -> Option<Arc<ImageSet>> {
+        let (lock, _) = &*self.shared;
+        let slot = lock.lock().ok()?;
+        if slot.project.as_deref() != Some(project_id) {
+            return None;
+        }
+        slot.images.clone()
     }
 }
 

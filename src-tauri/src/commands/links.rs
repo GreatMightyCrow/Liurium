@@ -11,6 +11,7 @@ use crate::domain::notes::{
     NoteFacts,
     backlinks::{backlinks as find_backlinks, project_tags as stored_tags, refresh_notes},
     external::checked_address,
+    images::{ImageSet, ImageTarget, ResolvedImage},
     links::{self, Anchor, Link, LinkKind, NoteSet, Target},
     session::{MAX_NOTE_BYTES, note_path},
 };
@@ -87,12 +88,61 @@ fn rewritten(original: &str, link: &Link, target: &str) -> String {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteMarks.ts"))]
 pub struct NoteMarks {
     pub links: Vec<NoteLink>,
+    /// Images in the text (M3-013).
+    pub images: Vec<NoteImage>,
     /// `#tags` in the text, ranges in the editor's units.
     pub tags: Vec<NoteTag>,
     /// Tags from the front matter, without `#`.
     pub front_tags: Vec<String>,
     /// The front matter for the properties box (M3-015).
     pub properties: NoteProperties,
+}
+
+/// An image in the text (M3-013). Only what Rust resolved reaches the page: the page
+/// never builds an address from the note's text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteImage.ts"))]
+pub struct NoteImage {
+    /// Start and end in the editor's units (UTF-16).
+    pub from: usize,
+    pub to: usize,
+    pub alt: String,
+    /// Asked for in the note, as in `![[pic.png|200x100]]`.
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub source: ImageSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "ImageSource.ts"))]
+pub enum ImageSource {
+    /// Served by Liurium's own protocol.
+    Local {
+        address: String,
+    },
+    /// Never loaded: a placeholder names the address.
+    Remote {
+        address: String,
+    },
+    /// A type Liurium does not show yet, such as SVG.
+    NotShown {
+        written: String,
+    },
+    /// More than one image fits; none is guessed.
+    Ambiguous {
+        candidates: Vec<String>,
+    },
+    Missing {
+        written: String,
+    },
+    /// Above the project, or in a hidden or skipped folder.
+    Refused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -105,7 +155,57 @@ pub struct NoteTag {
     pub tag: String,
 }
 
-pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMarks, CommandError> {
+/// The images of a note's text, each resolved against the walk's list.
+fn images_in(
+    source: &crate::storage::fs::RelPath,
+    text: &str,
+    facts: &NoteFacts,
+    images: &ImageSet,
+    project: &str,
+) -> Vec<NoteImage> {
+    let bounds: Vec<usize> = facts
+        .images
+        .iter()
+        .flat_map(|image| [image.range.start, image.range.end])
+        .collect();
+    let units = links::utf16_offsets(text, &bounds);
+    facts
+        .images
+        .iter()
+        .zip(units.chunks(2))
+        .map(|(image, range)| NoteImage {
+            from: range[0],
+            to: range[1],
+            alt: image.alt.clone(),
+            width: image.width,
+            height: image.height,
+            source: match &image.target {
+                ImageTarget::Remote(address) => ImageSource::Remote {
+                    address: address.clone(),
+                },
+                ImageTarget::NotShown(written) => ImageSource::NotShown {
+                    written: written.clone(),
+                },
+                _ => match images.resolve(source, image) {
+                    ResolvedImage::Found(found) => ImageSource::Local {
+                        address: found.address(project),
+                    },
+                    ResolvedImage::Ambiguous(candidates) => ImageSource::Ambiguous { candidates },
+                    ResolvedImage::Missing(written) => ImageSource::Missing { written },
+                    ResolvedImage::Refused => ImageSource::Refused,
+                },
+            },
+        })
+        .collect()
+}
+
+pub fn note_links_in(
+    source: &str,
+    text: &str,
+    set: &NoteSet,
+    images: &ImageSet,
+    project: &str,
+) -> Result<NoteMarks, CommandError> {
     let source = note_path(source)?;
     let facts = NoteFacts::of(text);
     let found = &facts.links;
@@ -193,6 +293,7 @@ pub fn note_links_in(source: &str, text: &str, set: &NoteSet) -> Result<NoteMark
         .collect();
     Ok(NoteMarks {
         links,
+        images: images_in(&source, text, &facts, images, project),
         tags,
         front_tags: facts.front.tags,
         properties: NoteProperties::of(text),
@@ -281,7 +382,9 @@ impl Workspace {
             .into());
         }
         let set = self.note_set()?;
-        note_links_in(path, text, &set)
+        let (id, _) = self.open_root()?.ok_or(CommandError::NoProject)?;
+        let images = self.note_index().image_set(&id).unwrap_or_default();
+        note_links_in(path, text, &set, &images, &id)
     }
 }
 
@@ -348,7 +451,7 @@ mod tests {
     fn links_come_with_utf16_ranges_and_their_targets() {
         let text = "ä 😀 [[Unique#Top]] [[Plan|mine]] [[New idea]] ![[x.png]]";
 
-        let found = note_links_in("Ideas/Source.md", text, &set())
+        let found = note_links_in("Ideas/Source.md", text, &set(), &ImageSet::default(), "p")
             .expect("links")
             .links;
 
@@ -388,9 +491,60 @@ mod tests {
     }
 
     #[test]
+    fn images_come_with_utf16_ranges_and_what_the_page_may_do_with_them() {
+        let stamp = crate::storage::fs::Stamp {
+            len: 3,
+            modified: std::time::UNIX_EPOCH,
+        };
+        let images = ImageSet::new(vec![crate::storage::fs::FoundImage {
+            path: crate::storage::fs::RelPath::parse("Ideas/pic.png").expect("path"),
+            stamp,
+        }]);
+        let text = "😀 ![Cat|200](pic.png) ![a](https://example.com/x.png) ![[nope.png]] \
+                    ![a](../../x.png) ![[x.svg]]";
+
+        let found = note_links_in("Ideas/Source.md", text, &set(), &images, "p")
+            .expect("marks")
+            .images;
+
+        let unique = text.encode_utf16().collect::<Vec<_>>();
+        assert_eq!(
+            String::from_utf16_lossy(&unique[found[0].from..found[0].to]),
+            "![Cat|200](pic.png)"
+        );
+        assert_eq!(found[0].alt, "Cat");
+        assert_eq!(found[0].width, Some(200));
+        assert_eq!(
+            found[0].source,
+            ImageSource::Local {
+                address: "http://liurium-image.localhost/p/Ideas/pic.png?v=0-3".into()
+            }
+        );
+        assert_eq!(
+            found[1].source,
+            ImageSource::Remote {
+                address: "https://example.com/x.png".into()
+            }
+        );
+        assert_eq!(
+            found[2].source,
+            ImageSource::Missing {
+                written: "nope.png".into()
+            }
+        );
+        assert_eq!(found[3].source, ImageSource::Refused);
+        assert_eq!(
+            found[4].source,
+            ImageSource::NotShown {
+                written: "x.svg".into()
+            }
+        );
+    }
+
+    #[test]
     fn the_source_must_be_a_note_path() {
         assert_eq!(
-            note_links_in(".liurium/x.md", "[[a]]", &set()).unwrap_err(),
+            note_links_in(".liurium/x.md", "[[a]]", &set(), &ImageSet::default(), "p").unwrap_err(),
             CommandError::InvalidPath
         );
     }

@@ -1,8 +1,10 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
+import { Decoration } from "@codemirror/view";
 import { describe, expect, test } from "vitest";
-import type { NoteLink } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import { ImageWidget } from "./liveImages";
 import { previewRanges } from "./livePreview";
 
 function state(text: string, cursor = text.length): EditorState {
@@ -48,6 +50,101 @@ function look(
   }
   return found;
 }
+
+describe("images show while the cursor is elsewhere", () => {
+  const image = (from: number, to: number): NoteImage => ({
+    from,
+    to,
+    alt: "a",
+    width: null,
+    height: null,
+    source: {
+      state: "local",
+      address: "http://liurium-image.localhost/p/a.png",
+    },
+  });
+  const shown = (
+    text: string,
+    images: readonly NoteImage[],
+    cursor = text.length,
+    focused = true,
+  ) => {
+    const current = state(text, cursor);
+    return previewRanges(
+      current,
+      [{ from: 0, to: current.doc.length }],
+      [],
+      focused,
+      images,
+    ).flatMap(({ from, to, value }) =>
+      (value.spec as { widget?: object }).widget instanceof ImageWidget
+        ? [current.sliceDoc(from, to)]
+        : [],
+    );
+  };
+  const SOURCE = "![a](a.png)";
+
+  test("the image replaces its source", () => {
+    const text = `x ${SOURCE} y\n\nend`;
+    expect(shown(text, [image(2, 2 + SOURCE.length)])).toEqual([SOURCE]);
+  });
+
+  test("the source comes back at the cursor, at both its ends too", () => {
+    const text = `x ${SOURCE} y\n\nend`;
+    const found = [image(2, 2 + SOURCE.length)];
+    expect(shown(text, found, 5)).toEqual([]);
+    expect(shown(text, found, 2)).toEqual([]);
+    expect(shown(text, found, 2 + SOURCE.length)).toEqual([]);
+    expect(shown(text, found, 1)).toEqual([SOURCE]);
+  });
+
+  test("without focus there is no cursor, so a note opens with its images", () => {
+    expect(shown(SOURCE, [image(0, SOURCE.length)], 0, false)).toEqual([
+      SOURCE,
+    ]);
+  });
+
+  test("one written across two lines stays source, as a plugin cannot replace a line break", () => {
+    const text = "![a\nb](a.png)\n\nend";
+    expect(shown(text, [image(0, 13)])).toEqual([]);
+  });
+
+  test("inside the front matter nothing shows", () => {
+    const text = `---\nx: ${SOURCE}\n---\n\nend`;
+    expect(shown(text, [image(7, 7 + SOURCE.length)])).toEqual([]);
+  });
+
+  test("a place Rust reported past the text is ignored", () => {
+    expect(shown("short", [image(100, 110)], 0)).toEqual([]);
+  });
+
+  test("next to a link's marks, inside a link", () => {
+    const text = `[${SOURCE}](https://example.com)\n\nend`;
+    const current = state(text);
+    const ranges = previewRanges(
+      current,
+      [{ from: 0, to: current.doc.length }],
+      [
+        {
+          from: 0,
+          to: text.indexOf("\n"),
+          target: {
+            state: "external",
+            address: "https://example.com",
+            claims: null,
+          },
+        },
+      ],
+      true,
+      [image(1, 1 + SOURCE.length)],
+    );
+    // A set of these with overlapping replacements would throw.
+    expect(() => Decoration.set(ranges, true)).not.toThrow();
+    expect(
+      ranges.map(({ from, to }) => current.sliceDoc(from, to)).sort(),
+    ).toEqual([SOURCE, "[", "](https://example.com)"].sort());
+  });
+});
 
 function note(from: number, to: number): NoteLink {
   return { from, to, target: { state: "missing", path: "x.md" } };

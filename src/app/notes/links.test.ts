@@ -1,8 +1,24 @@
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { expect, test } from "vitest";
-import { anchorIndex, slug, toEditorPositions } from "./links";
+import { anchorIndex, imagesInEditor, slug, toEditorPositions } from "./links";
 import { linkCompletions } from "./noteEditor";
+
+test("an image's place counts the same way", () => {
+  const image = {
+    from: 3,
+    to: 8,
+    alt: "a",
+    width: null,
+    height: null,
+    source: { state: "refused" as const },
+  };
+  expect(imagesInEditor("a\r\n![x]", [image])[0]).toEqual({
+    ...image,
+    from: 2,
+    to: 7,
+  });
+});
 
 test("each earlier CRLF is one editor position less", () => {
   const text = "a\r\nb\r\nc[[x]]";
