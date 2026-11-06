@@ -44,7 +44,7 @@ test("the file stays byte for byte while the view changes", async ({ app }) => {
   for (const mark of ["**", "~~", "[[", "]]", "```", "# Title", "> quote"]) {
     expect(shown).not.toContain(mark);
   }
-  expect(shown).toContain("| a | b |");
+  await expect(content(page).locator("table")).toBeVisible();
 
   // Walk through every line, then through the source view and back.
   await content(page).click();

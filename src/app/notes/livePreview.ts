@@ -3,7 +3,6 @@ import {
   type EditorSelection,
   type EditorState,
   type Extension,
-  Facet,
   type Range,
   StateEffect,
 } from "@codemirror/state";
@@ -16,6 +15,21 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import type { NoteLink } from "../../lib/ipc/commands";
+import {
+  blocksField,
+  calloutOf,
+  calloutOpen,
+  liveBlocks,
+  toggleCallout,
+} from "./liveBlocks";
+import {
+  actionsOf,
+  bodyStart,
+  type LiveActions,
+  linksIn,
+  linksOf,
+  type LinksOf,
+} from "./liveShared";
 
 // Live preview (M3-017, ADR-0020): notes read as formatted text while being edited,
 // and an element's marks come back where the cursor is. This changes only the view:
@@ -30,21 +44,6 @@ export function touched(
   to: number,
 ): boolean {
   return selection.ranges.some((range) => range.from <= to && range.to >= from);
-}
-
-/** Where the body starts: the front matter is YAML, not Markdown (same rule as Rust). */
-function bodyStart(state: EditorState): number {
-  const first = state.doc.line(1);
-  if (first.text !== "---") {
-    return 0;
-  }
-  for (let number = 2; number <= state.doc.lines; number += 1) {
-    const line = state.doc.line(number);
-    if (line.text === "---" || line.text === "...") {
-      return line.to;
-    }
-  }
-  return 0;
 }
 
 class Bullet extends WidgetType {
@@ -135,6 +134,65 @@ class TaskBox extends WidgetType {
   }
 }
 
+/** What a callout without a title shows: its kind. */
+class CalloutLabel extends WidgetType {
+  constructor(private readonly kind: string) {
+    super();
+  }
+
+  override eq(other: CalloutLabel): boolean {
+    return other.kind === this.kind;
+  }
+
+  toDOM(): HTMLElement {
+    const label = document.createElement("span");
+    label.textContent = this.kind.charAt(0).toUpperCase() + this.kind.slice(1);
+    return label;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** Opens and closes a foldable callout (M3-018). Only the view changes. */
+class FoldButton extends WidgetType {
+  constructor(
+    private readonly line: number,
+    private readonly open: boolean,
+  ) {
+    super();
+  }
+
+  override eq(other: FoldButton): boolean {
+    return other.line === this.line && other.open === this.open;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cm-fold";
+    button.tabIndex = -1;
+    button.textContent = this.open ? "\u25BE" : "\u25B8";
+    button.setAttribute("aria-expanded", String(this.open));
+    button.setAttribute(
+      "aria-label",
+      this.open ? "Close callout" : "Open callout",
+    );
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    button.addEventListener("click", () => {
+      toggleCallout(view, view.state.doc.lineAt(view.posAtDOM(button)).from);
+    });
+    return button;
+  }
+
+  override ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 const hide = Decoration.replace({});
 const bullet = Decoration.replace({ widget: new Bullet() });
 const rule = Decoration.replace({ widget: new Rule() });
@@ -159,6 +217,7 @@ export function previewRanges(
     focused && touched(state.selection, from, to);
   const body = bodyStart(state);
   const lineStyled = new Set<string>();
+  const done = new Set<string>();
   const tree = syntaxTree(state);
 
   const hidden = (from: number, to: number) => {
@@ -206,6 +265,13 @@ export function previewRanges(
         }
         const node = found.node;
         const { from, to, name } = found;
+        // A closed callout's body splits the visible part in two, and a node across
+        // the gap comes twice: its decorations once, its children still walked.
+        const id = `${name}:${String(from)}:${String(to)}`;
+        if (done.has(id)) {
+          return undefined;
+        }
+        done.add(id);
         const heading = /^(?:ATXHeading|SetextHeading)(\d)$/.exec(name);
         if (heading !== null) {
           eachLine(from, to, part, headingLine(Number(heading[1])), "heading");
@@ -260,9 +326,53 @@ export function previewRanges(
           // Shown as written until images come (M3-013).
           case "Image":
             return false;
-          case "Blockquote":
-            eachLine(from, to, part, quoteLine, "quote");
+          case "Blockquote": {
+            const first = state.doc.lineAt(from);
+            const callout = calloutOf(first.text);
+            if (callout === null) {
+              eachLine(from, to, part, quoteLine, "quote");
+              return undefined;
+            }
+            eachLine(
+              from,
+              to,
+              part,
+              Decoration.line({
+                class: `cm-callout cm-callout-${callout.look}`,
+              }),
+              "callout",
+            );
+            ranges.push(
+              Decoration.line({ class: "cm-callout-title" }).range(first.from),
+            );
+            if (!near(first.from, first.to)) {
+              const open = calloutOpen(state, first.from);
+              const markerFrom = first.from + callout.markerFrom;
+              let markerTo = first.from + callout.markerTo;
+              if (state.sliceDoc(markerTo, markerTo + 1) === " ") {
+                markerTo += 1;
+              }
+              const widgets: Range<Decoration>[] = [];
+              if (open !== null) {
+                widgets.push(
+                  Decoration.widget({
+                    widget: new FoldButton(first.from, open),
+                    side: -1,
+                  }).range(markerFrom),
+                );
+              }
+              widgets.push(
+                (callout.title === ""
+                  ? Decoration.replace({
+                      widget: new CalloutLabel(callout.kind),
+                    })
+                  : hide
+                ).range(markerFrom, markerTo),
+              );
+              ranges.push(...widgets);
+            }
             return undefined;
+          }
           case "QuoteMark":
             if (!near(from, to)) {
               hiddenWithSpace(from, to);
@@ -348,15 +458,6 @@ export function previewRanges(
 /** After a mouse drag: the decorations held still during it come up to date. */
 const dragEnded = StateEffect.define();
 
-type LinksOf = (state: EditorState) => readonly NoteLink[];
-
-/** Where this editor keeps Rust's links. */
-const linksOf = Facet.define<LinksOf, LinksOf>({
-  combine: (values) => values[0] ?? (() => []),
-});
-
-const links = (state: EditorState) => state.facet(linksOf)(state);
-
 const previewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -380,7 +481,7 @@ const previewPlugin = ViewPlugin.fromClass(
         previewRanges(
           state,
           this.view.visibleRanges,
-          links(state),
+          linksIn(state),
           this.view.hasFocus,
         ),
         true,
@@ -392,7 +493,10 @@ const previewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.focusChanged ||
-        links(update.state) !== links(update.startState) ||
+        linksIn(update.state) !== linksIn(update.startState) ||
+        // A callout opened or closed: its button shows the other way now.
+        update.state.field(blocksField, false) !==
+          update.startState.field(blocksField, false) ||
         syntaxTree(update.state) !== syntaxTree(update.startState) ||
         update.startState.readOnly !== update.state.readOnly ||
         update.transactions.some((transaction) =>
@@ -422,8 +526,13 @@ const previewPlugin = ViewPlugin.fromClass(
 );
 
 /** The extension; `source` gives Rust's links for a state. */
-export function livePreview(source: LinksOf): Extension {
-  return [linksOf.of(source), previewPlugin];
+export function livePreview(source: LinksOf, actions: LiveActions): Extension {
+  return [
+    linksOf.of(source),
+    actionsOf.of(actions),
+    previewPlugin,
+    liveBlocks(),
+  ];
 }
 
 export function livePreviewOn(view: EditorView): boolean {

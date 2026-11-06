@@ -162,10 +162,29 @@ describe("blocks", () => {
     expect(look(`${front}${AWAY}`).lines).toEqual([]);
   });
 
-  test("tables and images stay as written for now", () => {
+  test("images stay as written for now", () => {
     const empty = { hidden: [], widgets: [], lines: [], marks: [] };
-    expect(look(`| a | b |\n|---|---|\n| 1 | 2 |${AWAY}`)).toEqual(empty);
     expect(look(`![alt **x**](a.png)${AWAY}`)).toEqual(empty);
+  });
+
+  test("a callout shows its look and hides its marker", () => {
+    const found = look(`> [!warning] Careful\n> text${AWAY}`);
+    expect(found.lines).toEqual([
+      "cm-callout cm-callout-careful",
+      "cm-callout cm-callout-careful",
+      "cm-callout-title",
+    ]);
+    expect(found.hidden).toEqual(["[!warning] ", "> ", "> "]);
+    // The marker comes back on its line.
+    expect(look(`> [!note] T\n> x${AWAY}`, 3).hidden).toEqual(["> ", "> "]);
+  });
+
+  test("a callout without a title shows its kind; a plain quote stays a quote", () => {
+    expect(look(`> [!TIP]${AWAY}`).widgets).toEqual(["[!TIP]"]);
+    expect(look(`> [not a callout]${AWAY}`).lines).toEqual(["cm-quote"]);
+    expect(look(`> [!odd-kind] x${AWAY}`).lines[0]).toBe(
+      "cm-callout cm-callout-plain",
+    );
   });
 });
 

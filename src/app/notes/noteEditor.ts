@@ -31,6 +31,8 @@ import {
   toggleTaskAtCursor,
   touched,
 } from "./livePreview";
+import { toggleCalloutAtCursor } from "./liveBlocks";
+import { trustedEdit } from "./liveShared";
 
 // The note editor (ADR-0020): CodeMirror as the engine, everything visible from
 // Liurium's tokens. It lives in a shadow root: there CodeMirror's styles become
@@ -97,6 +99,99 @@ const theme = EditorView.theme({
     width: "100%",
     verticalAlign: "middle",
     borderTop: "var(--border-width) solid var(--color-border-control)",
+  },
+  // Tables (M3-018). Inside a widget only tokens and CodeMirror's theme reach them.
+  ".cm-table-wrap": {
+    paddingBlock: "var(--space-2)",
+    overflowX: "auto",
+  },
+  ".cm-table": {
+    borderCollapse: "collapse",
+    fontSize: "var(--font-size-base)",
+  },
+  ".cm-table th, .cm-table td": {
+    minWidth: "var(--size-control-md)",
+    padding: "var(--space-1) var(--space-2)",
+    border: "var(--border-width) solid var(--color-border-control)",
+    textAlign: "left",
+    verticalAlign: "top",
+    cursor: "text",
+  },
+  ".cm-table th": {
+    backgroundColor: "var(--color-surface)",
+    fontWeight: "var(--font-weight-semibold)",
+  },
+  ".cm-table .cm-align-center": { textAlign: "center" },
+  ".cm-table .cm-align-right": { textAlign: "right" },
+  ".cm-table code": {
+    fontFamily: "var(--font-mono)",
+    backgroundColor: "var(--color-surface)",
+    borderRadius: "var(--radius-sm)",
+  },
+  ".cm-cell-input": {
+    // As wide as its text, so the table does not jump when a cell is edited.
+    fieldSizing: "content",
+    minWidth: "var(--space-4)",
+    maxWidth: "100%",
+    padding: "0",
+    border: "none",
+    outline: "var(--focus-ring-width) solid var(--color-accent-text)",
+    outlineOffset: "var(--border-width)",
+    background: "none",
+    color: "inherit",
+    font: "inherit",
+    textAlign: "inherit",
+  },
+  ".cm-table-tools": {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "var(--space-1)",
+    paddingTop: "var(--space-1)",
+    visibility: "hidden",
+  },
+  ".cm-table-wrap:hover .cm-table-tools, .cm-table-wrap:focus-within .cm-table-tools":
+    { visibility: "visible" },
+  ".cm-table-tool": {
+    padding: "0 var(--space-2)",
+    border: "var(--border-width) solid var(--color-border-control)",
+    borderRadius: "var(--radius-sm)",
+    background: "none",
+    color: "var(--color-text-secondary)",
+    font: "inherit",
+    fontSize: "var(--font-size-sm)",
+    cursor: "pointer",
+  },
+  ".cm-table-tool:hover": { color: "var(--color-text)" },
+  ".cm-table-tool:focus-visible": {
+    outline: "var(--focus-ring-width) solid var(--color-accent-text)",
+    outlineOffset: "var(--border-width)",
+  },
+  // Callouts (M3-018): a bar in their kind's color on a faint surface.
+  ".cm-callout": {
+    paddingInline: "var(--space-3)",
+    borderLeft: "var(--focus-ring-width) solid var(--callout-color)",
+    backgroundColor: "var(--color-surface)",
+    color: "var(--color-text)",
+  },
+  // The parser calls them quotes, whose words are dimmed; links keep their color.
+  ".cm-callout span:not(.cm-link-note, .cm-link-missing, .cm-link-ambiguous, .cm-link-external, .cm-tag)":
+    { color: "inherit" },
+  ".cm-callout-plain": { "--callout-color": "var(--color-accent-text)" },
+  ".cm-callout-good": { "--callout-color": "var(--color-success)" },
+  ".cm-callout-careful": { "--callout-color": "var(--color-warning)" },
+  ".cm-callout-bad": { "--callout-color": "var(--color-danger)" },
+  ".cm-callout-title": {
+    color: "var(--callout-color)",
+    fontWeight: "var(--font-weight-semibold)",
+  },
+  ".cm-fold": {
+    marginInlineEnd: "var(--space-1)",
+    padding: "0",
+    border: "none",
+    background: "none",
+    color: "inherit",
+    font: "inherit",
+    cursor: "pointer",
   },
   ".cm-task": {
     margin: "0",
@@ -435,7 +530,14 @@ export function createNoteEditor(
   const undo = new Compartment();
   const preview = new Compartment();
   const previewExtension = () =>
-    livePreview((state) => state.field(linksField).links);
+    livePreview((state) => state.field(linksField).links, {
+      follow: (link) => {
+        options.onFollow(link);
+      },
+      save: () => {
+        options.onSave();
+      },
+    });
   /** A plain press on a link, followed on release unless it became a selection. */
   let pressed: { link: NoteLink; x: number; y: number; head: number } | null =
     null;
@@ -448,7 +550,10 @@ export function createNoteEditor(
         run: (view) => {
           const link = linkAt(view.state, view.state.selection.main.head);
           if (link === null || link.target.state === "other") {
-            return livePreviewOn(view) && toggleTaskAtCursor(view);
+            return (
+              livePreviewOn(view) &&
+              (toggleTaskAtCursor(view) || toggleCalloutAtCursor(view))
+            );
           }
           options.onFollow(link);
           return true;
@@ -583,14 +688,18 @@ export function createNoteEditor(
     replaceFromBox: (from, to, insert) => {
       view.dispatch({
         changes: { from, to, insert },
-        annotations: fromBox.of(true),
+        annotations: [fromBox.of(true), trustedEdit.of(true)],
         userEvent: "input",
       });
     },
     replaceFromOutside: (from, to, insert) => {
       view.dispatch({
         changes: { from, to, insert },
-        annotations: [fromBox.of(true), fromOutside.of(true)],
+        annotations: [
+          fromBox.of(true),
+          fromOutside.of(true),
+          trustedEdit.of(true),
+        ],
       });
       // Taking the history out and putting a new one in is how it is emptied.
       view.dispatch({ effects: undo.reconfigure([]) });
