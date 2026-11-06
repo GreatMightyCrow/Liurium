@@ -2,8 +2,10 @@ use std::{fs, path::Path};
 
 use tempfile::TempDir;
 
+use crate::commands::notes::NoteIndex;
 use crate::commands::tests::{added, workspace};
 use crate::storage::db::Kind;
+use crate::storage::fs::ProjectRoot;
 use crate::test_support::{current, project as fixture, temp_dir};
 
 use super::*;
@@ -72,25 +74,23 @@ fn a_listed_image_of_the_open_project_is_served() {
 
 #[test]
 fn everything_else_is_refused() {
-    let (_dir, workspace, root, id) = project(&[
+    let (_dir, workspace, _root, id) = project(&[
         ("pic.png", PNG),
         ("Plan.md", b"# Secret"),
         ("renamed.png", b"# Secret"),
         (".liurium/inside.png", PNG),
         ("node_modules/x.png", PNG),
     ]);
-    fs::write(root.join("late.png"), PNG).expect("after the walk");
     let refused = [
         // Another project, or none named.
         "/other/pic.png".to_owned(),
         "/pic.png".to_owned(),
-        // Never listed: not an image, hidden, skipped, not there, or not walked yet.
+        // Never listed: not an image, hidden, skipped, or not there.
         format!("/{id}/Plan.md"),
         format!("/{id}/.liurium/project.db"),
         format!("/{id}/.liurium/inside.png"),
         format!("/{id}/node_modules/x.png"),
         format!("/{id}/missing.png"),
-        format!("/{id}/late.png"),
         // Ways out of the project.
         format!("/{id}/../pic.png"),
         format!("/{id}/..%2F..%2Fpic.png"),
@@ -137,20 +137,43 @@ fn a_file_above_the_limit_is_not_served() {
 
 #[test]
 fn a_changed_image_makes_a_new_list_and_a_new_address() {
-    let (dir, workspace, folder, id) = project(&[("pic.png", PNG)]);
-    let before = workspace.note_index().image_set(&id).expect("set");
-    let old = before.listed("pic.png").expect("listed").address(&id);
-    let rescan = || {
-        let root = crate::storage::fs::ProjectRoot::open(&folder).expect("root");
-        workspace
-            .note_index()
-            .rescan(&dir.path().join("app"), &id, &root, None)
-    };
+    // A bare index: a `Workspace` also watches the folder and walks on its own, which
+    // would race these steps (CI, 2026-11-06).
+    let dir = temp_dir();
+    let app = dir.path().join("app");
+    fs::create_dir_all(&app).expect("app folder");
+    let folder = dir.path().join("Garden");
+    write(&folder, "pic.png", PNG);
+    let root = ProjectRoot::open(&folder).expect("root");
+    let id = "00000000-0000-4000-8000-000000000abc";
+    let index = NoteIndex::default();
+    index.start(app.clone(), id.to_owned(), root.clone());
+    index.note_set(id).expect("walked");
+    let old = index
+        .image_set(id)
+        .expect("set")
+        .listed("pic.png")
+        .expect("listed")
+        .address(id);
+    let rescan = || index.rescan(&app, id, &root, None);
     assert!(!rescan(), "nothing changed");
+
     let mut longer = PNG.to_vec();
     longer.push(0);
     fs::write(folder.join("pic.png"), longer).expect("changed");
     assert!(rescan(), "the list reports the change");
-    let after = workspace.note_index().image_set(&id).expect("set");
-    assert_ne!(after.listed("pic.png").expect("listed").address(&id), old);
+    let after = index.image_set(id).expect("set");
+    assert_ne!(after.listed("pic.png").expect("listed").address(id), old);
+
+    // An image is served only once a walk has listed it.
+    write(&folder, "late.png", PNG);
+    assert!(after.listed("late.png").is_none());
+    assert!(rescan(), "the list reports the new image");
+    assert!(
+        index
+            .image_set(id)
+            .expect("set")
+            .listed("late.png")
+            .is_some()
+    );
 }
