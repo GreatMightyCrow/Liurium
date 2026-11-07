@@ -1,12 +1,13 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { ensureSyntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, forceParsing } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
-import { Decoration } from "@codemirror/view";
-import { describe, expect, test } from "vitest";
+import { Decoration, EditorView } from "@codemirror/view";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 import { ImageWidget } from "./liveImages";
 import { MathWidget } from "./liveMath";
-import { previewRanges } from "./livePreview";
+import { livePreview, previewRanges } from "./livePreview";
+import { TableWidget } from "./tableWidget";
 
 function state(text: string, cursor = text.length): EditorState {
   const created = EditorState.create({
@@ -498,5 +499,157 @@ describe("formulas", () => {
   test("the front matter holds no formula", () => {
     const text = "---\na: $x$\n---\nend";
     expect(widgets(text, [formula(7, "x")])).toEqual([]);
+  });
+});
+
+describe("an image that loads is measured (M3-020)", () => {
+  // In a short note CodeMirror's content keeps its height (`min-height: 100%`), so it
+  // reads a line's new height only after it draws something again. jsdom has no
+  // layout: these heights stand in for it, and the content's height stays the same.
+  // Kept outside the DOM: the editor notices a changed attribute and draws again.
+  const loaded = new WeakSet<Element>();
+  const TALL = 400;
+  const box = (top: number, height: number) =>
+    ({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 800,
+      width: 800,
+      height,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  // Saved as they are, so they come back exactly after these tests.
+  const targets: [object, string][] = [
+    [Range.prototype, "getClientRects"],
+    [Range.prototype, "getBoundingClientRect"],
+    [Element.prototype, "getBoundingClientRect"],
+    [window, "matchMedia"],
+  ];
+  const saved = targets.map(([owner, name]) => ({
+    owner,
+    name,
+    was: Object.getOwnPropertyDescriptor(owner, name),
+  }));
+  const put = (owner: object, name: string, value: unknown) => {
+    Object.defineProperty(owner, name, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  };
+  beforeAll(() => {
+    // The diagrams part asks for forced colors; jsdom has no `matchMedia`.
+    put(window, "matchMedia", () => ({
+      matches: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    put(Range.prototype, "getClientRects", () => []);
+    put(Range.prototype, "getBoundingClientRect", () => box(0, 0));
+    put(Element.prototype, "getBoundingClientRect", function (this: Element) {
+      if (
+        this.classList.contains("cm-line") ||
+        this.classList.contains("cm-table-wrap")
+      ) {
+        const tall = [...this.querySelectorAll("img")].some((each) =>
+          loaded.has(each),
+        );
+        return box(0, tall ? TALL : 20);
+      }
+      return box(0, 700);
+    });
+  });
+  afterAll(() => {
+    for (const { owner, name, was } of saved) {
+      if (was === undefined) {
+        Reflect.deleteProperty(owner, name);
+      } else {
+        Object.defineProperty(owner, name, was);
+      }
+    }
+  });
+
+  const picture = (from: number, to: number): NoteImage => ({
+    from,
+    to,
+    alt: "a",
+    width: null,
+    height: null,
+    source: {
+      state: "local",
+      address: "http://liurium-image.localhost/p/tall.png",
+    },
+  });
+  const settled = () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+  const NO_LINKS: readonly NoteLink[] = [];
+  const NO_MATH: readonly NoteMath[] = [];
+
+  test.each<[string, string, { prototype: { updateDOM: unknown } }]>([
+    ["in the text", "before\n\n![a](tall.png)\n\nafter", ImageWidget],
+    [
+      "in a table cell",
+      "before\n\n| a | b |\n| - | - |\n| ![a](tall.png) | z |\n\nafter",
+      TableWidget,
+    ],
+  ])("%s", async (_where, doc, widget) => {
+    // jsdom measures after any change; a real browser only after a redraw, which this
+    // stands for (M3-020, seen in headless Edge).
+    const redrawn = vi.spyOn(
+      widget.prototype as { updateDOM: () => boolean },
+      "updateDOM",
+    );
+    const from = doc.indexOf("![a]");
+    const images = [picture(from, from + "![a](tall.png)".length)];
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          // The same lists each time, as Rust's are: a new one draws everything again.
+          livePreview(
+            () => NO_LINKS,
+            () => images,
+            () => NO_MATH,
+            { follow: () => undefined, save: () => undefined },
+          ),
+        ],
+      }),
+    });
+    try {
+      // Parsed to the end now, so nothing later draws again by chance.
+      forceParsing(view, doc.length, 5000);
+      await settled();
+      const shown =
+        view.contentDOM.querySelector<HTMLImageElement>("img.cm-image");
+      expect(shown).not.toBeNull();
+      expect(view.lineBlockAt(from).height).toBeLessThan(TALL);
+      redrawn.mockClear();
+
+      if (shown !== null) {
+        loaded.add(shown);
+      }
+      Object.defineProperty(shown, "naturalWidth", { value: 300 });
+      Object.defineProperty(shown, "naturalHeight", { value: TALL });
+      shown?.dispatchEvent(new Event("load"));
+      await settled();
+
+      expect(view.lineBlockAt(from).height).toBe(TALL);
+      // Drawn again, not loaded again.
+      expect(redrawn).toHaveBeenCalled();
+      expect(view.contentDOM.querySelector("img.cm-image")).toBe(shown);
+    } finally {
+      redrawn.mockRestore();
+      view.destroy();
+      parent.remove();
+    }
   });
 });

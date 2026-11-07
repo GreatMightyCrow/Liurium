@@ -658,6 +658,9 @@ export class TableWidget extends WidgetType {
     private readonly links: readonly RelativeLink[],
     private readonly images: readonly RelativeImage[] = [],
     private readonly formulas: readonly RelativeMath[] = [],
+    /** How many images had settled: when it changes, `updateDOM` keeps the cells that
+     *  show the same, and the editor measures the table again (M3-020). */
+    private readonly settled = 0,
   ) {
     super();
     this.table = parseTable(source);
@@ -692,7 +695,8 @@ export class TableWidget extends WidgetType {
       other.readOnly === this.readOnly &&
       other.linksKey === this.linksKey &&
       other.imagesKey === this.imagesKey &&
-      other.formulasKey === this.formulasKey
+      other.formulasKey === this.formulasKey &&
+      other.settled === this.settled
     );
   }
 

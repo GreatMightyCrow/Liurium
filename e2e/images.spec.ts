@@ -157,6 +157,59 @@ test("an image shows at its size, its source comes back at the cursor, the file 
   expect(violations).toEqual([]);
 });
 
+test("a tall image is measured once it loads, in a short note, also as SVG and in a table", async ({
+  app,
+}) => {
+  // M3-020: in a note shorter than the pane the editor kept the line's old height, so
+  // a click low on the image landed below it.
+  const folder = app.folder("Images-");
+  write(folder, "Plan.md", "before\r\n\r\n![Tall](tall.png)\r\n\r\nafter\r\n");
+  write(
+    folder,
+    "Drawing.md",
+    "before\r\n\r\n![Tall](tall.svg)\r\n\r\nafter\r\n",
+  );
+  const table =
+    "before\r\n\r\n| a | b |\r\n| - | - |\r\n| ![Tall](tall.png) | z |\r\n\r\nafter\r\n";
+  write(folder, "Table.md", table);
+  write(folder, "tall.png", png(200, 300, TEAL));
+  write(
+    folder,
+    "tall.svg",
+    `<svg ${SVG_NAMESPACE} width="200" height="300"><rect width="200" height="300" fill="#148c82"/></svg>`,
+  );
+  const page = await app.launch({ pick: folder });
+  await openNote(page);
+  const notes = page.getByRole("navigation", { name: "Notes in this project" });
+
+  for (const [note, source] of [
+    ["Plan.md", "![Tall](tall.png)"],
+    ["Drawing.md", "![Tall](tall.svg)"],
+  ]) {
+    if (note !== "Plan.md") {
+      await notes.getByRole("link", { name: note }).click();
+    }
+    const image = await loaded(page);
+    const box = await image.boundingBox();
+    expect(box?.height).toBe(300);
+    await image.click({ position: { x: 100, y: 285 } });
+    await expect(page.locator(".cm-content")).toContainText(source);
+  }
+
+  // Below a table with a tall image, a click on the next line lands on it.
+  await notes.getByRole("link", { name: "Table.md" }).click();
+  await loaded(page);
+  await page.locator(".cm-content").getByText("after").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await expect(page.locator(".cm-content")).toContainText("after!");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Control+s");
+  await expect
+    .poll(() => readFileSync(join(folder, "Table.md"), "utf8"))
+    .toBe(table);
+});
+
 test("images are found by path and by name, and never guessed", async ({
   app,
 }) => {

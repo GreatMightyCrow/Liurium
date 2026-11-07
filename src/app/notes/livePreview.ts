@@ -27,6 +27,7 @@ import {
   actionsOf,
   bodyStart,
   dragEnded,
+  imageSettled,
   imagesIn,
   imagesOf,
   type ImagesOf,
@@ -37,6 +38,8 @@ import {
   mathIn,
   mathOf,
   type MathOf,
+  settledImages,
+  settledIn,
   touched,
 } from "./liveShared";
 
@@ -211,6 +214,8 @@ export function previewRanges(
   focused = true,
   images: readonly NoteImage[] = [],
   math: readonly NoteMath[] = [],
+  /** How many images have settled (`settledImages`). */
+  settled = 0,
 ): Range<Decoration>[] {
   const ranges: Range<Decoration>[] = [];
   /** A quote's marks stay hidden also inside a formula over several lines. */
@@ -476,7 +481,7 @@ export function previewRanges(
       state.doc.lineAt(image.from).to >= image.to
     ) {
       ranges.push(
-        Decoration.replace({ widget: new ImageWidget(image) }).range(
+        Decoration.replace({ widget: new ImageWidget(image, settled) }).range(
           image.from,
           image.to,
         ),
@@ -538,7 +543,7 @@ const previewPlugin = ViewPlugin.fromClass(
     /** An image's real size is known only now; CodeMirror must measure again. */
     private readonly imageSettled = (event: Event) => {
       if (event.target instanceof HTMLImageElement) {
-        this.view.requestMeasure();
+        this.view.dispatch({ effects: imageSettled.of(null) });
       }
     };
 
@@ -560,6 +565,7 @@ const previewPlugin = ViewPlugin.fromClass(
           this.view.hasFocus,
           imagesIn(state),
           mathIn(state),
+          settledIn(state),
         ),
         true,
       );
@@ -572,6 +578,7 @@ const previewPlugin = ViewPlugin.fromClass(
         update.focusChanged ||
         linksIn(update.state) !== linksIn(update.startState) ||
         imagesIn(update.state) !== imagesIn(update.startState) ||
+        settledIn(update.state) !== settledIn(update.startState) ||
         mathIn(update.state) !== mathIn(update.startState) ||
         // A callout opened or closed: its button shows the other way now.
         update.state.field(blocksField, false) !==
@@ -625,6 +632,7 @@ export function livePreview(
     imagesOf.of(images),
     mathOf.of(math),
     actionsOf.of(actions),
+    settledImages,
     previewPlugin,
     liveBlocks(),
     liveMath(),

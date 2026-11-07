@@ -22,6 +22,7 @@ import {
   imagesIn,
   linksIn,
   mathIn,
+  settledIn,
   trustedEdit,
 } from "./liveShared";
 import { parseTable } from "./tableModel";
@@ -114,6 +115,7 @@ function build(
   const body = bodyStart(state);
   const links = linksIn(state);
   const images = imagesIn(state);
+  const settled = settledIn(state);
   const math = mathIn(state);
   const definers = definersIn(math);
   for (
@@ -167,6 +169,7 @@ function build(
               inside,
               pictures,
               formulas,
+              settled,
             ),
             block: true,
           }).range(from, to),
@@ -224,6 +227,7 @@ export const blocksField = StateField.define<Blocks>({
       syntaxTree(state) === syntaxTree(startState) &&
       linksIn(state) === linksIn(startState) &&
       imagesIn(state) === imagesIn(startState) &&
+      settledIn(state) === settledIn(startState) &&
       mathIn(state) === mathIn(startState) &&
       state.readOnly === startState.readOnly
     ) {

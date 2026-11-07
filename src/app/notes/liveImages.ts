@@ -1,4 +1,4 @@
-import { WidgetType } from "@codemirror/view";
+import { type EditorView, WidgetType } from "@codemirror/view";
 import type { NoteImage } from "../../lib/ipc/commands";
 
 // Images in live preview (M3-013, ADR-0020): only what Rust resolved becomes an image
@@ -104,12 +104,29 @@ export function imageKey(image: NoteImage): string {
 }
 
 export class ImageWidget extends WidgetType {
-  constructor(private readonly image: NoteImage) {
+  constructor(
+    private readonly image: NoteImage,
+    /** How many images had settled; when it changes, the editor measures again. */
+    private readonly settled = 0,
+  ) {
     super();
   }
 
   override eq(other: ImageWidget): boolean {
-    return imageKey(other.image) === imageKey(this.image);
+    return (
+      imageKey(other.image) === imageKey(this.image) &&
+      other.settled === this.settled
+    );
+  }
+
+  /** The same image after another one settled: its element stays, so it does not load
+   *  again, and the editor draws its line again and reads its height (M3-020). */
+  override updateDOM(
+    _dom: HTMLElement,
+    _view: EditorView,
+    from: this,
+  ): boolean {
+    return imageKey(from.image) === imageKey(this.image);
   }
 
   // A box that stays: the editor ignores changes inside a widget, but if its root were

@@ -4,6 +4,7 @@ import {
   type EditorState,
   Facet,
   StateEffect,
+  StateField,
 } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
@@ -94,6 +95,24 @@ export function enterBlock(
 
 /** After a mouse drag: the decorations held still during it come up to date. */
 export const dragEnded = StateEffect.define();
+
+/** An image in the text or in a table cell has loaded or failed. */
+export const imageSettled = StateEffect.define();
+
+/** How many images have settled (M3-020). Widgets that hold images compare it, so the
+ *  editor draws them again, keeping their elements, and so reads their new heights:
+ *  `requestMeasure` alone measures nothing in a short note, as `.cm-content` has
+ *  `min-height: 100%` and its height stays the same. */
+export const settledImages = StateField.define<number>({
+  create: () => 0,
+  update: (count, transaction) =>
+    transaction.effects.some((effect) => effect.is(imageSettled))
+      ? count + 1
+      : count,
+});
+
+export const settledIn = (state: EditorState): number =>
+  state.field(settledImages, false) ?? 0;
 
 /** A change that may touch a table or a closed callout's text: from a table's own
  *  cells, the properties box, or the file changing outside. */
