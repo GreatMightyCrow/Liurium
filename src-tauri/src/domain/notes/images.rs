@@ -27,8 +27,6 @@ pub enum ImageTarget {
     Relative(String),
     /// Checked and normalized; never fetched.
     Remote(String),
-    /// A type Liurium does not show yet, as written (owner, 2026-11-06: SVG later).
-    NotShown(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,18 +75,12 @@ pub(super) fn image_of(link_type: LinkType, dest: &str, range: Range<usize>) -> 
 
 /// The target for a file name, by its ending; `None` for a file that is no image.
 fn named(name: &str, target: fn(String) -> ImageTarget) -> Option<ImageTarget> {
-    if is_image_name(name) {
-        Some(target(name.to_owned()))
-    } else if name.to_lowercase().ends_with(".svg") {
-        Some(ImageTarget::NotShown(name.to_owned()))
-    } else {
-        None
-    }
+    is_image_name(name).then(|| target(name.to_owned()))
 }
 
 fn default_alt(target: &ImageTarget) -> String {
     match target {
-        ImageTarget::Wiki(path) | ImageTarget::Relative(path) | ImageTarget::NotShown(path) => {
+        ImageTarget::Wiki(path) | ImageTarget::Relative(path) => {
             path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
         }
         ImageTarget::Remote(address) => address.clone(),
@@ -132,10 +124,7 @@ impl ImageLink {
         }
         // A wikilink with no text of its own gets its target as text from the parser.
         let text = text.trim();
-        let only_its_target = matches!(
-            &self.target,
-            ImageTarget::Wiki(name) | ImageTarget::NotShown(name) if name == text
-        );
+        let only_its_target = matches!(&self.target, ImageTarget::Wiki(name) if name == text);
         if !text.is_empty() && !only_its_target {
             text.clone_into(&mut self.alt);
         }
@@ -230,7 +219,7 @@ impl ImageSet {
             ImageTarget::Wiki(target) => self.resolve_wiki(target),
             ImageTarget::Relative(target) => self.resolve_relative(source, target),
             // The caller does not look these up.
-            ImageTarget::Remote(_) | ImageTarget::NotShown(_) => ResolvedImage::Refused,
+            ImageTarget::Remote(_) => ResolvedImage::Refused,
         }
     }
 

@@ -62,6 +62,112 @@ fn image_types_come_from_the_first_bytes() {
     }
 }
 
+const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"9\" height=\"9\"/>";
+
+#[test]
+fn an_svg_is_told_by_its_first_element() {
+    for one in [
+        &b"<svg/>"[..],
+        b"<svg>",
+        b"<svg xmlns=\"x\">",
+        b"<svg\n  xmlns=\"x\">",
+        b"<svg:svg xmlns:svg=\"x\">",
+        b"\xEF\xBB\xBF<svg>",
+        b"  \r\n\t<svg>",
+        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg>",
+        b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><svg title=\"\xE9\">",
+        b"<!-- made with > and <svg in it -->\n<svg>",
+        b"<?xml version=\"1.0\"?><!-- a --><!-- b --><svg>",
+        b"<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://x/svg11.dtd\">\n<svg>",
+        b"<!DOCTYPE svg [\n  <!ENTITY ns \"http://x\">\n  <!ENTITY a \"]\">\n]>\n<svg>",
+        b"<!DOCTYPE svg [] ><svg>",
+    ] {
+        assert!(is_svg(one), "{}", String::from_utf8_lossy(one));
+    }
+    for not_one in [
+        &b""[..],
+        b"   ",
+        b"# A note",
+        b"# A note\n\n<svg>",
+        b"SQLite format 3\0<svg>",
+        b"\x89PNG\r\n\x1a\n<svg>",
+        b"<html><svg></svg></html>",
+        b"<svgx>",
+        b"<SVG>",
+        b"<svg",
+        b"<svg:svgx>",
+        b"<?xml version=\"1.0\"",
+        b"<!-- never closed <svg>",
+        b"<!DOCTYPE svg",
+        b"<!DOCTYPE html><html>",
+        b"<!DOCTYPE svg [ <svg>",
+        // UTF-16.
+        b"\xFF\xFE<\0s\0v\0g\0>\0",
+    ] {
+        assert!(!is_svg(not_one), "{}", String::from_utf8_lossy(not_one));
+    }
+}
+
+#[test]
+fn an_svg_is_served_as_one_and_could_do_nothing_as_a_page() {
+    let (_dir, workspace, _root, id) = project(&[("pics/Draw.SVG", SVG)]);
+    let served = workspace.image_response(&Method::GET, &format!("/{id}/pics/Draw.SVG"));
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(served.body(), SVG);
+    assert_eq!(served.headers()[header::CONTENT_TYPE], "image/svg+xml");
+    assert_eq!(served.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(served.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(
+        served.headers()[header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; sandbox"
+    );
+}
+
+#[test]
+fn only_a_file_named_svg_with_such_bytes_is_one() {
+    let (_dir, workspace, _root, id) = project(&[
+        ("good.svg", SVG),
+        ("note.svg", b"# Secret"),
+        ("base.svg", b"SQLite format 3\0"),
+        ("page.svg", b"<html><svg></svg></html>"),
+        ("empty.svg", b""),
+        ("picture.svg", PNG),
+        ("drawing.png", SVG),
+        (".liurium/inside.svg", SVG),
+        ("node_modules/x.svg", SVG),
+    ]);
+    assert!(workspace.image_at(&format!("/{id}/good.svg")).is_some());
+    for name in [
+        "note.svg",
+        "base.svg",
+        "page.svg",
+        "empty.svg",
+        "picture.svg",
+        "drawing.png",
+        ".liurium/inside.svg",
+        "node_modules/x.svg",
+    ] {
+        assert_eq!(workspace.image_at(&format!("/{id}/{name}")), None, "{name}");
+    }
+}
+
+#[test]
+fn an_svg_has_a_limit_of_its_own() {
+    let (_dir, workspace, root, id) = project(&[("big.svg", SVG), ("edge.svg", SVG)]);
+    let grow = |name: &str, len: u64| {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(root.join(name))
+            .expect("file")
+            .set_len(len)
+            .expect("sparse");
+    };
+    grow("edge.svg", MAX_SVG_BYTES);
+    grow("big.svg", MAX_SVG_BYTES + 1);
+    assert!(workspace.image_at(&format!("/{id}/edge.svg")).is_some());
+    assert_eq!(workspace.image_at(&format!("/{id}/big.svg")), None);
+}
+
 #[test]
 fn a_listed_image_of_the_open_project_is_served() {
     let (_dir, workspace, _root, id) = project(&[("Ideas/Größe 1.png", PNG)]);

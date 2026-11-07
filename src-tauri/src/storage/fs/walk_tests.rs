@@ -309,13 +309,14 @@ fn images_are_listed_apart_from_notes_by_the_same_rules() {
     f.file("a.md");
     f.file("pics/One.PNG");
     f.file("pics/two.jpeg");
+    f.file("pics/x.svg");
     for skipped in [
         "pics/.hidden.png",
         ".liurium/x.png",
         ".git/x.png",
         "node_modules/x.png",
         "target/x.webp",
-        "pics/x.svg",
+        "pics/x.svgz",
         "pics/x.pdf",
     ] {
         f.file(skipped);
@@ -325,7 +326,7 @@ fn images_are_listed_apart_from_notes_by_the_same_rules() {
 
     assert_eq!(paths(&walk), ["a.md"]);
     let images: Vec<String> = walk.images.iter().map(|i| i.path.to_string()).collect();
-    assert_eq!(images, ["pics/One.PNG", "pics/two.jpeg"]);
+    assert_eq!(images, ["pics/One.PNG", "pics/two.jpeg", "pics/x.svg"]);
     assert_eq!(walk.images[0].stamp.len, "pics/One.PNG".len() as u64);
 }
 

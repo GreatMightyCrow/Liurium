@@ -132,10 +132,6 @@ pub enum ImageSource {
     Remote {
         address: String,
     },
-    /// A type Liurium does not show yet, such as SVG.
-    NotShown {
-        written: String,
-    },
     /// More than one image fits; none is guessed.
     Ambiguous {
         candidates: Vec<String>,
@@ -197,9 +193,6 @@ fn images_in(
             source: match &image.target {
                 ImageTarget::Remote(address) => ImageSource::Remote {
                     address: address.clone(),
-                },
-                ImageTarget::NotShown(written) => ImageSource::NotShown {
-                    written: written.clone(),
                 },
                 _ => match images.resolve(source, image) {
                     ResolvedImage::Found(found) => ImageSource::Local {
@@ -533,10 +526,11 @@ mod tests {
             len: 3,
             modified: std::time::UNIX_EPOCH,
         };
-        let images = ImageSet::new(vec![crate::storage::fs::FoundImage {
-            path: crate::storage::fs::RelPath::parse("Ideas/pic.png").expect("path"),
+        let found_image = |path| crate::storage::fs::FoundImage {
+            path: crate::storage::fs::RelPath::parse(path).expect("path"),
             stamp,
-        }]);
+        };
+        let images = ImageSet::new(vec![found_image("Ideas/pic.png"), found_image("x.svg")]);
         let text = "😀 ![Cat|200](pic.png) ![a](https://example.com/x.png) ![[nope.png]] \
                     ![a](../../x.png) ![[x.svg]]";
 
@@ -572,8 +566,8 @@ mod tests {
         assert_eq!(found[3].source, ImageSource::Refused);
         assert_eq!(
             found[4].source,
-            ImageSource::NotShown {
-                written: "x.svg".into()
+            ImageSource::Local {
+                address: "http://liurium-image.localhost/p/x.svg?v=0-3".into()
             }
         );
     }

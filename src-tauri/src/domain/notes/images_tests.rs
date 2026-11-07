@@ -107,16 +107,19 @@ fn what_is_no_image_stays_text() {
 }
 
 #[test]
-fn an_svg_is_named_and_never_looked_up() {
+fn an_svg_is_an_image_like_any_other() {
     assert_eq!(
         only("![a](pics/x.SVG)").target,
-        ImageTarget::NotShown("pics/x.SVG".into())
+        ImageTarget::Relative("pics/x.SVG".into())
     );
-    assert_eq!(
-        only("![[x.svg]]").target,
-        ImageTarget::NotShown("x.svg".into())
-    );
+    assert_eq!(only("![[x.svg]]").target, ImageTarget::Wiki("x.svg".into()));
     assert_eq!(only("![[pics/x.svg]]").alt, "x.svg");
+    assert_eq!(only("![[x.svg|200]]").width, Some(200));
+    assert_eq!(
+        only("![a](https://example.com/x.svg)").target,
+        ImageTarget::Remote("https://example.com/x.svg".into())
+    );
+    assert!(scan("![a](x.svgz) ![[y.svgz]]").images.is_empty());
 }
 
 #[test]

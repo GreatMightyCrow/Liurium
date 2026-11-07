@@ -19,8 +19,6 @@ export function imageNote(image: NoteImage): string | null {
       return null;
     case "remote":
       return `Remote image not loaded: ${source.address}`;
-    case "notShown":
-      return `This image type is not shown yet: ${source.written}`;
     case "missing":
       return `Image not found: ${source.written}`;
     case "ambiguous": {
@@ -39,6 +37,10 @@ function placeholder(text: string): HTMLElement {
   note.textContent = text;
   return note;
 }
+
+/** An SVG with only a `viewBox` reports 300 × 150 and shows at the text's width, so its
+ *  natural size says nothing about how big it shows (M3-019). */
+const isSvgAddress = (address: string) => /\.svg(?:\?|$)/i.test(address);
 
 /** The image, or the placeholder that takes its place. */
 export function imageElement(image: NoteImage): HTMLElement {
@@ -69,20 +71,27 @@ export function imageElement(image: NoteImage): HTMLElement {
       img.height = known.height;
     }
   }
+  const fail = () => {
+    img.replaceWith(placeholder(`Image could not be shown: ${image.alt}`));
+  };
   img.addEventListener("load", () => {
+    // `<svg width="0">` loads, and would leave nothing to see or click.
+    if (img.naturalWidth === 0) {
+      fail();
+      return;
+    }
+    if (isSvgAddress(address)) {
+      return;
+    }
     if (knownSizes.size >= MAX_KNOWN) {
       knownSizes.clear();
     }
-    if (img.naturalWidth > 0) {
-      knownSizes.set(address, {
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      });
-    }
+    knownSizes.set(address, {
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    });
   });
-  img.addEventListener("error", () => {
-    img.replaceWith(placeholder(`Image could not be shown: ${image.alt}`));
-  });
+  img.addEventListener("error", fail);
   // Last, so the listeners above cannot miss it.
   img.src = address;
   return img;

@@ -49,6 +49,9 @@ function png(width: number, height: number, rgb: [number, number, number]) {
 const TEAL: [number, number, number] = [20, 140, 130];
 const CORAL: [number, number, number] = [220, 90, 70];
 
+const SVG_NAMESPACE = 'xmlns="http://www.w3.org/2000/svg"';
+const SIZED_SVG = `<svg ${SVG_NAMESPACE} width="200" height="100"><rect width="200" height="100" fill="#148c82"/></svg>`;
+
 function write(folder: string, name: string, bytes: Buffer | string) {
   const path = join(folder, name);
   mkdirSync(dirname(path), { recursive: true });
@@ -174,8 +177,6 @@ test("images are found by path and by name, and never guessed", async ({
       "",
       "![hidden](.liurium/x.png)",
       "",
-      "![[drawing.svg]]",
-      "",
       "- in a list ![[deep.png|Deep]]",
       "",
       "> [!note] A callout",
@@ -207,7 +208,6 @@ test("images are found by path and by name, and never guessed", async ({
     "Image not found: nope.png",
     "Image not shown: it is outside the project or in a hidden folder",
     "Image not shown: it is outside the project or in a hidden folder",
-    "This image type is not shown yet: drawing.svg",
   ]);
   // Not an image Rust resolved: stays what it is.
   await expect(page.locator(".cm-content")).toContainText(
@@ -261,6 +261,11 @@ test("the protocol gives images of the open project and nothing else", async ({
   write(folder, "Secret.md", "# Secret\n");
   write(folder, "renamed.png", "# Secret\n");
   write(folder, "node_modules/x.png", png(10, 10, TEAL));
+  write(folder, "note.svg", "# Secret\n");
+  write(folder, "base.svg", "SQLite format 3\0");
+  write(folder, "picture.svg", png(10, 10, TEAL));
+  write(folder, "drawing.png", SIZED_SVG);
+  write(folder, "node_modules/x.svg", SIZED_SVG);
   const page = await app.launch({ pick: folder });
   await openNote(page);
 
@@ -292,6 +297,11 @@ test("the protocol gives images of the open project and nothing else", async ({
     "/Secret.md",
     "/renamed.png",
     "/node_modules/x.png",
+    "/note.svg",
+    "/base.svg",
+    "/picture.svg",
+    "/drawing.png",
+    "/node_modules/x.svg",
     "/../pic.png",
     "/..%2F..%2Fpic.png",
     "/missing.png",
@@ -431,6 +441,188 @@ test("an image added outside appears where a placeholder stood", async ({
     timeout: 15_000,
   });
   await expect(page.locator(".cm-image-note")).toHaveCount(0);
+});
+
+test("an SVG shows at its size, also when it shows again, in text and a table cell", async ({
+  app,
+}) => {
+  const folder = app.folder("Images-");
+  const before = [
+    "first",
+    "",
+    "![[sized.svg]]",
+    "",
+    "![Wide](pics/wide.svg)",
+    "",
+    "![[sized.svg|50]]",
+    "",
+    "| Picture |",
+    "|---|",
+    "| ![[sized.svg\\|40]] |",
+    "",
+    "end",
+    "",
+  ].join("\n");
+  write(folder, "Plan.md", before);
+  write(folder, "sized.svg", SIZED_SVG);
+  write(
+    folder,
+    "pics/wide.svg",
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n<!-- only a viewBox -->\n<svg ${SVG_NAMESPACE} viewBox="0 0 400 200"><rect width="400" height="200" fill="#148c82"/></svg>`,
+  );
+  const page = await app.launch({ pick: folder });
+  await openNote(page);
+
+  await loaded(page);
+  const images = page.locator(".cm-content img.cm-image");
+  await expect(images).toHaveCount(4);
+  const size = (index: number) =>
+    images
+      .nth(index)
+      .evaluate((element) => [element.clientWidth, element.clientHeight]);
+  await expect.poll(() => size(0)).toEqual([200, 100]);
+  await expect.poll(() => size(2)).toEqual([50, 25]);
+  await expect.poll(() => size(3)).toEqual([40, 20]);
+  await expect(page.locator('[data-cell="1:0"] img.cm-image')).toBeVisible();
+
+  // A `viewBox` alone fills the text's width, and must not shrink when it shows again.
+  const line = await page
+    .locator(".cm-content .cm-line")
+    .first()
+    .evaluate((element) => element.clientWidth);
+  const wide = page.locator('.cm-content img.cm-image[alt="Wide"]');
+  const wideSize = () =>
+    wide.evaluate((element) => [element.clientWidth, element.clientHeight]);
+  await expect.poll(async () => (await wideSize())[0]).toBeGreaterThan(300);
+  const [width, height] = await wideSize();
+  expect(width).toBeLessThanOrEqual(line);
+  expect(height).toBe(Math.round(width / 2));
+
+  await wide.click();
+  await expect(page.locator(".cm-content")).toContainText(
+    "![Wide](pics/wide.svg)",
+  );
+  await expect(wide).toHaveCount(0);
+  await page.locator(".cm-content").getByText("first").click();
+  await expect(wide).toBeVisible();
+  await expect.poll(wideSize).toEqual([width, height]);
+
+  // The file stays what it was.
+  expect(readFileSync(join(folder, "Plan.md"), "utf8")).toBe(before);
+});
+
+test("an SVG that fails shows why, and one changed outside shows anew", async ({
+  app,
+}) => {
+  const folder = app.folder("Images-");
+  const before =
+    "![[broken.svg]]\n\n![[empty.svg]]\n\n![[nothing.svg]]\n\n![[late.svg]]\n\nend\n";
+  write(folder, "Plan.md", before);
+  write(folder, "broken.svg", `<svg ${SVG_NAMESPACE}><rect>`);
+  write(folder, "empty.svg", "# Not an image\n");
+  write(folder, "nothing.svg", `<svg ${SVG_NAMESPACE} width="0" height="0"/>`);
+  write(folder, "late.svg", SIZED_SVG);
+  const page = await app.launch({ pick: folder });
+  await openNote(page);
+
+  await expect(page.locator(".cm-image-note")).toHaveText([
+    "Image could not be shown: broken.svg",
+    "Image could not be shown: empty.svg",
+    "Image could not be shown: nothing.svg",
+  ]);
+  const late = await loaded(page);
+  await expect.poll(() => late.evaluate((e) => e.clientWidth)).toBe(200);
+
+  write(
+    folder,
+    "late.svg",
+    `<svg ${SVG_NAMESPACE} width="90" height="90"><rect width="90" height="90"/></svg>`,
+  );
+  await expect
+    .poll(
+      () =>
+        page
+          .locator(".cm-content img.cm-image")
+          .evaluate((element) => element.clientWidth),
+      { timeout: 15_000 },
+    )
+    .toBe(90);
+  expect(readFileSync(join(folder, "Plan.md"), "utf8")).toBe(before);
+});
+
+test("a hostile SVG runs nothing and asks nothing from outside", async ({
+  app,
+}) => {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? "");
+    response.setHeader("Access-Control-Allow-Origin", "*");
+    response.end();
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address() as AddressInfo;
+  const spy = `http://127.0.0.1:${String(port)}`;
+  try {
+    // The counter counts: what follows would be empty anyway if it did not.
+    await fetch(`${spy}/control`);
+    expect(requests).toEqual(["/control"]);
+    requests.length = 0;
+
+    const SECRET = "secret-of-this-svg";
+    const box = `${SVG_NAMESPACE} xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50"`;
+    const hostile = {
+      script: `<svg ${box}><rect width="50" height="50"/><script>console.log("${SECRET}");document.title="${SECRET}";top.document.title="${SECRET}";fetch("${spy}/script");new Image().src="${spy}/script-image";</script></svg>`,
+      onload: `<svg ${box} onload="console.log('${SECRET}');fetch('${spy}/onload')"><rect width="50" height="50"/></svg>`,
+      image: `<svg ${box}><image href="${spy}/image.png" width="9" height="9"/><image xlink:href="${spy}/xlink.png" width="9" height="9"/></svg>`,
+      css: `<svg ${box}><style>@import url(${spy}/import.css);@font-face{font-family:x;src:url(${spy}/font.woff2)}text{font-family:x}rect{fill:url(${spy}/fill.svg#a)}</style><text y="20">x</text><rect width="9" height="9"/></svg>`,
+      use: `<svg ${box}><use href="${spy}/use.svg#a"/></svg>`,
+      foreign: `<svg ${box}><foreignObject width="50" height="50"><div xmlns="http://www.w3.org/1999/xhtml"><img src="${spy}/foreign.png"/><iframe src="${spy}/frame"></iframe><link rel="stylesheet" href="${spy}/foreign.css"/><meta http-equiv="refresh" content="0;url=${spy}/refresh"/></div></foreignObject></svg>`,
+      sheet: `<?xml version="1.0"?><?xml-stylesheet href="${spy}/sheet.css" type="text/css"?><svg ${box}/>`,
+      entity: `<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x SYSTEM "${spy}/entity">]><svg ${box}><text>&x;</text></svg>`,
+      doctype: `<?xml version="1.0"?><!DOCTYPE svg SYSTEM "${spy}/doctype.dtd"><svg ${box}/>`,
+      animate: `<svg ${box}><image width="9" height="9"><animate attributeName="href" to="${spy}/animate.png" dur="1ms" fill="freeze"/></image></svg>`,
+      filter: `<svg ${box}><filter id="f"><feImage href="${spy}/filter.png"/></filter><rect width="9" height="9" filter="url(#f)"/></svg>`,
+    };
+    const folder = app.folder("Images-");
+    const names = Object.keys(hostile);
+    for (const [name, text] of Object.entries(hostile)) {
+      write(folder, `${name}.svg`, text);
+    }
+    write(
+      folder,
+      "Plan.md",
+      `${names.map((name) => `![[${name}.svg]]`).join("\n\n")}\n\nend\n`,
+    );
+    const page = await app.launch({ pick: folder });
+    const said: string[] = [];
+    page.on("console", (message) => said.push(message.text()));
+    const title = await page.title();
+    await openNote(page);
+
+    // Each one drew: this is not passing because nothing was shown.
+    const images = page.locator(".cm-content img.cm-image");
+    await expect(images).toHaveCount(names.length);
+    await expect
+      .poll(() =>
+        images.evaluateAll((all) =>
+          all.every((each) => (each as HTMLImageElement).naturalWidth === 50),
+        ),
+      )
+      .toBe(true);
+    await expect(page.locator(".cm-image-note")).toHaveCount(0);
+    // Give anything that would have started the time to arrive.
+    await page.waitForTimeout(1000);
+
+    expect(requests).toEqual([]);
+    expect(said.filter((text) => text.includes(SECRET))).toEqual([]);
+    expect(await page.title()).toBe(title);
+    // It stayed in the page: nothing navigated it away.
+    await expect(page.locator(".cm-content")).toContainText("end");
+  } finally {
+    server.close();
+  }
 });
 
 test("a read-only note shows images too", async ({ app }) => {

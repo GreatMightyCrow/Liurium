@@ -29,9 +29,10 @@ pub const SKIPPED_FOLDERS: [&str; 7] = [
 /// File endings that make a note, compared without case.
 pub const NOTE_ENDINGS: [&str; 2] = [".md", ".markdown"];
 
-/// File endings of images Liurium shows, compared without case (M3-013). No SVG: it is a
-/// document that can hold scripts, and needs its own decision.
-pub const IMAGE_ENDINGS: [&str; 7] = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"];
+/// File endings of images Liurium shows, compared without case (M3-013, M3-019).
+pub const IMAGE_ENDINGS: [&str; 8] = [
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif", ".svg",
+];
 
 /// The walk lists at most this many images; one past it shows as not found.
 const MAX_IMAGES: usize = 100_000;

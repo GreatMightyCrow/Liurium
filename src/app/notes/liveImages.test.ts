@@ -27,10 +27,6 @@ describe("placeholders say why", () => {
       { state: "remote", address: "https://example.com/x.png" },
       "Remote image not loaded: https://example.com/x.png",
     ],
-    [
-      { state: "notShown", written: "x.svg" },
-      "This image type is not shown yet: x.svg",
-    ],
     [{ state: "missing", written: "x.png" }, "Image not found: x.png"],
     [
       { state: "ambiguous", candidates: ["a/x.png", "b/x.png"] },
@@ -117,6 +113,44 @@ describe("a local image", () => {
     ) as HTMLImageElement;
     expect(narrower.getAttribute("width")).toBe("100");
     expect(narrower.getAttribute("height")).toBe("50");
+  });
+
+  test.each([
+    "http://liurium-image.localhost/p/draw.svg?v=1-2",
+    "http://liurium-image.localhost/p/DRAW.SVG?v=1-2",
+  ])("an SVG's natural size is not kept: %s", (address) => {
+    const source: ImageSource = { state: "local", address };
+    const first = imageElement(image(source)) as HTMLImageElement;
+    Object.defineProperty(first, "naturalWidth", { value: 300 });
+    Object.defineProperty(first, "naturalHeight", { value: 150 });
+    first.dispatchEvent(new Event("load"));
+
+    const again = imageElement(image(source)) as HTMLImageElement;
+    expect(again.hasAttribute("width")).toBe(false);
+    expect(again.hasAttribute("height")).toBe(false);
+    expect(again.classList.contains("cm-image-auto")).toBe(true);
+  });
+
+  test("a name that only holds .svg is kept like any picture", () => {
+    const address = "http://liurium-image.localhost/p/a.svg.png?v=1-2";
+    const source: ImageSource = { state: "local", address };
+    const first = imageElement(image(source)) as HTMLImageElement;
+    Object.defineProperty(first, "naturalWidth", { value: 40 });
+    Object.defineProperty(first, "naturalHeight", { value: 20 });
+    first.dispatchEvent(new Event("load"));
+
+    const again = imageElement(image(source)) as HTMLImageElement;
+    expect(again.getAttribute("width")).toBe("40");
+  });
+
+  test("what loads with no size becomes a placeholder", () => {
+    const parent = document.createElement("div");
+    const element = imageElement(local());
+    parent.appendChild(element);
+    Object.defineProperty(element, "naturalWidth", { value: 0 });
+    element.dispatchEvent(new Event("load"));
+    expect(parent.querySelector("img")).toBeNull();
+    expect(parent.textContent).toBe("Image could not be shown: A cat");
   });
 });
 
