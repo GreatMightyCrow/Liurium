@@ -600,7 +600,6 @@ test("a hostile SVG runs nothing and asks nothing from outside", async ({
     const page = await app.launch({ pick: folder });
     const said: string[] = [];
     page.on("console", (message) => said.push(message.text()));
-    const title = await page.title();
     await openNote(page);
 
     // Each one drew: this is not passing because nothing was shown.
@@ -619,7 +618,8 @@ test("a hostile SVG runs nothing and asks nothing from outside", async ({
 
     expect(requests).toEqual([]);
     expect(said.filter((text) => text.includes(SECRET))).toEqual([]);
-    expect(await page.title()).toBe(title);
+    // The script tries to set it to the secret, on its own document and on the page's.
+    expect(await page.title()).toBe("Liurium");
     // It stayed in the page: nothing navigated it away.
     await expect(page.locator(".cm-content")).toContainText("end");
   } finally {
