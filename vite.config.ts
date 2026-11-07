@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
@@ -32,6 +33,13 @@ export default defineConfig(() => ({
   build: {
     // A small file would become a `data:` address, which the CSP refuses for fonts.
     assetsInlineLimit: 0,
+    rolldownOptions: {
+      input: {
+        main: resolve(import.meta.dirname, "index.html"),
+        // Mermaid's sandboxed frame, served by Rust's own protocol (M3-011).
+        diagramFrame: resolve(import.meta.dirname, "diagram-frame.html"),
+      },
+    },
   },
 
   test: {

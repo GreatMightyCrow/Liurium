@@ -256,6 +256,32 @@ const theme = EditorView.theme({
       color: "CanvasText",
     },
   },
+  // Diagrams (M3-011): a picture from Mermaid, never wider than the text.
+  ".cm-diagram": {
+    display: "block",
+    minHeight: "var(--space-5)",
+    paddingBlock: "var(--space-2)",
+    textAlign: "center",
+  },
+  ".cm-diagram-image": {
+    display: "inline-block",
+    maxWidth: "100%",
+    height: "auto",
+    verticalAlign: "bottom",
+  },
+  ".cm-diagram-source": {
+    color: "var(--color-text-secondary)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--font-size-sm)",
+    textAlign: "start",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  },
+  ".cm-diagram-error": {
+    padding: "0 var(--space-2)",
+    border: "var(--border-width) dashed var(--color-border-control)",
+    borderRadius: "var(--radius-sm)",
+  },
   ".cm-task": {
     margin: "0",
     verticalAlign: "middle",

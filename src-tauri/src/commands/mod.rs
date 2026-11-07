@@ -7,6 +7,7 @@ mod bindings;
 pub mod changes;
 pub mod closing;
 pub mod data;
+pub mod diagrams;
 pub mod editor;
 mod error;
 pub mod images;

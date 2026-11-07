@@ -18,7 +18,13 @@ import {
 import type katexModule from "katex";
 import type { KatexOptions } from "katex";
 import type { NoteMath } from "../../lib/ipc/commands";
-import { bodyStart, dragEnded, mathIn, touched } from "./liveShared";
+import {
+  bodyStart,
+  dragEnded,
+  enterBlock,
+  mathIn,
+  touched,
+} from "./liveShared";
 
 // Formulas in live preview (M3-010, ADR-0020). A formula's text is untrusted and KaTeX
 // is a large parser, so it only ever gets text and gives back DOM nodes: every option
@@ -382,31 +388,6 @@ export const mathBlocksField = StateField.define<MathBlocks>({
     EditorView.decorations.from(field, (value) => value.marks),
 });
 
-/** The arrow keys go into a block from the line next to it: a block widget has no
- *  lines of its own, so they would move past it. */
-function enterBlock(view: EditorView, forward: boolean): boolean {
-  const range = view.state.selection.main;
-  if (!range.empty) {
-    return false;
-  }
-  const moved = view.moveVertically(range, forward).head;
-  const block = view.state
-    .field(mathBlocksField)
-    .blocks.find((each) =>
-      forward
-        ? range.head < each.from && moved >= each.from
-        : range.head > each.to && moved <= each.to,
-    );
-  if (block === undefined) {
-    return false;
-  }
-  view.dispatch({
-    selection: { anchor: forward ? block.from : block.to },
-    scrollIntoView: true,
-  });
-  return true;
-}
-
 /** Loads KaTeX and its CSS once a note has a formula. */
 const mathLoader = ViewPlugin.define((view) => {
   const prepare = (state: EditorState) => {
@@ -440,8 +421,16 @@ export function liveMath(): Extension {
     mathLoader,
     Prec.high(
       keymap.of([
-        { key: "ArrowDown", run: (view) => enterBlock(view, true) },
-        { key: "ArrowUp", run: (view) => enterBlock(view, false) },
+        {
+          key: "ArrowDown",
+          run: (view) =>
+            enterBlock(view, true, view.state.field(mathBlocksField).blocks),
+        },
+        {
+          key: "ArrowUp",
+          run: (view) =>
+            enterBlock(view, false, view.state.field(mathBlocksField).blocks),
+        },
       ]),
     ),
   ];

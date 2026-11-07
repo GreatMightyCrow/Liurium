@@ -5,6 +5,7 @@ import {
   Facet,
   StateEffect,
 } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 
 // What live preview's parts share (M3-017, M3-018).
@@ -62,6 +63,33 @@ export function touched(
   to: number,
 ): boolean {
   return selection.ranges.some((range) => range.from <= to && range.to >= from);
+}
+
+/** The arrow keys go into a block from the line next to it: a block widget has no
+ *  lines of its own, so they would move past it. */
+export function enterBlock(
+  view: EditorView,
+  forward: boolean,
+  blocks: readonly { from: number; to: number }[],
+): boolean {
+  const range = view.state.selection.main;
+  if (!range.empty) {
+    return false;
+  }
+  const moved = view.moveVertically(range, forward).head;
+  const block = blocks.find((each) =>
+    forward
+      ? range.head < each.from && moved >= each.from
+      : range.head > each.to && moved <= each.to,
+  );
+  if (block === undefined) {
+    return false;
+  }
+  view.dispatch({
+    selection: { anchor: forward ? block.from : block.to },
+    scrollIntoView: true,
+  });
+  return true;
 }
 
 /** After a mouse drag: the decorations held still during it come up to date. */

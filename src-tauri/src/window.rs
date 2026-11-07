@@ -11,6 +11,12 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 /// The label of the main window in `tauri.conf.json`.
 const MAIN: &str = "main";
 
+/// Done here instead of Tauri's `freezePrototype`: on Windows that also runs in every
+/// frame, and Mermaid cannot load with a frozen prototype. Its frame is sandboxed and
+/// shares nothing with this page, so only the page needs this (M3-011).
+pub const FREEZE_MAIN_PAGE: &str =
+    "if (window.top === window) { Object.freeze(Object.prototype); }";
+
 pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box<dyn Error>> {
     let theme = settings.theme.theme();
     let mut config = app
@@ -27,6 +33,7 @@ pub fn create_main_window(app: &AppHandle, settings: Settings) -> Result<(), Box
     config.visible = false;
     config.url = page(settings.frame, theme);
     let builder = WebviewWindowBuilder::from_config(app, &config)?
+        .initialization_script(FREEZE_MAIN_PAGE)
         .initialization_script(theme.start_script())
         .icon(theme.window_icon())?;
     // The end-to-end build keeps WebView2's own data in the test's folder too.

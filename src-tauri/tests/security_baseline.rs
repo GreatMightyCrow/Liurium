@@ -7,13 +7,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// CSP sources the webview may use: its own bundle and Tauri's IPC channel.
-const ALLOWED_CSP_SOURCES: [&str; 5] = [
+const ALLOWED_CSP_SOURCES: [&str; 7] = [
     "'self'",
     "'none'",
     "ipc:",
     "http://ipc.localhost",
     // Images from the open project, each one checked by Rust (M3-013, ADR-0020).
     "http://liurium-image.localhost",
+    // The sandboxed frame that runs Mermaid, and the pictures it answers with, which the
+    // page itself makes into `blob:` addresses and shows only as images (M3-011).
+    "http://liurium-diagram.localhost",
+    "blob:",
 ];
 
 /// Permissions with a row in the security model's permission table.
@@ -118,9 +122,18 @@ fn csp_allows_only_local_sources() {
 #[test]
 fn hardening_flags_are_set() {
     let config = read_json(&manifest_path("tauri.conf.json"));
+    // Off only because the app freezes the main page itself: Tauri's flag also reaches
+    // frames on Windows, where Mermaid cannot load with it (M3-011). The real page is
+    // checked in `e2e/diagrams.spec.ts`.
     assert_eq!(
         config["app"]["security"]["freezePrototype"],
-        Value::Bool(true)
+        Value::Bool(false)
+    );
+    let window = fs::read_to_string(manifest_path("src/window.rs")).expect("window.rs");
+    assert!(
+        window.contains("Object.freeze(Object.prototype)")
+            && window.contains(".initialization_script(FREEZE_MAIN_PAGE)"),
+        "the main page must freeze Object.prototype itself"
     );
     assert_ne!(config["app"]["withGlobalTauri"], Value::Bool(true));
 }

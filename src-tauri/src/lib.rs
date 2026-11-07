@@ -69,6 +69,11 @@ pub fn run() {
             commands::images::SCHEME,
             commands::images::handle,
         )
+        // Likewise: only the diagram frame's own page and scripts (M3-011).
+        .register_asynchronous_uri_scheme_protocol(
+            commands::diagrams::SCHEME,
+            commands::diagrams::handle,
+        )
         .setup(|app| {
             let app_dir = app_data_dir(app);
             let startup = Startup::open(app_dir.as_deref());

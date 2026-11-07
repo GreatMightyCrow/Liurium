@@ -20,6 +20,7 @@ import {
   liveBlocks,
   toggleCallout,
 } from "./liveBlocks";
+import { diagramsField, diagramShownAt, liveDiagrams } from "./liveDiagrams";
 import { ImageWidget } from "./liveImages";
 import { definersBefore, definersIn, liveMath, MathWidget } from "./liveMath";
 import {
@@ -420,6 +421,9 @@ export function previewRanges(
             return false;
           }
           case "FencedCode": {
+            if (diagramShownAt(state, from)) {
+              return false;
+            }
             eachLine(from, to, part, codeLine, "code");
             if (!near(from, to)) {
               const marks = node.getChildren("CodeMark");
@@ -572,6 +576,9 @@ const previewPlugin = ViewPlugin.fromClass(
         // A callout opened or closed: its button shows the other way now.
         update.state.field(blocksField, false) !==
           update.startState.field(blocksField, false) ||
+        // A diagram became its source again, or the other way round.
+        update.state.field(diagramsField, false) !==
+          update.startState.field(diagramsField, false) ||
         syntaxTree(update.state) !== syntaxTree(update.startState) ||
         update.startState.readOnly !== update.state.readOnly ||
         update.transactions.some((transaction) =>
@@ -621,6 +628,7 @@ export function livePreview(
     previewPlugin,
     liveBlocks(),
     liveMath(),
+    liveDiagrams(),
   ];
 }
 

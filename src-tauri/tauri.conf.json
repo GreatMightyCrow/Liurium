@@ -27,8 +27,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' http://liurium-image.localhost; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'",
-      "freezePrototype": true
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' http://liurium-image.localhost blob:; font-src 'self'; connect-src ipc: http://ipc.localhost; frame-src http://liurium-diagram.localhost; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "freezePrototype": false
     }
   },
   "bundle": {
