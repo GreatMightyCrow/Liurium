@@ -410,3 +410,88 @@ fn note_links_stay_note_links_next_to_external_ones() {
     assert_eq!(found.links.len(), 2);
     assert_eq!(found.external.len(), 1);
 }
+
+fn math(text: &str) -> Vec<(String, String, bool)> {
+    scan(text)
+        .math
+        .into_iter()
+        .map(|found| (text[found.range].to_owned(), found.tex, found.display))
+        .collect()
+}
+
+#[test]
+fn formulas_are_found_inline_and_as_blocks() {
+    assert_eq!(
+        math("a $x^2$ b\n\n$$\ny\n$$\n\n$$z$$\n"),
+        [
+            ("$x^2$".to_owned(), "x^2".to_owned(), false),
+            ("$$\ny\n$$".to_owned(), "\ny\n".to_owned(), true),
+            ("$$z$$".to_owned(), "z".to_owned(), true),
+        ]
+    );
+}
+
+#[test]
+fn prices_are_no_formulas() {
+    assert_eq!(math("costs $5 and $6 today\n"), []);
+    assert_eq!(math("costs $5-$6 today\n"), []);
+    assert_eq!(math("costs $5-$60\n"), []);
+}
+
+#[test]
+fn a_digit_before_or_a_letter_after_does_not_stop_a_formula() {
+    assert_eq!(math("2$x$\n").len(), 1);
+    assert_eq!(math("$x$a\n").len(), 1);
+    assert_eq!(math("$x$ 5\n").len(), 1);
+}
+
+#[test]
+fn what_is_not_a_formula_stays_text() {
+    assert_eq!(math("$ x$ and $x $\n"), []);
+    assert_eq!(math("`$x$`\n"), []);
+    assert_eq!(math("\\$x$\n"), []);
+    assert_eq!(math("```\n$x$\n```\n"), []);
+    assert_eq!(math("%% $x$ %%\n"), []);
+}
+
+#[test]
+fn an_empty_formula_would_show_as_nothing_so_it_stays_text() {
+    assert_eq!(math("$$$$\n"), []);
+    assert_eq!(math("$$\n\n$$\n"), []);
+}
+
+#[test]
+fn a_formula_in_an_image_text_belongs_to_the_image() {
+    assert_eq!(math("![$x$](pic.png)\n"), []);
+}
+
+#[test]
+fn a_very_long_formula_stays_text() {
+    let fits = format!("${}$\n", "x".repeat(MAX_FORMULA_BYTES));
+    let long = format!("${}$\n", "x".repeat(MAX_FORMULA_BYTES + 1));
+    assert_eq!(math(&fits).len(), 1);
+    assert_eq!(math(&long), []);
+}
+
+#[test]
+fn a_formula_keeps_a_tag_and_a_comment_mark_as_its_own_text() {
+    let found = scan("$a #b %% c$ and #real\n");
+    assert_eq!(found.math.len(), 1);
+    assert_eq!(found.tags.len(), 1);
+    assert_eq!(found.tags[0].tag, "real");
+}
+
+#[test]
+fn a_formula_in_a_table_cell_loses_the_escape_of_its_pipe() {
+    let text = "| a |\n| - |\n| $x\\|y$ |\n";
+    assert_eq!(
+        math(text),
+        [("$x\\|y$".to_owned(), "x|y".to_owned(), false)]
+    );
+}
+
+#[test]
+fn front_matter_holds_no_formulas() {
+    assert_eq!(math("---\nprice: $x$\n---\n$y$\n").len(), 1);
+    assert_eq!(math("---\nprice: $x$\n---\n$y$\n")[0].1, "y");
+}

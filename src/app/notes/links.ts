@@ -1,4 +1,4 @@
-import type { NoteImage, NoteLink, NoteTag } from "../../lib/ipc/commands";
+import type { NoteTag } from "../../lib/ipc/commands";
 
 // Links in the editor (M3-005). Rust reports ranges in UTF-16 units of the text it
 // got, which has the file's line breaks; CodeMirror counts every line break as one
@@ -27,46 +27,17 @@ export function toEditorPositions(
   return result;
 }
 
-/** Links with their ranges in CodeMirror positions. */
-export function inEditor(text: string, links: readonly NoteLink[]): NoteLink[] {
-  const positions = toEditorPositions(
-    text,
-    links.flatMap((link) => [link.from, link.to]),
-  );
-  return links.map((link, i) => ({
-    ...link,
-    from: positions[2 * i],
-    to: positions[2 * i + 1],
-  }));
-}
-
-/** Images with their ranges in CodeMirror positions. */
-export function imagesInEditor(
+/** Links, tags, images, or formulas with their ranges in CodeMirror positions. */
+export function inEditor<Placed extends { from: number; to: number }>(
   text: string,
-  images: readonly NoteImage[],
-): NoteImage[] {
+  found: readonly Placed[],
+): Placed[] {
   const positions = toEditorPositions(
     text,
-    images.flatMap((image) => [image.from, image.to]),
+    found.flatMap((each) => [each.from, each.to]),
   );
-  return images.map((image, i) => ({
-    ...image,
-    from: positions[2 * i],
-    to: positions[2 * i + 1],
-  }));
-}
-
-/** Tags with their ranges in CodeMirror positions. */
-export function tagsInEditor(
-  text: string,
-  tags: readonly NoteTag[],
-): NoteTag[] {
-  const positions = toEditorPositions(
-    text,
-    tags.flatMap((tag) => [tag.from, tag.to]),
-  );
-  return tags.map((tag, i) => ({
-    ...tag,
+  return found.map((each, i) => ({
+    ...each,
     from: positions[2 * i],
     to: positions[2 * i + 1],
   }));

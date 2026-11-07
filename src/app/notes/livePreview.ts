@@ -1,10 +1,8 @@
 import { syntaxTree } from "@codemirror/language";
 import {
-  type EditorSelection,
   type EditorState,
   type Extension,
   type Range,
-  StateEffect,
 } from "@codemirror/state";
 import {
   Decoration,
@@ -14,7 +12,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 import {
   blocksField,
   calloutOf,
@@ -23,9 +21,11 @@ import {
   toggleCallout,
 } from "./liveBlocks";
 import { ImageWidget } from "./liveImages";
+import { definersBefore, definersIn, liveMath, MathWidget } from "./liveMath";
 import {
   actionsOf,
   bodyStart,
+  dragEnded,
   imagesIn,
   imagesOf,
   type ImagesOf,
@@ -33,6 +33,10 @@ import {
   linksIn,
   linksOf,
   type LinksOf,
+  mathIn,
+  mathOf,
+  type MathOf,
+  touched,
 } from "./liveShared";
 
 // Live preview (M3-017, ADR-0020): notes read as formatted text while being edited,
@@ -40,15 +44,6 @@ import {
 // nothing here writes except a click on a task's checkbox, which is one normal edit.
 // Lezer tells how the text looks; link targets keep coming from Rust, so a
 // disagreement between the two parsers can change a look, never the file.
-
-/** Whether the cursor or a selection touches this range: then its marks show. */
-export function touched(
-  selection: EditorSelection,
-  from: number,
-  to: number,
-): boolean {
-  return selection.ranges.some((range) => range.from <= to && range.to >= from);
-}
 
 class Bullet extends WidgetType {
   override eq(): boolean {
@@ -214,8 +209,11 @@ export function previewRanges(
   links: readonly NoteLink[],
   focused = true,
   images: readonly NoteImage[] = [],
+  math: readonly NoteMath[] = [],
 ): Range<Decoration>[] {
   const ranges: Range<Decoration>[] = [];
+  /** A quote's marks stay hidden also inside a formula over several lines. */
+  const quoteMarks = new Set<Range<Decoration>>();
   // Without focus there is no cursor to show marks for: a note that just opened has
   // its cursor at the start, and its first line should still read as formatted text.
   const near = (from: number, to: number) =>
@@ -380,7 +378,11 @@ export function previewRanges(
           }
           case "QuoteMark":
             if (!near(from, to)) {
+              const before = ranges.length;
               hiddenWithSpace(from, to);
+              for (const mark of ranges.slice(before)) {
+                quoteMarks.add(mark);
+              }
             }
             return undefined;
           case "ListMark": {
@@ -477,11 +479,46 @@ export function previewRanges(
       );
     }
   }
-  return ranges;
-}
 
-/** After a mouse drag: the decorations held still during it come up to date. */
-const dragEnded = StateEffect.define();
+  // Formulas (M3-010): Rust found them. Lezer knows no math and reads `$a_b_c$` as
+  // having emphasis, so nothing of its decorations stays inside a formula: there the
+  // text reads as written.
+  const inView = math.filter(
+    (formula) =>
+      formula.to > formula.from &&
+      formula.to <= state.doc.length &&
+      formula.from >= body &&
+      visible.some(
+        (part) => formula.from <= part.to && formula.to >= part.from,
+      ),
+  );
+  const kept = ranges.filter(
+    (range) =>
+      range.from === range.to ||
+      quoteMarks.has(range) ||
+      !inView.some(
+        (formula) => range.from < formula.to && range.to > formula.from,
+      ),
+  );
+  const definers = definersIn(math);
+  for (const formula of inView) {
+    // Over several lines it is a block, from a state field, or stays source.
+    if (
+      !near(formula.from, formula.to) &&
+      state.doc.lineAt(formula.from).to >= formula.to
+    ) {
+      kept.push(
+        Decoration.replace({
+          widget: new MathWidget(
+            formula,
+            definersBefore(definers, formula.from),
+          ),
+        }).range(formula.from, formula.to),
+      );
+    }
+  }
+  return kept;
+}
 
 const previewPlugin = ViewPlugin.fromClass(
   class {
@@ -518,6 +555,7 @@ const previewPlugin = ViewPlugin.fromClass(
           linksIn(state),
           this.view.hasFocus,
           imagesIn(state),
+          mathIn(state),
         ),
         true,
       );
@@ -530,6 +568,7 @@ const previewPlugin = ViewPlugin.fromClass(
         update.focusChanged ||
         linksIn(update.state) !== linksIn(update.startState) ||
         imagesIn(update.state) !== imagesIn(update.startState) ||
+        mathIn(update.state) !== mathIn(update.startState) ||
         // A callout opened or closed: its button shows the other way now.
         update.state.field(blocksField, false) !==
           update.startState.field(blocksField, false) ||
@@ -567,18 +606,21 @@ const previewPlugin = ViewPlugin.fromClass(
   },
 );
 
-/** The extension; `source` and `images` give Rust's findings for a state. */
+/** The extension; `source`, `images`, and `math` give Rust's findings for a state. */
 export function livePreview(
   source: LinksOf,
   images: ImagesOf,
+  math: MathOf,
   actions: LiveActions,
 ): Extension {
   return [
     linksOf.of(source),
     imagesOf.of(images),
+    mathOf.of(math),
     actionsOf.of(actions),
     previewPlugin,
     liveBlocks(),
+    liveMath(),
   ];
 }
 

@@ -23,16 +23,16 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import type { NoteImage, NoteLink, NoteTag } from "../../lib/ipc/commands";
+import type {
+  NoteImage,
+  NoteLink,
+  NoteMath,
+  NoteTag,
+} from "../../lib/ipc/commands";
 import { tags } from "@lezer/highlight";
-import {
-  livePreview,
-  livePreviewOn,
-  toggleTaskAtCursor,
-  touched,
-} from "./livePreview";
+import { livePreview, livePreviewOn, toggleTaskAtCursor } from "./livePreview";
 import { toggleCalloutAtCursor } from "./liveBlocks";
-import { trustedEdit } from "./liveShared";
+import { touched, trustedEdit } from "./liveShared";
 
 // The note editor (ADR-0020): CodeMirror as the engine, everything visible from
 // Liurium's tokens. It lives in a shadow root: there CodeMirror's styles become
@@ -174,7 +174,7 @@ const theme = EditorView.theme({
     color: "var(--color-text)",
   },
   // The parser calls them quotes, whose words are dimmed; links keep their color.
-  ".cm-callout span:not(.cm-link-note, .cm-link-missing, .cm-link-ambiguous, .cm-link-external, .cm-tag)":
+  ".cm-callout span:not(.cm-link-note, .cm-link-missing, .cm-link-ambiguous, .cm-link-external, .cm-tag, .cm-math)":
     { color: "inherit" },
   ".cm-callout-plain": { "--callout-color": "var(--color-accent-text)" },
   ".cm-callout-good": { "--callout-color": "var(--color-success)" },
@@ -211,6 +211,50 @@ const theme = EditorView.theme({
     color: "var(--color-text-secondary)",
     fontSize: "var(--font-size-sm)",
     overflowWrap: "anywhere",
+  },
+  // Formulas (M3-010). The box clips what would leave it, so `\raisebox` or `\kern`
+  // cannot lay a formula over other parts of the window. KaTeX's own CSS sets the rest;
+  // its text uses the current color.
+  ".cm-math": {
+    display: "inline-block",
+    maxWidth: "100%",
+    paddingInline: "var(--space-1)",
+    contain: "paint",
+  },
+  // Inline-level, so CodeMirror still sees a line; a wide formula scrolls in its box.
+  ".cm-math-display": {
+    width: "100%",
+    verticalAlign: "bottom",
+    overflowX: "auto",
+    overflowY: "hidden",
+    textAlign: "center",
+  },
+  // A formula that only defines something shows nothing, and stays clickable.
+  ".cm-math-block": {
+    display: "block",
+    minHeight: "var(--space-5)",
+  },
+  ".cm-math-error": {
+    width: "auto",
+    padding: "0 var(--space-2)",
+    border: "var(--border-width) dashed var(--color-border-control)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--color-text-secondary)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--font-size-sm)",
+    textAlign: "start",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  },
+  // A contrast theme would give each piece of text a backplate that covers its
+  // neighbor, and show the transparent X that `ce` measures with. So the theme stays
+  // out of a formula, which then takes the theme's colors itself.
+  "@media (forced-colors: active)": {
+    ".cm-math.cm-math": {
+      forcedColorAdjust: "none",
+      borderColor: "CanvasText",
+      color: "CanvasText",
+    },
   },
   ".cm-task": {
     margin: "0",
@@ -251,6 +295,7 @@ const setLinks = StateEffect.define<{
   links: readonly NoteLink[];
   tags: readonly NoteTag[];
   images: readonly NoteImage[];
+  math: readonly NoteMath[];
 }>();
 
 const linkClass: Record<NoteLink["target"]["state"], string | null> = {
@@ -313,15 +358,17 @@ function decorate(
 const linksField = StateField.define<{
   links: readonly NoteLink[];
   images: readonly NoteImage[];
+  math: readonly NoteMath[];
   marks: DecorationSet;
 }>({
-  create: () => ({ links: [], images: [], marks: Decoration.none }),
+  create: () => ({ links: [], images: [], math: [], marks: Decoration.none }),
   update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setLinks)) {
         return {
           links: effect.value.links,
           images: effect.value.images,
+          math: effect.value.math,
           marks: decorate(effect.value.links, effect.value.tags),
         };
       }
@@ -340,6 +387,11 @@ const linksField = StateField.define<{
         ...image,
         from: changes.mapPos(image.from, 1),
         to: changes.mapPos(image.to, -1),
+      })),
+      math: value.math.map((formula) => ({
+        ...formula,
+        from: changes.mapPos(formula.from, 1),
+        to: changes.mapPos(formula.to, -1),
       })),
       marks: value.marks.map(changes),
     };
@@ -529,11 +581,12 @@ export interface NoteEditor {
   text: () => string;
   setReadOnly: (readOnly: boolean) => void;
   setLivePreview: (on: boolean) => void;
-  /** Links, tags, and images from Rust, ranges in editor positions. */
+  /** Links, tags, images, and formulas from Rust, ranges in editor positions. */
   setMarks: (
     links: readonly NoteLink[],
     tags: readonly NoteTag[],
     images: readonly NoteImage[],
+    math: readonly NoteMath[],
   ) => void;
   /** Hides the front matter while the properties box shows it; `null` shows it. */
   setHidden: (range: { from: number; to: number } | null) => void;
@@ -564,6 +617,7 @@ export function createNoteEditor(
     livePreview(
       (state) => state.field(linksField).links,
       (state) => state.field(linksField).images,
+      (state) => state.field(linksField).math,
       {
         follow: (link) => {
           options.onFollow(link);
@@ -711,8 +765,8 @@ export function createNoteEditor(
         effects: preview.reconfigure(on ? previewExtension() : []),
       });
     },
-    setMarks: (links, tags, images) => {
-      view.dispatch({ effects: setLinks.of({ links, tags, images }) });
+    setMarks: (links, tags, images, math) => {
+      view.dispatch({ effects: setLinks.of({ links, tags, images, math }) });
     },
     setHidden: (range) => {
       view.dispatch({ effects: setHidden.of(range) });

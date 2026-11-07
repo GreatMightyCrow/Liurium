@@ -29,6 +29,11 @@ export default defineConfig(() => ({
     },
   },
 
+  build: {
+    // A small file would become a `data:` address, which the CSP refuses for fonts.
+    assetsInlineLimit: 0,
+  },
+
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],

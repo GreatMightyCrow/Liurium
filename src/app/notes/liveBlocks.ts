@@ -16,7 +16,14 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import { bodyStart, imagesIn, linksIn, trustedEdit } from "./liveShared";
+import { definersBefore, definersIn } from "./liveMath";
+import {
+  bodyStart,
+  imagesIn,
+  linksIn,
+  mathIn,
+  trustedEdit,
+} from "./liveShared";
 import { parseTable } from "./tableModel";
 import { focusTable, lineAfterTable, TableWidget } from "./tableWidget";
 
@@ -107,6 +114,8 @@ function build(
   const body = bodyStart(state);
   const links = linksIn(state);
   const images = imagesIn(state);
+  const math = mathIn(state);
+  const definers = definersIn(math);
   for (
     let node = syntaxTree(state).topNode.firstChild;
     node !== null;
@@ -141,10 +150,24 @@ function build(
             to: image.to - from,
             image,
           }));
+        const formulas = math
+          .filter((formula) => formula.from >= from && formula.to <= to)
+          .map((formula) => ({
+            from: formula.from - from,
+            to: formula.to - from,
+            math: formula,
+            definers: definersBefore(definers, formula.from),
+          }));
         tables.push({ from, to });
         ranges.push(
           Decoration.replace({
-            widget: new TableWidget(source, state.readOnly, inside, pictures),
+            widget: new TableWidget(
+              source,
+              state.readOnly,
+              inside,
+              pictures,
+              formulas,
+            ),
             block: true,
           }).range(from, to),
         );
@@ -201,6 +224,7 @@ export const blocksField = StateField.define<Blocks>({
       syntaxTree(state) === syntaxTree(startState) &&
       linksIn(state) === linksIn(startState) &&
       imagesIn(state) === imagesIn(startState) &&
+      mathIn(state) === mathIn(startState) &&
       state.readOnly === startState.readOnly
     ) {
       return value;

@@ -78,6 +78,8 @@ pub struct NoteFacts {
     pub external: Vec<links::ExternalLink>,
     /// Images to show (M3-013); shown in the editor, not kept in the cache.
     pub images: Vec<images::ImageLink>,
+    /// Formulas to show (M3-010); shown in the editor, not kept in the cache.
+    pub math: Vec<links::MathSpan>,
     pub front: meta::FrontMatter,
 }
 
@@ -89,6 +91,7 @@ impl NoteFacts {
             tags: scan.tags,
             external: scan.external,
             images: scan.images,
+            math: scan.math,
             front: meta::read(text),
         }
     }

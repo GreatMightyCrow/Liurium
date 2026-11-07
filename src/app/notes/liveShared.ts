@@ -1,10 +1,17 @@
-import { Annotation, type EditorState, Facet } from "@codemirror/state";
-import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import {
+  Annotation,
+  type EditorSelection,
+  type EditorState,
+  Facet,
+  StateEffect,
+} from "@codemirror/state";
+import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 
 // What live preview's parts share (M3-017, M3-018).
 
 export type LinksOf = (state: EditorState) => readonly NoteLink[];
 export type ImagesOf = (state: EditorState) => readonly NoteImage[];
+export type MathOf = (state: EditorState) => readonly NoteMath[];
 
 export interface LiveActions {
   follow: (link: NoteLink) => void;
@@ -39,6 +46,26 @@ export const imagesOf = Facet.define<ImagesOf, ImagesOf>({
 
 export const imagesIn = (state: EditorState): readonly NoteImage[] =>
   state.facet(imagesOf)(state);
+
+/** Where this editor keeps Rust's formulas (M3-010). */
+export const mathOf = Facet.define<MathOf, MathOf>({
+  combine: (values) => values[0] ?? (() => []),
+});
+
+export const mathIn = (state: EditorState): readonly NoteMath[] =>
+  state.facet(mathOf)(state);
+
+/** Whether the cursor or a selection touches this range: then its marks show. */
+export function touched(
+  selection: EditorSelection,
+  from: number,
+  to: number,
+): boolean {
+  return selection.ranges.some((range) => range.from <= to && range.to >= from);
+}
+
+/** After a mouse drag: the decorations held still during it come up to date. */
+export const dragEnded = StateEffect.define();
 
 /** A change that may touch a table or a closed callout's text: from a table's own
  *  cells, the properties box, or the file changing outside. */

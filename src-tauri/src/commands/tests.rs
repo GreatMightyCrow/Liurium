@@ -1643,6 +1643,7 @@ fn tags_from_text_and_front_matter_are_listed_per_project_and_follow_edits() {
                 "target": { "state": "note", "path": "Plan.md", "heading": null, "block": null }
             }],
             "images": [],
+            "math": [],
             "tags": [{ "from": 0, "to": 5, "tag": "idee" }],
             "frontTags": [],
             "properties": { "state": "none" },

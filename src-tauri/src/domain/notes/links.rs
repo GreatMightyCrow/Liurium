@@ -77,6 +77,22 @@ pub struct Scan {
     pub external: Vec<ExternalLink>,
     /// Images to show (M3-013); shown in the editor, not kept in the cache.
     pub images: Vec<ImageLink>,
+    /// Formulas to show (M3-010); shown in the editor, not kept in the cache.
+    pub math: Vec<MathSpan>,
+}
+
+/// A longer formula stays source text: this caps the work per formula (M3-010).
+pub const MAX_FORMULA_BYTES: usize = 10_000;
+
+/// A formula (M3-010): `$…$` or `$$…$$`. Its text is untrusted and only ever goes to
+/// the page's formula renderer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MathSpan {
+    /// Bytes of the whole formula in the note's text, its `$` included.
+    pub range: Range<usize>,
+    /// Without the `$`, as the parser read it: `$a\|b$` in a table is `a|b`.
+    pub tex: String,
+    pub display: bool,
 }
 
 /// A link that leaves Liurium (M3-012): never a note link, not kept in the cache.
@@ -163,6 +179,7 @@ pub fn scan(text: &str) -> Scan {
     let mut tags = Vec::new();
     let mut external: Vec<ExternalLink> = Vec::new();
     let mut images: Vec<ImageLink> = Vec::new();
+    let mut math: Vec<MathSpan> = Vec::new();
     // Images inside the one being read; only the outermost shows, the rest is its text.
     let mut image_depth = 0_usize;
     // The text of the outermost image, for as long as it is being read.
@@ -188,7 +205,24 @@ pub fn scan(text: &str) -> Scan {
             image_text.push_str(piece);
         }
         match event {
-            Event::Code(_) | Event::InlineMath(_) | Event::DisplayMath(_) => code.push(range),
+            Event::Code(_) => code.push(range),
+            Event::InlineMath(tex) => {
+                code.push(range.clone());
+                // As in Obsidian: `$5-$6` is two prices, not a formula.
+                let before_digit = text[range.end..]
+                    .chars()
+                    .next()
+                    .is_some_and(|next| next.is_ascii_digit());
+                if image_depth == 0 && !before_digit {
+                    push_formula(&mut math, range, &tex, false);
+                }
+            }
+            Event::DisplayMath(tex) => {
+                code.push(range.clone());
+                if image_depth == 0 {
+                    push_formula(&mut math, range, &tex, true);
+                }
+            }
             Event::Start(Tag::CodeBlock(_)) => {
                 in_code_block = true;
                 code.push(range);
@@ -285,6 +319,7 @@ pub fn scan(text: &str) -> Scan {
     tags.retain(|tag| outside(&tag.range));
     external.retain(|link| outside(&link.range));
     images.retain(|image| outside(&image.range));
+    math.retain(|formula| outside(&formula.range));
     // A `#` inside an address is its fragment, not a tag.
     tags.retain(|tag| {
         !external
@@ -296,6 +331,18 @@ pub fn scan(text: &str) -> Scan {
         tags,
         external,
         images,
+        math,
+    }
+}
+
+/// An empty formula would show as nothing, and a very long one stays source text.
+fn push_formula(math: &mut Vec<MathSpan>, range: Range<usize>, tex: &str, display: bool) {
+    if !tex.trim().is_empty() && tex.len() <= MAX_FORMULA_BYTES {
+        math.push(MathSpan {
+            range,
+            tex: tex.to_owned(),
+            display,
+        });
     }
 }
 

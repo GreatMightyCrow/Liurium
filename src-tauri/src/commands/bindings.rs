@@ -17,7 +17,7 @@ use super::editor::{
 };
 use super::links::{
     BacklinkLine, BacklinkSource, ImageSource, LinkCandidate, LinkTarget, NoteImage, NoteLink,
-    NoteMarks, NoteTag, TagNotes,
+    NoteMarks, NoteMath, NoteTag, TagNotes,
 };
 use super::notes::{NoteEntry, NotesView, SkippedNotes};
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
@@ -82,6 +82,7 @@ fn typescript_bindings_match_the_rust_types() {
         output::<BacklinkLine>(&config),
         output::<NoteMarks>(&config),
         output::<NoteImage>(&config),
+        output::<NoteMath>(&config),
         output::<ImageSource>(&config),
         output::<NoteTag>(&config),
         output::<TagNotes>(&config),

@@ -67,6 +67,7 @@ export type { LinkCandidate } from "./bindings/LinkCandidate";
 export type { LinkTarget } from "./bindings/LinkTarget";
 export type { ImageSource } from "./bindings/ImageSource";
 export type { NoteImage } from "./bindings/NoteImage";
+export type { NoteMath } from "./bindings/NoteMath";
 export type { NoteEntry } from "./bindings/NoteEntry";
 export type { NoteLineEnding } from "./bindings/NoteLineEnding";
 export type { NoteReadOnly } from "./bindings/NoteReadOnly";

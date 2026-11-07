@@ -10,6 +10,8 @@
 @import "@fontsource-variable/atkinson-hyperlegible-mono/wght.css";
 @import "@fontsource-variable/atkinson-hyperlegible-mono/wght-italic.css";
 
+@import "./katexFonts.css";
+
 @import "./reset.css";
 @import "./tokens.css";
 @import "./base.css";

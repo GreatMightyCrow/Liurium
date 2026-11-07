@@ -3,8 +3,9 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import { describe, expect, test } from "vitest";
-import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 import { ImageWidget } from "./liveImages";
+import { MathWidget } from "./liveMath";
 import { previewRanges } from "./livePreview";
 
 function state(text: string, cursor = text.length): EditorState {
@@ -362,5 +363,140 @@ describe("only the view changes", () => {
         expect(to).toBeGreaterThanOrEqual(from);
       }
     }
+  });
+});
+
+describe("formulas", () => {
+  const formula = (from: number, tex: string, display = false): NoteMath => ({
+    from,
+    to: from + tex.length + (display ? 4 : 2),
+    tex,
+    display,
+  });
+  const ranges = (
+    text: string,
+    math: readonly NoteMath[],
+    cursor = text.length,
+  ) => {
+    const current = state(text, cursor);
+    return {
+      current,
+      found: previewRanges(
+        current,
+        [{ from: 0, to: current.doc.length }],
+        [],
+        true,
+        [],
+        math,
+      ),
+    };
+  };
+  const widgets = (
+    text: string,
+    math: readonly NoteMath[],
+    cursor = text.length,
+  ) => {
+    const { current, found } = ranges(text, math, cursor);
+    return found.flatMap(({ from, to, value }) =>
+      (value.spec as { widget?: object }).widget instanceof MathWidget
+        ? [current.sliceDoc(from, to)]
+        : [],
+    );
+  };
+  const hiddenIn = (
+    text: string,
+    math: readonly NoteMath[],
+    cursor = text.length,
+  ) => {
+    const { current, found } = ranges(text, math, cursor);
+    return found.flatMap(({ from, to, value }) => {
+      const spec = value.spec as { widget?: object; class?: string };
+      return spec.widget === undefined && spec.class === undefined
+        ? [current.sliceDoc(from, to)]
+        : [];
+    });
+  };
+
+  test("a formula replaces its source", () => {
+    const text = "x $a^2$ y\n\nend";
+    expect(widgets(text, [formula(2, "a^2")])).toEqual(["$a^2$"]);
+  });
+
+  test("the source comes back at the cursor, at both its ends too", () => {
+    const text = "x $a^2$ y\n\nend";
+    const found = [formula(2, "a^2")];
+    expect(widgets(text, found, 4)).toEqual([]);
+    expect(widgets(text, found, 2)).toEqual([]);
+    expect(widgets(text, found, 7)).toEqual([]);
+    expect(widgets(text, found, 1)).toEqual(["$a^2$"]);
+  });
+
+  test("a formula shows in a heading, a list, a quote, and a callout", () => {
+    for (const text of [
+      "# T $x$\n\nend",
+      "- T $x$\n\nend",
+      "> T $x$\n\nend",
+      "> [!note] T $x$\n\nend",
+    ]) {
+      const from = text.indexOf("$x$");
+      expect(widgets(text, [formula(from, "x")])).toEqual(["$x$"]);
+    }
+  });
+
+  test("$$ on one line is a formula too", () => {
+    expect(widgets("$$x$$\n\nend", [formula(0, "x", true)])).toEqual(["$$x$$"]);
+  });
+
+  test("over several lines the plugin leaves it to the field", () => {
+    const text = "$$\nx\n$$\n\nend";
+    expect(
+      widgets(text, [{ from: 0, to: 7, tex: "\nx\n", display: true }]),
+    ).toEqual([]);
+  });
+
+  test("Lezer's emphasis inside a formula is not hidden, also with its source showing", () => {
+    const text = "x $a_b_c*d*$ y\n\nend";
+    const found = [formula(2, "a_b_c*d*")];
+    expect(hiddenIn(text, found)).toEqual([]);
+    expect(hiddenIn(text, found, 5)).toEqual([]);
+  });
+
+  test("marks outside a formula stay hidden", () => {
+    const text = "**b** $x$ *i*\n\nend";
+    expect(hiddenIn(text, [formula(6, "x")])).toEqual(["**", "**", "*", "*"]);
+  });
+
+  test("a quote's marks stay hidden in a formula over several lines", () => {
+    const text = "> $$\n> x\n> $$\n\nend";
+    const math = { from: 2, to: 14, tex: "x", display: true };
+    expect(hiddenIn(text, [math])).toEqual(["> ", "> ", "> "]);
+  });
+
+  test("a formula out of view is not drawn", () => {
+    const text = "$x$\n\nend";
+    const current = state(text);
+    const found = previewRanges(
+      current,
+      [{ from: 4, to: 5 }],
+      [],
+      true,
+      [],
+      [formula(0, "x")],
+    );
+    expect(
+      found.filter(
+        ({ value }) =>
+          (value.spec as { widget?: object }).widget instanceof MathWidget,
+      ),
+    ).toEqual([]);
+  });
+
+  test("a place that no longer exists shows nothing", () => {
+    expect(widgets("x", [formula(50, "y")])).toEqual([]);
+  });
+
+  test("the front matter holds no formula", () => {
+    const text = "---\na: $x$\n---\nend";
+    expect(widgets(text, [formula(7, "x")])).toEqual([]);
   });
 });

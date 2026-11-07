@@ -158,6 +158,7 @@ beforeEach(() => {
   vi.mocked(closeNote).mockResolvedValue(undefined);
   vi.mocked(noteLinks).mockResolvedValue({
     images: [],
+    math: [],
     links: [],
     tags: [],
     frontTags: [],
@@ -387,6 +388,7 @@ function boxMarks(fields: NoteMarks["properties"]): NoteMarks {
   return {
     links: [],
     images: [],
+    math: [],
     tags: [],
     frontTags: ["idee"],
     properties: fields,
@@ -618,6 +620,7 @@ test("the note's tags show once in its header and choose that tag", async () => 
   fakeEditor.text.mockReturnValue(text);
   vi.mocked(noteLinks).mockResolvedValue({
     images: [],
+    math: [],
     links: [],
     tags: [
       { from: 3, to: 8, tag: "idee" },
@@ -643,6 +646,7 @@ test("the note's tags show once in its header and choose that tag", async () => 
       { from: 8, to: 13, tag: "Idee" },
     ],
     [],
+    [],
   );
 
   fireEvent.click(screen.getByRole("button", { name: "#idee" }));
@@ -654,6 +658,7 @@ test("Rust's links reach the editor, CRLF counted as one position", async () => 
   fakeEditor.text.mockReturnValue(text);
   vi.mocked(noteLinks).mockResolvedValue({
     images: [],
+    math: [],
     links: [
       link(
         { state: "note", path: "Unique.md", heading: null, block: null },
@@ -677,6 +682,7 @@ test("Rust's links reach the editor, CRLF counted as one position", async () => 
           12,
         ),
       ],
+      [],
       [],
       [],
     );
@@ -1174,6 +1180,7 @@ test("a change outside asks for the marks again, as an image's address holds its
   });
   vi.mocked(noteLinks).mockClear();
   vi.mocked(noteLinks).mockResolvedValue({
+    math: [],
     images: [
       {
         from: 0,
@@ -1200,6 +1207,7 @@ test("a change outside asks for the marks again, as an image's address holds its
       [],
       [],
       [expect.objectContaining({ alt: "a" })],
+      [],
     );
   });
 });

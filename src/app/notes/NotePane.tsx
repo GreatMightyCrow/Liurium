@@ -27,10 +27,8 @@ import { RadioGroup } from "../../ui/RadioGroup";
 import { Backlinks } from "./Backlinks";
 import {
   anchorIndex,
-  imagesInEditor,
   inEditor,
   noteTagsOf,
-  tagsInEditor,
   textChange,
   toEditorPositions,
 } from "./links";
@@ -198,8 +196,9 @@ export function NotePane({
         if (current !== null && current.text() === text) {
           current.setMarks(
             inEditor(text, found.links),
-            tagsInEditor(text, found.tags),
-            imagesInEditor(text, found.images),
+            inEditor(text, found.tags),
+            inEditor(text, found.images),
+            inEditor(text, found.math),
           );
           applyHidden(current, text, found, blockAsTextRef.current);
           setMarks(found);

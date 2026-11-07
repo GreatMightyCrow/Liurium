@@ -3,9 +3,16 @@ import { markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
-import type { NoteImage, NoteLink } from "../../lib/ipc/commands";
+import type { NoteImage, NoteLink, NoteMath } from "../../lib/ipc/commands";
 import { imageElement, imageKey } from "./liveImages";
-import { actionsOf, imagesIn, linksIn, trustedEdit } from "./liveShared";
+import { definersBefore, definersIn, mathElement, mathKey } from "./liveMath";
+import {
+  actionsOf,
+  imagesIn,
+  linksIn,
+  mathIn,
+  trustedEdit,
+} from "./liveShared";
 import {
   addColumn,
   addRow,
@@ -45,6 +52,14 @@ interface RelativeImage {
   from: number;
   to: number;
   image: NoteImage;
+}
+
+/** A formula's place inside the table's text (M3-010). */
+interface RelativeMath {
+  from: number;
+  to: number;
+  math: NoteMath;
+  definers: readonly string[];
 }
 
 const INLINE_ELEMENT: Record<string, string> = {
@@ -128,6 +143,7 @@ function fillCell(
   from: number,
   links: readonly RelativeLink[],
   images: readonly RelativeImage[],
+  formulas: readonly RelativeMath[],
 ): void {
   // A wikilink image is also an unfollowable link at the same place: the image wins.
   const realLinks = links.filter(
@@ -139,14 +155,19 @@ function fillCell(
     // A link's place is on the element, so it counts; an image's only inside its cell.
     realLinks.map((each) => [each.from, each.to, each.link.target]),
     images.map((each) => [each.from - from, imageKey(each.image)]),
+    formulas.map((each) => [
+      each.from - from,
+      mathKey(each.math, each.definers),
+    ]),
   ]);
   if (shownInCell.get(cell) === shownNow) {
     return;
   }
   shownInCell.set(cell, shownNow);
   cell.replaceChildren();
-  const pieces: readonly (RelativeLink | RelativeImage)[] = [
+  const pieces: readonly (RelativeLink | RelativeImage | RelativeMath)[] = [
     ...images,
+    ...formulas,
     ...realLinks,
   ].sort((a, b) => a.from - b.from);
   let at = 0;
@@ -160,6 +181,11 @@ function fillCell(
     appendInline(cell, text.slice(at, start));
     if ("image" in piece) {
       cell.appendChild(imageElement(piece.image));
+      at = end;
+      continue;
+    }
+    if ("math" in piece) {
+      cell.appendChild(mathElement(piece.math, piece.definers));
       at = end;
       continue;
     }
@@ -277,7 +303,15 @@ function leaveCell(
   const images = imagesIn(view.state)
     .filter(inCell)
     .map((image) => ({ from: image.from - pos, to: image.to - pos, image }));
-  fillCell(cell, text, (data?.from ?? pos) - pos, links, images);
+  const all = mathIn(view.state);
+  const definers = definersIn(all);
+  const formulas = all.filter(inCell).map((math) => ({
+    from: math.from - pos,
+    to: math.to - pos,
+    math,
+    definers: definersBefore(definers, math.from),
+  }));
+  fillCell(cell, text, (data?.from ?? pos) - pos, links, images, formulas);
 }
 
 function commit(
@@ -623,6 +657,7 @@ export class TableWidget extends WidgetType {
     /** Places inside the table's text. */
     private readonly links: readonly RelativeLink[],
     private readonly images: readonly RelativeImage[] = [],
+    private readonly formulas: readonly RelativeMath[] = [],
   ) {
     super();
     this.table = parseTable(source);
@@ -643,12 +678,21 @@ export class TableWidget extends WidgetType {
       .join(",");
   }
 
+  private get formulasKey(): string {
+    return this.formulas
+      .map(({ from, to, math, definers }) =>
+        [from, to, mathKey(math, definers)].join("-"),
+      )
+      .join(",");
+  }
+
   override eq(other: TableWidget): boolean {
     return (
       other.source === this.source &&
       other.readOnly === this.readOnly &&
       other.linksKey === this.linksKey &&
-      other.imagesKey === this.imagesKey
+      other.imagesKey === this.imagesKey &&
+      other.formulasKey === this.formulasKey
     );
   }
 
@@ -658,6 +702,12 @@ export class TableWidget extends WidgetType {
 
   private imagesIn(from: number, to: number): RelativeImage[] {
     return this.images.filter((image) => image.from >= from && image.to <= to);
+  }
+
+  private formulasIn(from: number, to: number): RelativeMath[] {
+    return this.formulas.filter(
+      (formula) => formula.from >= from && formula.to <= to,
+    );
   }
 
   private build(wrap: HTMLElement): void {
@@ -687,6 +737,7 @@ export class TableWidget extends WidgetType {
             data.from,
             this.linksIn(data.from, data.to),
             this.imagesIn(data.from, data.to),
+            this.formulasIn(data.from, data.to),
           );
         }
         line.appendChild(cell);
@@ -761,6 +812,7 @@ export class TableWidget extends WidgetType {
             data.from,
             this.linksIn(data.from, data.to),
             this.imagesIn(data.from, data.to),
+            this.formulasIn(data.from, data.to),
           );
         } else {
           shownInCell.delete(cell);

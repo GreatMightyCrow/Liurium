@@ -90,6 +90,8 @@ pub struct NoteMarks {
     pub links: Vec<NoteLink>,
     /// Images in the text (M3-013).
     pub images: Vec<NoteImage>,
+    /// Formulas in the text (M3-010).
+    pub math: Vec<NoteMath>,
     /// `#tags` in the text, ranges in the editor's units.
     pub tags: Vec<NoteTag>,
     /// Tags from the front matter, without `#`.
@@ -145,6 +147,19 @@ pub enum ImageSource {
     Refused,
 }
 
+/// A formula in the text (M3-010).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteMath.ts"))]
+pub struct NoteMath {
+    /// Start and end in the editor's units (UTF-16), its `$` included.
+    pub from: usize,
+    pub to: usize,
+    /// Untrusted; only the page's formula renderer reads it.
+    pub tex: String,
+    pub display: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export_to = "NoteTag.ts"))]
@@ -195,6 +210,27 @@ fn images_in(
                     ResolvedImage::Refused => ImageSource::Refused,
                 },
             },
+        })
+        .collect()
+}
+
+/// The formulas of a note's text, with their places in the editor's units.
+fn math_in(text: &str, facts: &NoteFacts) -> Vec<NoteMath> {
+    let bounds: Vec<usize> = facts
+        .math
+        .iter()
+        .flat_map(|formula| [formula.range.start, formula.range.end])
+        .collect();
+    let units = links::utf16_offsets(text, &bounds);
+    facts
+        .math
+        .iter()
+        .zip(units.chunks(2))
+        .map(|(formula, range)| NoteMath {
+            from: range[0],
+            to: range[1],
+            tex: formula.tex.clone(),
+            display: formula.display,
         })
         .collect()
 }
@@ -294,6 +330,7 @@ pub fn note_links_in(
     Ok(NoteMarks {
         links,
         images: images_in(&source, text, &facts, images, project),
+        math: math_in(text, &facts),
         tags,
         front_tags: facts.front.tags,
         properties: NoteProperties::of(text),
@@ -539,6 +576,35 @@ mod tests {
                 written: "x.svg".into()
             }
         );
+    }
+
+    #[test]
+    fn formulas_come_with_utf16_ranges() {
+        let text = "😀 $a^2$ and
+
+$$
+b
+$$
+";
+
+        let found = note_links_in("Source.md", text, &set(), &ImageSet::default(), "p")
+            .expect("marks")
+            .math;
+
+        let unique = text.encode_utf16().collect::<Vec<_>>();
+        assert_eq!(
+            String::from_utf16_lossy(&unique[found[0].from..found[0].to]),
+            "$a^2$"
+        );
+        assert_eq!(found[0].tex, "a^2");
+        assert!(!found[0].display);
+        assert_eq!(
+            String::from_utf16_lossy(&unique[found[1].from..found[1].to]),
+            "$$
+b
+$$"
+        );
+        assert!(found[1].display);
     }
 
     #[test]

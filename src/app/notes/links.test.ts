@@ -1,7 +1,7 @@
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { expect, test } from "vitest";
-import { anchorIndex, imagesInEditor, slug, toEditorPositions } from "./links";
+import { anchorIndex, inEditor, slug, toEditorPositions } from "./links";
 import { linkCompletions } from "./noteEditor";
 
 test("an image's place counts the same way", () => {
@@ -13,7 +13,7 @@ test("an image's place counts the same way", () => {
     height: null,
     source: { state: "refused" as const },
   };
-  expect(imagesInEditor("a\r\n![x]", [image])[0]).toEqual({
+  expect(inEditor("a\r\n![x]", [image])[0]).toEqual({
     ...image,
     from: 2,
     to: 7,
