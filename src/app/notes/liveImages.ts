@@ -112,8 +112,12 @@ export class ImageWidget extends WidgetType {
     return imageKey(other.image) === imageKey(this.image);
   }
 
+  // A box that stays: the editor ignores changes inside a widget, but if its root were
+  // replaced, it would put the failed image back over the placeholder.
   toDOM(): HTMLElement {
-    return imageElement(this.image);
+    const box = document.createElement("span");
+    box.append(imageElement(this.image));
+    return box;
   }
 
   // A click places the cursor here, which brings the source back.

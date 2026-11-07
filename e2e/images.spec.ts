@@ -516,8 +516,9 @@ test("an SVG that fails shows why, and one changed outside shows anew", async ({
 }) => {
   const folder = app.folder("Images-");
   const before =
-    "![[broken.svg]]\n\n![[empty.svg]]\n\n![[nothing.svg]]\n\n![[late.svg]]\n\nend\n";
+    "![[broken.svg]]\n\n![[empty.svg]]\n\n![[nothing.svg]]\n\n![[renamed.png]]\n\n![[late.svg]]\n\nend\n";
   write(folder, "Plan.md", before);
+  write(folder, "renamed.png", "# Not an image\n");
   write(folder, "broken.svg", `<svg ${SVG_NAMESPACE}><rect>`);
   write(folder, "empty.svg", "# Not an image\n");
   write(folder, "nothing.svg", `<svg ${SVG_NAMESPACE} width="0" height="0"/>`);
@@ -529,6 +530,7 @@ test("an SVG that fails shows why, and one changed outside shows anew", async ({
     "Image could not be shown: broken.svg",
     "Image could not be shown: empty.svg",
     "Image could not be shown: nothing.svg",
+    "Image could not be shown: renamed.png",
   ]);
   const late = await loaded(page);
   await expect.poll(() => late.evaluate((e) => e.clientWidth)).toBe(200);

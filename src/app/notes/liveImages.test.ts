@@ -1,4 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { Decoration, EditorView } from "@codemirror/view";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { ImageSource, NoteImage } from "../../lib/ipc/commands";
 import { axeViolations } from "../../test/axe";
 import { imageElement, imageKey, ImageWidget, imageNote } from "./liveImages";
@@ -151,6 +153,84 @@ describe("a local image", () => {
     element.dispatchEvent(new Event("load"));
     expect(parent.querySelector("img")).toBeNull();
     expect(parent.textContent).toBe("Image could not be shown: A cat");
+  });
+});
+
+describe("in a real editor", () => {
+  /** A real editor showing the image, as jsdom's mutation observer is enough for this:
+   *  the editor puts back what it thinks is its own (found by E2E, M3-019). */
+  function editorWith(widget: ImageWidget) {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: "a ![x](y.png) b",
+        extensions: EditorView.decorations.of(
+          Decoration.set(Decoration.replace({ widget }).range(2, 13)),
+        ),
+      }),
+    });
+    return {
+      content: view.contentDOM,
+      done: () => {
+        view.destroy();
+        parent.remove();
+      },
+    };
+  }
+  const settled = () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+
+  // jsdom has no layout, and the editor measures after each change.
+  beforeAll(() => {
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [],
+    });
+  });
+  afterAll(() => {
+    Reflect.deleteProperty(Range.prototype, "getClientRects");
+  });
+
+  test.each<[string, (element: HTMLImageElement) => void]>([
+    [
+      "fails to load",
+      (element) => {
+        element.dispatchEvent(new Event("error"));
+      },
+    ],
+    [
+      "loads with no size",
+      (element) => {
+        Object.defineProperty(element, "naturalWidth", { value: 0 });
+        element.dispatchEvent(new Event("load"));
+      },
+    ],
+  ])("the placeholder stays when an image %s", async (_name, happen) => {
+    const { content, done } = editorWith(new ImageWidget(local()));
+    const shown = content.querySelector<HTMLImageElement>("img.cm-image");
+    expect(shown).not.toBeNull();
+    if (shown !== null) {
+      happen(shown);
+    }
+    await settled();
+
+    expect(content.querySelector("img.cm-image")).toBeNull();
+    expect(content.querySelector(".cm-image-note")?.textContent).toBe(
+      "Image could not be shown: A cat",
+    );
+    done();
+  });
+
+  test("an image that loads stays in the line's text", async () => {
+    const { content, done } = editorWith(new ImageWidget(local()));
+    await settled();
+    expect(content.querySelector(".cm-line")?.textContent).toBe("a  b");
+    expect(content.querySelector(".cm-line img.cm-image")).not.toBeNull();
+    done();
   });
 });
 
