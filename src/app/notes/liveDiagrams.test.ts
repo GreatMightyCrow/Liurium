@@ -331,6 +331,36 @@ describe("in a real editor", () => {
     }
   });
 
+  // In a short note the content fills the window, so its height does not change with the
+  // picture, and CodeMirror only measures anew after a redraw. Without one it keeps the
+  // source's height, and a click on the picture lands in the line below (found by E2E).
+  test("a picture that arrives draws its block anew, so its height is measured", async () => {
+    let finish: (result: DiagramResult) => void = () => undefined;
+    drawing.drawDiagram.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { content, done } = editorWith(`a\n\n${FENCE}\n\nb`);
+    try {
+      const standIn = content.querySelector(".cm-diagram");
+      expect(standIn).not.toBeNull();
+
+      drawing.drawnBefore.mockReturnValue(DRAWN);
+      finish(DRAWN);
+      await settled();
+
+      expect(content.querySelector(".cm-diagram")).not.toBe(standIn);
+      expect(content.querySelector("img")?.getAttribute("src")).toBe(
+        "blob:picture",
+      );
+      expect(drawing.drawDiagram).toHaveBeenCalledTimes(1);
+    } finally {
+      done();
+    }
+  });
+
   test("a diagram drawn before shows at once", () => {
     drawing.drawnBefore.mockReturnValue(DRAWN);
     const { content, done } = editorWith(FENCE);

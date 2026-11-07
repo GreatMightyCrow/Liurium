@@ -147,8 +147,12 @@ function show(box: HTMLElement, source: string, result: DiagramResult): void {
   box.replaceChildren(image);
 }
 
+/** A picture has arrived. */
+const diagramDrawn = StateEffect.define();
+
 export class DiagramWidget extends WidgetType {
   private readonly key: string;
+  private readonly known: DiagramResult | undefined;
 
   constructor(
     private readonly source: string,
@@ -156,10 +160,11 @@ export class DiagramWidget extends WidgetType {
   ) {
     super();
     this.key = JSON.stringify([source, look]);
+    this.known = drawnBefore(source, look);
   }
 
   override eq(other: DiagramWidget): boolean {
-    return other.key === this.key;
+    return other.key === this.key && other.known === this.known;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -174,7 +179,10 @@ export class DiagramWidget extends WidgetType {
     showSource(box, this.source);
     void drawDiagram(this.source, this.look).then((result) => {
       show(box, this.source, result);
-      view.requestMeasure();
+      // In a short note the content fills the window, so its height stays the same and
+      // CodeMirror would not measure: it would keep the source's height, and a click on
+      // the picture would land in the line below. Drawing the block anew makes it measure.
+      view.dispatch({ effects: diagramDrawn.of(null) });
     });
     return box;
   }
@@ -222,18 +230,18 @@ export const diagramsField = StateField.define<Diagrams>({
   update(value, transaction) {
     const { state, startState } = transaction;
     let { focused, look } = value;
-    let dropped = false;
+    let redo = false;
     for (const effect of transaction.effects) {
       if (effect.is(setFocused)) {
         focused = effect.value;
       } else if (effect.is(setDiagramLook)) {
         look = effect.value;
-      } else if (effect.is(dragEnded)) {
-        dropped = true;
+      } else if (effect.is(dragEnded) || effect.is(diagramDrawn)) {
+        redo = true;
       }
     }
     const stale =
-      dropped ||
+      redo ||
       focused !== value.focused ||
       look !== value.look ||
       transaction.docChanged ||
