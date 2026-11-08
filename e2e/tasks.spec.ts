@@ -116,6 +116,8 @@ test("tasks are added, dragged, moved by keys, edited, trashed, and still there 
   await expect(page.getByRole("textbox", { name: "Description" })).toHaveValue(
     "Some text",
   );
-  await expect(page.getByRole("button", { name: "Plan.md" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Plan.md", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("radio", { name: "High" })).toBeChecked();
 });
