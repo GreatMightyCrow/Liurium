@@ -208,11 +208,13 @@ test("after a table that ends the file, the arrow key and a click make a place t
     .getByRole("navigation", { name: "Notes in this project" })
     .getByRole("link", { name: "Other.md" })
     .click();
-  await expect(page.locator(".cm-content table")).toBeVisible();
-  const box = await page.locator(".cm-editor").boundingBox();
+  await expect(cell(page, 0, 0)).toHaveText("c");
+  // Measured from the table: the backlinks bar below the editor comes a moment
+  // later and takes the editor's lower edge.
+  const table = await page.locator(".cm-table-wrap").boundingBox();
   await page.mouse.click(
-    (box?.x ?? 0) + 200,
-    (box?.y ?? 0) + (box?.height ?? 0) - 10,
+    (table?.x ?? 0) + 200,
+    (table?.y ?? 0) + (table?.height ?? 0) + 20,
   );
   await page.keyboard.type("Z");
   await expect
