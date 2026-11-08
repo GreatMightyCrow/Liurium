@@ -49,6 +49,7 @@ static PROJECT_SCHEMA: Schema = Schema {
     migrations: &[
         include_str!("migrations/project/0001_meta.sql"),
         include_str!("migrations/project/0002_property_kinds.sql"),
+        include_str!("migrations/project/0003_tasks.sql"),
     ],
 };
 

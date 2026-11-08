@@ -58,6 +58,12 @@ const messages: {
     "Another folder already holds this project, so this one looks like a copy. Nothing was changed.",
   noProject: () => "This folder holds no Liurium project. Nothing was changed.",
   invalidName: () => "Use a name with 1 to 200 characters and no line breaks.",
+  invalidTask: () =>
+    "Check this task: a title needs 1 to 500 characters and no line breaks, the text at most 1 MB and no control characters, and a date must exist.",
+  taskLimit: () =>
+    "This is over the limit: 10,000 tasks and 100 columns in a project, 50 tags and 100 note links on a task.",
+  columnInUse: () =>
+    "Move the tasks out of this column first. A board keeps at least one column.",
   internal: () =>
     "Something went wrong inside Liurium. Try again, and restart Liurium if it keeps happening.",
 };

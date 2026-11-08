@@ -26,7 +26,10 @@ use super::search::{NoteHit, ProjectHit, SearchExcerpt, SearchResults};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
 use crate::domain::notes::properties::{Edit, Value};
-use crate::domain::projects::PropertyKind;
+use crate::domain::projects::{
+    PropertyKind,
+    tasks::{Board, BoardColumn, Priority, Task, TaskDetail, TaskFields},
+};
 use crate::domain::settings::{SettingKey, Settings, StartWith, Zoom};
 use crate::domain::sync::SyncTool;
 use crate::frame::FrameStyle;
@@ -97,6 +100,12 @@ fn typescript_bindings_match_the_rust_types() {
         output::<NoteHit>(&config),
         output::<SearchExcerpt>(&config),
         output::<ProjectHit>(&config),
+        output::<Board>(&config),
+        output::<BoardColumn>(&config),
+        output::<Task>(&config),
+        output::<TaskDetail>(&config),
+        output::<TaskFields>(&config),
+        output::<Priority>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

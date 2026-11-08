@@ -137,9 +137,19 @@ fn a_new_project_database_uses_the_rollback_journal() {
     assert_eq!(text(&conn, "journal_mode"), "delete");
     // FULL
     assert_eq!(number(&conn, "synchronous"), 2);
-    assert_eq!(number(&conn, "user_version"), 2);
+    assert_eq!(number(&conn, "user_version"), 3);
     assert_eq!(number(&conn, "application_id"), i64::from(PROJECT_ID));
-    assert_eq!(tables(&conn), ["meta", "property_kinds"]);
+    assert_eq!(
+        tables(&conn),
+        [
+            "meta",
+            "property_kinds",
+            "task_columns",
+            "task_notes",
+            "task_tags",
+            "tasks"
+        ]
+    );
 
     // Between transactions the .db file alone holds everything.
     drop(conn);

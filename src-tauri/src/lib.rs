@@ -62,7 +62,20 @@ pub fn run() {
             commands::closing::wait_close_question,
             commands::closing::answer_close_question,
             commands::links::open_external_link,
-            commands::search::search_notes
+            commands::search::search_notes,
+            commands::tasks::task_board,
+            commands::tasks::trashed_tasks,
+            commands::tasks::task_detail,
+            commands::tasks::create_task,
+            commands::tasks::update_task,
+            commands::tasks::move_task,
+            commands::tasks::trash_task,
+            commands::tasks::restore_task,
+            commands::tasks::delete_task,
+            commands::tasks::create_column,
+            commands::tasks::rename_column,
+            commands::tasks::move_column,
+            commands::tasks::delete_column
         ])
         // Reachable from the page without a permission, so it is reviewed like a command:
         // only images the walk listed, in the open project (M3-013).

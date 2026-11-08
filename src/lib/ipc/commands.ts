@@ -11,7 +11,11 @@ import type { NoteProperties } from "./bindings/NoteProperties";
 import type { Edit as PropertyEdit } from "./bindings/PropertyEdit";
 import type { PropertyField } from "./bindings/PropertyField";
 import type { PropertyKind } from "./bindings/PropertyKind";
+import type { Board } from "./bindings/Board";
 import type { SearchResults } from "./bindings/SearchResults";
+import type { Task } from "./bindings/Task";
+import type { TaskDetail } from "./bindings/TaskDetail";
+import type { TaskFields } from "./bindings/TaskFields";
 import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
 import type { Value as PropertyValue } from "./bindings/PropertyValue";
 import type { TagNotes } from "./bindings/TagNotes";
@@ -67,7 +71,13 @@ export type { BacklinkSource } from "./bindings/BacklinkSource";
 export type { NoteHit } from "./bindings/NoteHit";
 export type { ProjectHit } from "./bindings/ProjectHit";
 export type { SearchExcerpt } from "./bindings/SearchExcerpt";
+export type { Board } from "./bindings/Board";
+export type { BoardColumn } from "./bindings/BoardColumn";
 export type { SearchResults } from "./bindings/SearchResults";
+export type { Task } from "./bindings/Task";
+export type { TaskDetail } from "./bindings/TaskDetail";
+export type { TaskFields } from "./bindings/TaskFields";
+export type { Priority as TaskPriority } from "./bindings/TaskPriority";
 export type { LinkCandidate } from "./bindings/LinkCandidate";
 export type { LinkTarget } from "./bindings/LinkTarget";
 export type { ImageSource } from "./bindings/ImageSource";
@@ -277,6 +287,70 @@ export function backlinksOf(path: string): Promise<BacklinkSource[]> {
  *  whose name does (M4-001). The query is only ever text in Rust. */
 export function searchNotes(query: string): Promise<SearchResults> {
   return call("search_notes", { query });
+}
+
+/** The open project's columns with their live tasks, in order (M4-003). */
+export function taskBoard(): Promise<Board> {
+  return call("task_board");
+}
+
+/** The trash, last trashed first. */
+export function trashedTasks(): Promise<Task[]> {
+  return call("trashed_tasks");
+}
+
+/** One task with its description. */
+export function taskDetail(task: string): Promise<TaskDetail> {
+  return call("task_detail", { task });
+}
+
+/** A new task at the bottom of `column`. */
+export function createTask(column: string, fields: TaskFields): Promise<Board> {
+  return call("create_task", { column, fields });
+}
+
+/** Replaces a task's fields with these. */
+export function updateTask(task: string, fields: TaskFields): Promise<Board> {
+  return call("update_task", { task, fields });
+}
+
+/** To `index` of `column`, counted without the task itself. */
+export function moveTask(
+  task: string,
+  column: string,
+  index: number,
+): Promise<Board> {
+  return call("move_task", { task, column, index });
+}
+
+export function trashTask(task: string): Promise<Board> {
+  return call("trash_task", { task });
+}
+
+export function restoreTask(task: string): Promise<Board> {
+  return call("restore_task", { task });
+}
+
+/** Gone for good; only a task in the trash. */
+export function deleteTask(task: string): Promise<void> {
+  return call("delete_task", { task });
+}
+
+export function createColumn(name: string): Promise<Board> {
+  return call("create_column", { name });
+}
+
+export function renameColumn(column: string, name: string): Promise<Board> {
+  return call("rename_column", { column, name });
+}
+
+export function moveColumn(column: string, index: number): Promise<Board> {
+  return call("move_column", { column, index });
+}
+
+/** Only an empty column, and never the last one. */
+export function deleteColumn(column: string): Promise<Board> {
+  return call("delete_column", { column });
 }
 
 /** The note's text after one property edit. Rust only changes the text; it saves

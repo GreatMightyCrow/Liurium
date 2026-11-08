@@ -6,10 +6,13 @@ import {
   closeNote,
   createFolder,
   createNote,
+  createTask,
   getAppDataInfo,
   getAppInfo,
   listNotes,
+  moveColumn,
   moveEntry,
+  moveTask,
   noteLinks,
   openAppDataFolder,
   openExternalLink,
@@ -17,12 +20,17 @@ import {
   reconcileNote,
   projectTags,
   pruneBackups,
+  renameColumn,
   renameEntry,
   resetSyncWarnings,
   resolveNoteConflict,
+  restoreTask,
   searchNotes,
+  type TaskFields,
+  taskBoard,
   trashEntry,
   updateNote,
+  updateTask,
   waitNoteChanges,
   updateSettings,
 } from "./commands";
@@ -188,6 +196,56 @@ test("search sends the query as it is", async () => {
   await expect(searchNotes('plan "x')).resolves.toEqual(results);
 
   expect(invokeMock).toHaveBeenCalledWith("search_notes", { query: 'plan "x' });
+});
+
+test("task commands send what Rust expects", async () => {
+  const board = { columns: [] };
+  invokeMock.mockResolvedValue(board);
+  const fields: TaskFields = {
+    title: "T",
+    description: "",
+    priority: "high",
+    due: null,
+    tags: [],
+    notes: [],
+  };
+
+  await expect(taskBoard()).resolves.toEqual(board);
+  expect(invokeMock).toHaveBeenLastCalledWith("task_board", undefined);
+
+  await createTask("todo", fields);
+  expect(invokeMock).toHaveBeenLastCalledWith("create_task", {
+    column: "todo",
+    fields,
+  });
+
+  await updateTask("t1", fields);
+  expect(invokeMock).toHaveBeenLastCalledWith("update_task", {
+    task: "t1",
+    fields,
+  });
+
+  await moveTask("t1", "done", 2);
+  expect(invokeMock).toHaveBeenLastCalledWith("move_task", {
+    task: "t1",
+    column: "done",
+    index: 2,
+  });
+
+  await restoreTask("t1");
+  expect(invokeMock).toHaveBeenLastCalledWith("restore_task", { task: "t1" });
+
+  await moveColumn("done", 0);
+  expect(invokeMock).toHaveBeenLastCalledWith("move_column", {
+    column: "done",
+    index: 0,
+  });
+
+  await renameColumn("done", "Shipped");
+  expect(invokeMock).toHaveBeenLastCalledWith("rename_column", {
+    column: "done",
+    name: "Shipped",
+  });
 });
 
 test("backlinks sends the note's path", async () => {

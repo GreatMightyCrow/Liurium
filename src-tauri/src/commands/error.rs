@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::domain::projects::ProjectError;
+use crate::domain::projects::{ProjectError, tasks::TaskError};
 use crate::storage::{
     db::DbError,
     fs::{FsError, PathRule},
@@ -70,6 +70,12 @@ pub enum CommandError {
     LinkRefused,
     /// Windows could not open the address (M3-012).
     LinkNotOpened,
+    /// A task's title, text, or date outside the rules (M4-003).
+    InvalidTask,
+    /// Too many tasks, columns, tags, or note links (M4-003).
+    TaskLimit,
+    /// The column still holds tasks, or is the last one (M4-003).
+    ColumnInUse,
     /// Nothing the user can act on.
     Internal,
 }
@@ -107,6 +113,20 @@ impl From<FsError> for CommandError {
             FsError::ReadOnly => Self::ReadOnly,
             FsError::TooLarge { max, .. } => Self::TooLarge { max_bytes: max },
             FsError::Io(_) => Self::Internal,
+        }
+    }
+}
+
+impl From<TaskError> for CommandError {
+    fn from(error: TaskError) -> Self {
+        match error {
+            TaskError::Project(error) => error.into(),
+            TaskError::NotFound => Self::NotFound,
+            TaskError::Invalid => Self::InvalidTask,
+            TaskError::InvalidColumnName => Self::InvalidName,
+            TaskError::InvalidTag => Self::InvalidTag,
+            TaskError::Limit => Self::TaskLimit,
+            TaskError::ColumnInUse => Self::ColumnInUse,
         }
     }
 }

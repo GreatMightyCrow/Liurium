@@ -46,6 +46,19 @@
     "allow-wait-close-question",
     "allow-answer-close-question",
     "allow-open-external-link",
-    "allow-search-notes"
+    "allow-search-notes",
+    "allow-task-board",
+    "allow-trashed-tasks",
+    "allow-task-detail",
+    "allow-create-task",
+    "allow-update-task",
+    "allow-move-task",
+    "allow-trash-task",
+    "allow-restore-task",
+    "allow-delete-task",
+    "allow-create-column",
+    "allow-rename-column",
+    "allow-move-column",
+    "allow-delete-column"
   ]
 }

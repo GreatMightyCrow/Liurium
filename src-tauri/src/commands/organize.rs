@@ -93,6 +93,11 @@ impl Workspace {
         self.editor().save_if_under(&from)?;
         root.rename(&from, &to)?;
         self.editor().moved(&from, &to);
+        // The move is done. If the links cannot follow, they show as missing notes
+        // and no task is lost (M4-003).
+        let _ = self.with_open_project(|project| {
+            Ok(project.notes_moved(&from.to_string(), &to.to_string())?)
+        });
         if let Some((id, _, _)) = self.open_project_root()? {
             self.walk_again(id, root);
         }

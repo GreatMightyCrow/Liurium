@@ -21,7 +21,7 @@ const ALLOWED_CSP_SOURCES: [&str; 7] = [
 ];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 43] = [
+const REVIEWED_PERMISSIONS: [&str; 56] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -90,6 +90,21 @@ const REVIEWED_PERMISSIONS: [&str; 43] = [
     // Search (M4-001): the query is only text, never SQL or FTS5 syntax; reads the open
     // project's cache and notes, and the registry's project names.
     "allow-search-notes",
+    // Tasks (M4-003): only the open project's `project.db`, through bound values; ids
+    // and fields are checked in Rust, and a note link only names a note of the tree.
+    "allow-task-board",
+    "allow-trashed-tasks",
+    "allow-task-detail",
+    "allow-create-task",
+    "allow-update-task",
+    "allow-move-task",
+    "allow-trash-task",
+    "allow-restore-task",
+    "allow-delete-task",
+    "allow-create-column",
+    "allow-rename-column",
+    "allow-move-column",
+    "allow-delete-column",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

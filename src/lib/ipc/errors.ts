@@ -33,6 +33,9 @@ const kinds: Record<CommandError["kind"], true> = {
   propertyRefused: true,
   linkRefused: true,
   linkNotOpened: true,
+  invalidTask: true,
+  taskLimit: true,
+  columnInUse: true,
   internal: true,
 };
 const knownKinds = new Set<string>(Object.keys(kinds));

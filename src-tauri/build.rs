@@ -41,6 +41,19 @@ const COMMANDS: &[&str] = &[
     "answer_close_question",
     "open_external_link",
     "search_notes",
+    "task_board",
+    "trashed_tasks",
+    "task_detail",
+    "create_task",
+    "update_task",
+    "move_task",
+    "trash_task",
+    "restore_task",
+    "delete_task",
+    "create_column",
+    "rename_column",
+    "move_column",
+    "delete_column",
 ];
 
 fn main() {

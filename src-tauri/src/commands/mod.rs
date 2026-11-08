@@ -18,6 +18,9 @@ pub mod projects;
 pub mod properties;
 pub mod search;
 pub mod settings;
+pub mod tasks;
+#[cfg(test)]
+mod tasks_tests;
 #[cfg(test)]
 mod tests;
 
