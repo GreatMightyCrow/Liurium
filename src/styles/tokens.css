@@ -92,6 +92,7 @@
     --size-control-md: 32px;
     --size-dialog: 440px;
     --size-menu-min: 160px;
+    --size-menu-max: 320px;
     --size-toast: 360px;
     --opacity-disabled: 0.5;
 

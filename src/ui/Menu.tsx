@@ -1,5 +1,6 @@
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { Separator } from "@base-ui/react/separator";
+import { Check } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import styles from "./Menu.module.css";
 
@@ -38,6 +39,35 @@ export function MenuItem({ onSelect, disabled, children }: MenuItemProps) {
     >
       {children}
     </BaseMenu.Item>
+  );
+}
+
+interface MenuCheckboxItemProps {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children: ReactNode;
+}
+
+/** Stays open when chosen, so several can be ticked one after the other. */
+export function MenuCheckboxItem({
+  checked,
+  onCheckedChange,
+  children,
+}: MenuCheckboxItemProps) {
+  return (
+    <BaseMenu.CheckboxItem
+      className={styles.item}
+      checked={checked}
+      onCheckedChange={(next) => {
+        onCheckedChange(next);
+      }}
+      closeOnClick={false}
+    >
+      <BaseMenu.CheckboxItemIndicator className={styles.check} keepMounted>
+        <Check className={styles.checkMark} strokeWidth={1.5} aria-hidden />
+      </BaseMenu.CheckboxItemIndicator>
+      <span className={styles.label}>{children}</span>
+    </BaseMenu.CheckboxItem>
   );
 }
 

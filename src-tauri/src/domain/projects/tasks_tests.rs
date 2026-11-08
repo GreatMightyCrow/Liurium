@@ -76,6 +76,104 @@ fn is_invalid<T: std::fmt::Debug>(result: Result<T, TaskError>) -> bool {
     matches!(result, Err(TaskError::Invalid))
 }
 
+fn described(title: &str, description: &str) -> TaskFields {
+    TaskFields {
+        description: description.to_owned(),
+        ..fields(title)
+    }
+}
+
+#[test]
+fn a_description_is_found_in_any_case_also_beyond_ascii() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let project = fresh(dir.path(), &app);
+    project
+        .create_task("todo", described("A", "Viel ÄRGER mit dem Dach"))
+        .expect("created");
+    project
+        .create_task("doing", described("B", "Nothing of the kind"))
+        .expect("created");
+    project
+        .create_task("todo", fields("Ärger"))
+        .expect("created");
+
+    assert_eq!(
+        project.tasks_with_description("  ärger ").expect("found"),
+        vec![id_of(&project, "A")]
+    );
+    assert_eq!(
+        project.tasks_with_description("äRgEr").expect("found"),
+        vec![id_of(&project, "A")]
+    );
+}
+
+#[test]
+fn a_filter_finds_nothing_in_the_trash_or_for_blank_text() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let project = fresh(dir.path(), &app);
+    project
+        .create_task("todo", described("A", "needle"))
+        .expect("created");
+    project
+        .create_task("todo", described("B", "needle"))
+        .expect("created");
+    project.trash_task(&id_of(&project, "B")).expect("trashed");
+
+    assert_eq!(
+        project.tasks_with_description("needle").expect("found"),
+        vec![id_of(&project, "A")]
+    );
+    assert!(
+        project
+            .tasks_with_description("   ")
+            .expect("none")
+            .is_empty()
+    );
+}
+
+#[test]
+fn text_too_long_for_a_filter_is_refused() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let project = fresh(dir.path(), &app);
+
+    assert!(
+        project
+            .tasks_with_description(&"ä".repeat(200))
+            .expect("fits")
+            .is_empty()
+    );
+    assert!(is_invalid(project.tasks_with_description(&"ä".repeat(201))));
+}
+
+#[test]
+fn a_description_that_is_not_utf8_does_not_stop_the_filter() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let project = fresh(dir.path(), &app);
+    project
+        .create_task("todo", described("A", "x"))
+        .expect("created");
+    project
+        .create_task("todo", described("B", "needle"))
+        .expect("created");
+    let bad = id_of(&project, "A");
+    project
+        .connection
+        .execute(
+            "UPDATE tasks SET description = CAST(X'41FF42' AS TEXT) WHERE id = ?1",
+            [&bad],
+        )
+        .expect("planted");
+
+    assert_eq!(
+        project.tasks_with_description("needle").expect("found"),
+        vec![id_of(&project, "B")]
+    );
+}
+
 #[test]
 fn a_new_project_starts_with_three_empty_columns() {
     let dir = temp_dir();
@@ -888,6 +986,12 @@ fn a_write_protected_older_project_shows_no_tasks_and_stays_as_it_is() {
     assert!(opened.read_only);
     assert!(opened.task_board().expect("board").columns.is_empty());
     assert!(opened.trashed_tasks().expect("trash").is_empty());
+    assert!(
+        opened
+            .tasks_with_description("text")
+            .expect("nothing to search")
+            .is_empty()
+    );
     assert!(matches!(opened.task_detail("x"), Err(TaskError::NotFound)));
     opened
         .notes_moved("A.md", "B.md")

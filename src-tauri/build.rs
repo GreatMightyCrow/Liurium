@@ -44,6 +44,7 @@ const COMMANDS: &[&str] = &[
     "task_board",
     "trashed_tasks",
     "task_detail",
+    "tasks_with_description",
     "create_task",
     "update_task",
     "move_task",

@@ -24,6 +24,10 @@ fn without_an_open_project_tasks_report_no_project() {
 
     assert_eq!(workspace.task_board(), Err(CommandError::NoProject));
     assert_eq!(
+        workspace.tasks_with_description("x"),
+        Err(CommandError::NoProject)
+    );
+    assert_eq!(
         workspace.create_task("todo", fields("T", &[])),
         Err(CommandError::NoProject)
     );
@@ -38,6 +42,7 @@ fn a_write_protected_project_refuses_every_change_and_still_shows_its_board() {
     added(&workspace, &archive.root);
 
     assert_eq!(workspace.task_board().expect("board").columns.len(), 3);
+    assert_eq!(workspace.tasks_with_description("x"), Ok(Vec::new()));
     let refused = [
         workspace.create_task("todo", fields("T", &[])),
         workspace.update_task("t", fields("T", &[])),

@@ -41,6 +41,10 @@ impl Workspace {
         self.read_tasks(|project| project.task_detail(task))
     }
 
+    pub fn tasks_with_description(&self, text: &str) -> Result<Vec<String>, CommandError> {
+        self.read_tasks(|project| project.tasks_with_description(text))
+    }
+
     pub fn create_task(&self, column: &str, fields: TaskFields) -> Result<Board, CommandError> {
         self.change_tasks(|project| project.create_task(column, fields))
     }
@@ -101,6 +105,15 @@ pub async fn task_detail(
 ) -> Result<TaskDetail, CommandError> {
     let workspace = workspace.inner().clone();
     blocking(move || workspace.task_detail(&task)).await
+}
+
+#[tauri::command]
+pub async fn tasks_with_description(
+    text: String,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<String>, CommandError> {
+    let workspace = workspace.inner().clone();
+    blocking(move || workspace.tasks_with_description(&text)).await
 }
 
 #[tauri::command]

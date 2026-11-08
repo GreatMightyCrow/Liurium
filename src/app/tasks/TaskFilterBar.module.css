@@ -1,0 +1,58 @@
+@layer components {
+  .bar {
+    display: flex;
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    align-items: center;
+    min-width: 0;
+  }
+
+  .field {
+    flex: 0 1 var(--size-task-column);
+    min-width: 0;
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+
+  .field::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .field:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  /* "Clear filters" is the one way to empty it; a second, browser-drawn cross is not. */
+  .field::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  .choice[data-active] {
+    color: var(--color-accent-text);
+  }
+
+  .mark {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .count {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .problem {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+  }
+}

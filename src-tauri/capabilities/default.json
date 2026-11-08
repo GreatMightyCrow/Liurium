@@ -50,6 +50,7 @@
     "allow-task-board",
     "allow-trashed-tasks",
     "allow-task-detail",
+    "allow-tasks-with-description",
     "allow-create-task",
     "allow-update-task",
     "allow-move-task",

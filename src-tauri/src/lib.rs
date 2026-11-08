@@ -66,6 +66,7 @@ pub fn run() {
             commands::tasks::task_board,
             commands::tasks::trashed_tasks,
             commands::tasks::task_detail,
+            commands::tasks::tasks_with_description,
             commands::tasks::create_task,
             commands::tasks::update_task,
             commands::tasks::move_task,

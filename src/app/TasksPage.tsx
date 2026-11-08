@@ -30,9 +30,23 @@ import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { TextField } from "../ui/TextField";
 import { commandErrorMessage } from "./commandErrorMessage";
 import { noteHref } from "./NotesPage";
-import { movedTask, type Target } from "./tasks/board";
+import { movedTask, type Target, today } from "./tasks/board";
+import {
+  countTasks,
+  filteredBoard,
+  fits,
+  isFiltering,
+  lastTaskIn,
+  rememberedFilter,
+  rememberFilter,
+  storedTarget,
+  tagChoices,
+  type TaskFilter,
+} from "./tasks/filter";
 import { focusCard, TaskBoard } from "./tasks/TaskBoard";
+import { TaskFilterBar } from "./tasks/TaskFilterBar";
 import { TaskPanel } from "./tasks/TaskPanel";
+import { useDescriptionSearch } from "./tasks/useDescriptionSearch";
 import panelStyles from "./tasks/TaskPanel.module.css";
 import styles from "./TasksPage.module.css";
 
@@ -46,6 +60,8 @@ type Loaded =
       trash: Task[];
       notes: string[];
       readOnly: boolean;
+      project: string;
+      filter: TaskFilter;
     };
 
 type Panel = { kind: "task"; task: string } | { kind: "trash" } | null;
@@ -74,6 +90,8 @@ async function loadPage(): Promise<Loaded> {
       trash,
       notes: view.state === "ready" ? view.notes.map((note) => note.path) : [],
       readOnly: current.project.readOnly,
+      project: current.project.id,
+      filter: rememberedFilter(current.project.id),
     };
   } catch (reason: unknown) {
     return { status: "failed", error: errorOf(reason) };
@@ -88,8 +106,14 @@ export function TasksPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<BoardColumn | null>(null);
   const [deleting, setDeleting] = useState<Task | null>(null);
+  const [addedHidden, setAddedHidden] = useState(false);
+  const filterField = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
   const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const search = useDescriptionSearch(
+    loaded.status === "ready" ? loaded.filter.text : "",
+    loaded.status === "ready" ? loaded.board : null,
+  );
 
   useEffect(() => {
     let current = true;
@@ -193,9 +217,24 @@ export function TasksPage() {
     );
   }
 
-  const { board, trash, notes, readOnly } = loaded;
+  const { board, trash, notes, readOnly, project, filter } = loaded;
+  const filtering = isFiltering(filter);
+  const day = today();
+  const shown = filteredBoard(board, filter, search.ids, day);
 
-  const onMove = (task: string, target: Target) => {
+  const setFilter = (next: TaskFilter) => {
+    rememberFilter(project, next);
+    setAddedHidden(false);
+    setLoaded((last) =>
+      last.status === "ready" ? { ...last, filter: next } : last,
+    );
+  };
+
+  const onMove = (task: string, moved: Target) => {
+    const target = storedTarget(board, shown, task, moved);
+    if (target === null) {
+      return;
+    }
     showBoard(movedTask(board, task, target.column, target.index));
     void act("The task was not moved.", () =>
       moveTask(task, target.column, target.index),
@@ -209,8 +248,8 @@ export function TasksPage() {
   const closePanel = () => {
     const open = panel;
     setPanel(null);
-    if (open?.kind === "task") {
-      focusCard(open.task);
+    if (open?.kind === "task" && !focusCard(open.task)) {
+      filterField.current?.focus();
     }
   };
 
@@ -224,6 +263,16 @@ export function TasksPage() {
   return (
     <Page>
       <div className={styles.toolbar}>
+        <TaskFilterBar
+          filter={filter}
+          tags={tagChoices(board, filter.tags)}
+          shown={countTasks(shown)}
+          total={countTasks(board)}
+          addedHidden={addedHidden}
+          searchFailed={search.failed}
+          field={filterField}
+          onChange={setFilter}
+        />
         {readOnly && (
           <p className={styles.notice}>
             This project is write-protected. Tasks can be read but not changed.
@@ -250,7 +299,8 @@ export function TasksPage() {
       <div className={styles.work}>
         <div className={styles.boardArea}>
           <TaskBoard
-            board={board}
+            board={shown}
+            whole={board}
             readOnly={readOnly}
             selected={panel?.kind === "task" ? panel.task : null}
             onOpen={(task) => {
@@ -266,6 +316,14 @@ export function TasksPage() {
                   due: null,
                   tags: [],
                   notes: [],
+                }).then((next) => {
+                  const added = lastTaskIn(next, column);
+                  setAddedHidden(
+                    filtering &&
+                      added !== undefined &&
+                      !fits(added, filter, search.ids, day),
+                  );
+                  return next;
                 }),
               ).then((error) => {
                 // The field beside the column says why.

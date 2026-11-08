@@ -39,6 +39,8 @@ const PRIORITY_LABEL: Record<TaskPriority, string> = {
 
 interface TaskBoardProps {
   board: Board;
+  /** The whole board when `board` shows only some of it (M4-008). */
+  whole: Board;
   readOnly: boolean;
   /** The task open in the side panel. */
   selected: string | null;
@@ -57,14 +59,18 @@ function cardOf(task: string): HTMLElement | undefined {
   );
 }
 
-export function focusCard(task: string): void {
-  cardOf(task)?.focus();
+/** `false` when the card is not on the board, for instance hidden by a filter. */
+export function focusCard(task: string): boolean {
+  const card = cardOf(task);
+  card?.focus();
+  return card !== undefined;
 }
 
 // Columns side by side, each with its cards in order (M4-004). One Tab stop for all
 // cards: arrows walk through them, Ctrl + arrows move the card, Enter opens it.
 export function TaskBoard({
   board,
+  whole,
   readOnly,
   selected,
   onOpen,
@@ -128,6 +134,10 @@ export function TaskBoard({
         <ColumnView
           key={column.id}
           column={column}
+          total={
+            whole.columns.find((one) => one.id === column.id)?.tasks.length ??
+            column.tasks.length
+          }
           first={columnIndex === 0}
           last={columnIndex === board.columns.length - 1}
           only={board.columns.length === 1}
@@ -171,6 +181,8 @@ export function TaskBoard({
 
 interface ColumnViewProps {
   column: BoardColumn;
+  /** With the tasks a filter hides. */
+  total: number;
   first: boolean;
   last: boolean;
   only: boolean;
@@ -191,6 +203,7 @@ interface ColumnViewProps {
 
 function ColumnView({
   column,
+  total,
   first,
   last,
   only,
@@ -222,7 +235,9 @@ function ColumnView({
         <h2 className={styles.columnName}>{column.name}</h2>
         <span className={styles.count}>
           <span className={styles.hidden}>Tasks: </span>
-          {column.tasks.length}
+          {column.tasks.length === total
+            ? column.tasks.length
+            : `${String(column.tasks.length)} of ${String(total)}`}
         </span>
         {!readOnly && (
           <Menu

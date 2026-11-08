@@ -33,6 +33,8 @@ const MAX_TASKS: i64 = 10_000;
 const MAX_TAGS: usize = 50;
 const MAX_TAG_CHARS: usize = 100;
 const MAX_NOTES: usize = 100;
+/// What the board's filter can ask for.
+const MAX_FILTER_CHARS: usize = 200;
 
 /// Why a task or column could not be changed. Nothing was changed.
 #[derive(Debug)]
@@ -617,6 +619,31 @@ impl Project {
             column,
             description,
         })
+    }
+
+    /// The ids of the tasks on the board whose description holds `query`, in any case.
+    /// In Rust and not with `LIKE`, which only folds ASCII letters.
+    pub fn tasks_with_description(&self, query: &str) -> Result<Vec<String>, TaskError> {
+        let wanted = query.trim();
+        if wanted.chars().count() > MAX_FILTER_CHARS {
+            return Err(TaskError::Invalid);
+        }
+        if wanted.is_empty() || !has_tasks(&self.connection)? {
+            return Ok(Vec::new());
+        }
+        let wanted = wanted.to_lowercase();
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT id, substr(description, 1, {MAX_DESCRIPTION_BYTES}) FROM tasks
+             WHERE trashed_ms IS NULL AND length(description) > 0 LIMIT {MAX_TASKS}"
+        ))?;
+        let mut rows = statement.query([])?;
+        let mut found = Vec::new();
+        while let Some(row) = rows.next()? {
+            if text(row, 1)?.to_lowercase().contains(&wanted) {
+                found.push(text(row, 0)?);
+            }
+        }
+        Ok(found)
     }
 
     /// A new task at the bottom of its column.

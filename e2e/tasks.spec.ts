@@ -29,6 +29,65 @@ async function addTasks(page: Page, name: string, ...tasks: string[]) {
   await field.press("Escape");
 }
 
+test("filters narrow the board, a move keeps the hidden tasks' order, and nothing lasts", async ({
+  app,
+}) => {
+  const folder = app.folder("Filter-");
+
+  let page = await app.launch({ pick: folder });
+  await nav(page, "Projects");
+  await page.getByRole("button", { name: "Add project folder" }).click();
+  await expect(page.getByText("Open now")).toBeVisible();
+  await nav(page, "Tasks");
+  await expect(page.getByRole("heading", { name: "To do" })).toBeVisible();
+  await addTasks(page, "To do", "Roof one", "Door", "Roof two");
+
+  await card(page, "Door").click();
+  await page
+    .getByRole("textbox", { name: "Description" })
+    .fill("Ask the Größe");
+  await page.getByRole("button", { name: "Close task" }).click();
+
+  const text = page.getByRole("searchbox", { name: "Filter by text" });
+  const count = page.getByRole("search").getByRole("status");
+
+  // A word only in a description, in another case.
+  await text.fill("GRÖßE");
+  await expect(titles(page, "To do")).toHaveCount(1);
+  await expect(card(page, "Door")).toBeVisible();
+  await expect(count).toHaveText("1 of 3 tasks");
+
+  // The hidden Door stays between the two.
+  await text.fill("roof");
+  await expect(titles(page, "To do")).toHaveText(["Roof one", "Roof two"]);
+  await card(page, "Roof two").focus();
+  await page.keyboard.press("Control+ArrowUp");
+  await expect(titles(page, "To do")).toHaveText(["Roof two", "Roof one"]);
+
+  // It stays across pages.
+  await nav(page, "Settings");
+  await nav(page, "Tasks");
+  await expect(
+    page.getByRole("searchbox", { name: "Filter by text" }),
+  ).toHaveValue("roof");
+
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(titles(page, "To do")).toHaveText([
+    "Roof two",
+    "Roof one",
+    "Door",
+  ]);
+
+  // Not after a restart.
+  await page.getByRole("searchbox", { name: "Filter by text" }).fill("door");
+  page = await app.launch();
+  await nav(page, "Tasks");
+  await expect(
+    page.getByRole("searchbox", { name: "Filter by text" }),
+  ).toHaveValue("");
+  await expect(titles(page, "To do")).toHaveCount(3);
+});
+
 test("tasks are added, dragged, moved by keys, edited, trashed, and still there after a restart", async ({
   app,
 }) => {

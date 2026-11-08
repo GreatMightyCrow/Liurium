@@ -304,6 +304,11 @@ export function taskDetail(task: string): Promise<TaskDetail> {
   return call("task_detail", { task });
 }
 
+/** The ids of the tasks on the board whose description holds `text`, in any case. */
+export function tasksWithDescription(text: string): Promise<string[]> {
+  return call("tasks_with_description", { text });
+}
+
 /** A new task at the bottom of `column`. */
 export function createTask(column: string, fields: TaskFields): Promise<Board> {
   return call("create_task", { column, fields });

@@ -6,6 +6,9 @@
   .menu {
     display: grid;
     min-width: var(--size-menu-min);
+    max-width: var(--size-menu-max);
+    max-height: var(--available-height);
+    overflow-y: auto;
     padding: var(--space-1);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
@@ -45,6 +48,30 @@
       background: var(--color-forced-selected);
       color: var(--color-forced-on-selected);
     }
+  }
+
+  /* Always there, so the names stay in line whether ticked or not. */
+  .check {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .check[data-unchecked] {
+    visibility: hidden;
+  }
+
+  .checkMark {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .item[data-disabled] {
