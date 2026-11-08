@@ -51,7 +51,7 @@ test("Ctrl + Shift + F searches the notes, and a result opens its note at the ma
     "Tomato soup.md",
     "Garden.mdWe plant the Tomatoes early.",
   ]);
-  await expect(results.locator("mark")).toHaveText("Tomatoes");
+  await expect(results.locator("mark")).toHaveText("Tomato");
 
   await results.getByRole("button", { name: /Garden\.md/ }).click();
   await expect(
