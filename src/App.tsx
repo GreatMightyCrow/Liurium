@@ -8,6 +8,7 @@ import { areas } from "./app/areas";
 import { CloseQuestionDialog } from "./app/CloseQuestionDialog";
 import { type FrameStyle, frameStyleFrom } from "./app/frameStyle";
 import { useSidebarCollapsed } from "./app/layoutChoice";
+import { useSearchShortcut } from "./app/notes/searchRequest";
 import { SettingsProvider } from "./app/settingsState";
 import { ShowTheme } from "./app/showTheme";
 import { appIconFor, applyTheme, type Theme, themeFrom } from "./app/theme";
@@ -51,6 +52,7 @@ function App() {
 function Shell({ frame, theme }: { frame: FrameStyle; theme: Theme }) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useSidebarCollapsed(location);
+  useSearchShortcut();
   return (
     <AppShell
       frame={frame}

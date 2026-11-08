@@ -1,0 +1,157 @@
+@layer components {
+  .panel {
+    display: grid;
+    gap: var(--space-2);
+    align-content: start;
+  }
+
+  /* The field fills the list's width; the icon sits inside it at the start. */
+  .field {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .icon {
+    position: absolute;
+    inset-inline-start: var(--space-2);
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+    pointer-events: none;
+  }
+
+  .input {
+    width: 100%;
+    min-height: var(--size-control-sm);
+    padding-inline: calc(var(--space-2) * 2 + var(--size-icon-sm))
+      var(--size-control-sm);
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font: inherit;
+  }
+
+  /* The browser's own clear button does not follow the theme; Liurium draws one. */
+  .input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  .clear {
+    position: absolute;
+    inset-inline-end: 0;
+  }
+
+  .input::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .input:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .status,
+  .hint {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .results {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  /* Results of the last query stay while the next one is asked; they fade a little. */
+  .results[data-stale] {
+    opacity: 0.6;
+  }
+
+  .notes {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* One result: the note's name over the line that matched; the whole of it opens. */
+  .hit {
+    display: grid;
+    gap: var(--space-1);
+    width: 100%;
+    padding: var(--space-2);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text);
+    font: inherit;
+    text-align: start;
+  }
+
+  .hit:hover {
+    background: var(--color-surface);
+  }
+
+  .hit:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  .name {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    align-items: baseline;
+    font-weight: var(--font-weight-semibold);
+    overflow-wrap: anywhere;
+  }
+
+  .folder {
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+
+  .line {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .match {
+    background: none;
+    color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .projects {
+    display: grid;
+    gap: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .heading {
+    margin: 0;
+    padding-inline: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .projectIcon {
+    align-self: center;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  @media (forced-colors: active) {
+    .match {
+      color: Highlight;
+    }
+  }
+}

@@ -1211,3 +1211,42 @@ test("a change outside asks for the marks again, as an image's address holds its
     );
   });
 });
+
+test("a search result's place is shown once, also when it is the same note", async () => {
+  fakeEditor.text.mockReturnValue("# Plan\r\n\r\nWe plant.\r\n");
+  const onRevealed = vi.fn();
+  const first = { offset: 10 };
+  const shown = (
+    reveal: { offset: number } | null,
+    revealed: () => void = onRevealed,
+  ) => (
+    <NotePane
+      path="Ideas/Plan.md"
+      onMoved={vi.fn()}
+      notes={[]}
+      onOpen={onOpen}
+      onCreated={onCreated}
+      onTag={onTag}
+      onClosed={onClosed}
+      outside={0}
+      reveal={reveal}
+      onRevealed={revealed}
+    />
+  );
+  const { rerender } = render(shown(first));
+  await noteOpened();
+
+  // "# Plan\r\n\r\n" is 10 units, 8 positions in the editor.
+  await waitFor(() => {
+    expect(fakeEditor.goTo).toHaveBeenCalledWith(8);
+  });
+  expect(onRevealed).toHaveBeenCalledTimes(1);
+
+  // A parent that passes a new function each time does not show it again.
+  rerender(shown(first, vi.fn()));
+  expect(fakeEditor.goTo).toHaveBeenCalledTimes(1);
+
+  rerender(shown({ offset: 10 }));
+  expect(fakeEditor.goTo).toHaveBeenCalledTimes(2);
+  expect(onRevealed).toHaveBeenCalledTimes(2);
+});

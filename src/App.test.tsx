@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 import { areas } from "./app/areas";
@@ -37,18 +37,30 @@ test("opens the dashboard first and marks it as the current page", () => {
   expect(sidebarLink("Dashboard").getAttribute("aria-current")).toBe("page");
 });
 
-test.each(areas.map((area) => [area.label]))(
-  "reaches %s from the sidebar",
-  (label) => {
-    render(<App />);
-    fireEvent.click(sidebarLink(label));
-    expect(currentPageTitle()).toBe(label);
-    const current = screen
-      .getAllByRole("link")
-      .filter((link) => link.getAttribute("aria-current") === "page");
-    expect(current.map((link) => link.textContent)).toEqual([label]);
-  },
-);
+// Search is a tab of the Notes page (M4-002); its own test is below.
+test.each(
+  areas.filter((area) => area.path !== "/search").map((area) => [area.label]),
+)("reaches %s from the sidebar", (label) => {
+  render(<App />);
+  fireEvent.click(sidebarLink(label));
+  expect(currentPageTitle()).toBe(label);
+  const current = screen
+    .getAllByRole("link")
+    .filter((link) => link.getAttribute("aria-current") === "page");
+  expect(current.map((link) => link.textContent)).toEqual([label]);
+});
+
+test("Search in the sidebar leads to the Notes page", async () => {
+  render(<App />);
+  fireEvent.click(sidebarLink("Search"));
+  await waitFor(() => {
+    expect(currentPageTitle()).toBe("Notes");
+  });
+  const current = screen
+    .getAllByRole("link")
+    .filter((link) => link.getAttribute("aria-current") === "page");
+  expect(current.map((link) => link.textContent)).toEqual(["Notes"]);
+});
 
 test("choosing a page moves focus to its heading", () => {
   render(<App />);

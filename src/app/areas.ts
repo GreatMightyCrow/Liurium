@@ -58,7 +58,7 @@ export const areas: readonly Area[] = [
     path: "/search",
     label: "Search",
     icon: Search,
-    summary: "This page will search across projects and notes.",
+    summary: "Search the open project's notes and every project by name.",
     placement: "main",
   },
   {

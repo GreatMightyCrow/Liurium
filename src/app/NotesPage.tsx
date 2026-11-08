@@ -1,9 +1,10 @@
 import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
   listNotes,
   type NotesView,
+  openProject,
   type SkippedNotes,
 } from "../lib/ipc/commands";
 import { type CommandError, CommandFailure } from "../lib/ipc/errors";
@@ -16,6 +17,8 @@ import { commandErrorMessage } from "./commandErrorMessage";
 import { useLayoutChoice } from "./layoutChoice";
 import { NotePane } from "./notes/NotePane";
 import { NoteTree, type TreeChange } from "./notes/NoteTree";
+import { SearchPanel } from "./notes/SearchPanel";
+import { useSearchRequest } from "./notes/searchRequest";
 import { TagFilterBar, TagList, TagsFailed } from "./notes/TagList";
 import { sameTag, useProjectTags } from "./notes/tags";
 import { useNoteChanges } from "./notes/useNoteChanges";
@@ -128,11 +131,12 @@ export function NotesPage() {
   );
 }
 
-type ListTab = "files" | "tags";
+type ListTab = "files" | "tags" | "search";
 
 const LIST_TABS: readonly { value: ListTab; label: string }[] = [
   { value: "files", label: "Files" },
   { value: "tags", label: "Tags" },
+  { value: "search", label: "Search" },
 ];
 
 function Content({
@@ -160,6 +164,22 @@ function Content({
     false,
   );
   const openPath = notePathOf(location);
+  /** Kept while other tabs show, so coming back shows the same search (M4-002). */
+  const [query, setQuery] = useState("");
+  const [searchFocus, setSearchFocus] = useState(0);
+  /** The place a search result opens a note at. */
+  const [reveal, setReveal] = useState<{
+    path: string;
+    at: { offset: number };
+  } | null>(null);
+  const forgetReveal = useCallback(() => {
+    setReveal(null);
+  }, []);
+  useSearchRequest(() => {
+    setListTab("search");
+    setListHidden(false);
+    setSearchFocus((last) => last + 1);
+  });
 
   if (loaded.status === "loading") {
     return <LoadingState label="Looking for notes…" />;
@@ -271,7 +291,30 @@ function Content({
             options={LIST_TABS}
             onChange={setListTab}
           >
-            {listTab === "tags" ? (
+            {listTab === "search" ? (
+              <SearchPanel
+                query={query}
+                onQuery={setQuery}
+                focusKey={searchFocus}
+                refresh={version}
+                onOpen={(path, offset) => {
+                  setReveal(offset === null ? null : { path, at: { offset } });
+                  navigate(noteHref(path));
+                }}
+                onOpenProject={(id) => {
+                  openProject(id).then(
+                    () => {
+                      reload();
+                      navigate(NOTES);
+                    },
+                    () => {
+                      // The Projects page says why it cannot open.
+                      navigate("/projects");
+                    },
+                  );
+                }}
+              />
+            ) : listTab === "tags" ? (
               <TagList state={tags} chosen={tagFilter} onChoose={chooseTag} />
             ) : (
               <>
@@ -354,6 +397,8 @@ function Content({
             }}
             outside={outside}
             leading={showList}
+            reveal={reveal?.path === openPath ? reveal.at : null}
+            onRevealed={forgetReveal}
           />
         )}
       </div>

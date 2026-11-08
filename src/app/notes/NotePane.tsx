@@ -89,6 +89,11 @@ interface NotePaneProps {
   outside: number;
   /** Shown before the note's name, e.g. the button that shows the note list. */
   leading?: ReactNode;
+  /** A place in the text (UTF-16) to show, from a search result (M4-002); a new
+   *  object each time, so the same place can be shown again. */
+  reveal?: { offset: number } | null;
+  /** The place was shown; it is not shown again when the note opens later. */
+  onRevealed?: () => void;
 }
 
 /** While typing, the links are asked for again at most this often. */
@@ -135,8 +140,21 @@ export function NotePane({
   onClosed,
   outside,
   leading,
+  reveal = null,
+  onRevealed,
 }: NotePaneProps) {
   const editor = useRef<NoteEditor | null>(null);
+  /** The search result shown last, so a new one is shown once. */
+  const shownReveal = useRef<{ offset: number } | null>(null);
+  useEffect(() => {
+    const current = editor.current;
+    if (reveal === null || current === null || shownReveal.current === reveal) {
+      return;
+    }
+    shownReveal.current = reveal;
+    current.goTo(toEditorPositions(current.text(), [reveal.offset])[0]);
+    onRevealed?.();
+  }, [reveal, onRevealed]);
   const { folder, name } = split(path);
   const linkTimer = useRef<number | null>(null);
   /** Live preview by default, or the plain source (M3-017), remembered. */
@@ -348,6 +366,11 @@ export function NotePane({
       return;
     }
     refreshLinks(instance.text());
+    if (reveal !== null) {
+      shownReveal.current = reveal;
+      instance.goTo(toEditorPositions(instance.text(), [reveal.offset])[0]);
+      onRevealed?.();
+    }
     if (
       pendingAnchor !== null &&
       pendingAnchor.path.toLowerCase() === path.toLowerCase()

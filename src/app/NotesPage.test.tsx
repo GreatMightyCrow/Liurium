@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { Router, useLocation } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -7,6 +7,7 @@ import {
   type NoteEntry,
   type NotesView,
   projectTags,
+  searchNotes,
   type SkippedNotes,
   waitNoteChanges,
 } from "../lib/ipc/commands";
@@ -18,10 +19,13 @@ import {
   SHOWN_NOTES,
   skippedText,
 } from "./NotesPage";
+import { requestSearch } from "./notes/searchRequest";
 
 vi.mock("../lib/ipc/commands", () => ({
   listNotes: vi.fn(),
   projectTags: vi.fn(),
+  searchNotes: vi.fn(),
+  openProject: vi.fn(),
   propertyKinds: vi.fn(() => Promise.resolve([])),
   waitNoteChanges: vi.fn(),
   checkNoteChanges: vi.fn(() => Promise.resolve()),
@@ -222,6 +226,40 @@ test("the notes are counted and shown as a tree, folders first and closed", asyn
   expect(
     screen.getByText("Choose a note on the left to open it."),
   ).toBeDefined();
+});
+
+test("a search request opens the Search tab, and a result opens its note", async () => {
+  listNotesMock.mockResolvedValue(
+    ready([note("a.md"), note("Ideas/Garden.md")]),
+  );
+  vi.mocked(searchNotes).mockResolvedValue({
+    notes: [
+      {
+        path: "Ideas/Garden.md",
+        excerpt: { offset: 3, line: "so tomatoes", from: 3, to: 11 },
+      },
+    ],
+    projects: [],
+    shortWords: false,
+  });
+  renderPage();
+  await screen.findByText("2 notes");
+
+  act(() => {
+    requestSearch();
+  });
+
+  expect(
+    screen.getByRole("tab", { name: "Search" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  const field = screen.getByRole("searchbox", { name: "Search notes" });
+  expect(document.activeElement).toBe(field);
+  fireEvent.change(field, { target: { value: "tomato" } });
+  fireEvent.click(await screen.findByRole("button", { name: /Garden.md/ }));
+
+  expect(screen.getByTestId("location").textContent).toBe(
+    "/notes/Ideas/Garden.md",
+  );
 });
 
 test("the folders above the open note start open, and the note is marked", async () => {

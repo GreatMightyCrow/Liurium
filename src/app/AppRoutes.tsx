@@ -5,6 +5,7 @@ import { NotesPage } from "./NotesPage";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { PlaceholderPage } from "./PlaceholderPage";
 import { ProjectsPage } from "./ProjectsPage";
+import { SearchRoute } from "./SearchRoute";
 import { SettingsPage } from "./SettingsPage";
 import { useFocusPageHeading } from "./useFocusPageHeading";
 
@@ -12,6 +13,7 @@ import { useFocusPageHeading } from "./useFocusPageHeading";
 const pages: Partial<Record<string, ComponentType>> = {
   "/projects": ProjectsPage,
   "/notes": NotesPage,
+  "/search": SearchRoute,
   "/settings": SettingsPage,
 };
 
