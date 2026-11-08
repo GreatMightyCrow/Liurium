@@ -16,6 +16,7 @@ pub mod notes;
 pub mod organize;
 pub mod projects;
 pub mod properties;
+pub mod search;
 pub mod settings;
 #[cfg(test)]
 mod tests;

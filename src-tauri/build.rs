@@ -40,6 +40,7 @@ const COMMANDS: &[&str] = &[
     "wait_close_question",
     "answer_close_question",
     "open_external_link",
+    "search_notes",
 ];
 
 fn main() {

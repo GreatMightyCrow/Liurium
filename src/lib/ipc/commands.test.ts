@@ -20,6 +20,7 @@ import {
   renameEntry,
   resetSyncWarnings,
   resolveNoteConflict,
+  searchNotes,
   trashEntry,
   updateNote,
   waitNoteChanges,
@@ -178,6 +179,15 @@ test("projectTags asks for the open project's tags", async () => {
   await projectTags();
 
   expect(invokeMock).toHaveBeenCalledWith("project_tags", undefined);
+});
+
+test("search sends the query as it is", async () => {
+  const results = { notes: [], projects: [], shortWords: false };
+  invokeMock.mockResolvedValue(results);
+
+  await expect(searchNotes('plan "x')).resolves.toEqual(results);
+
+  expect(invokeMock).toHaveBeenCalledWith("search_notes", { query: 'plan "x' });
 });
 
 test("backlinks sends the note's path", async () => {

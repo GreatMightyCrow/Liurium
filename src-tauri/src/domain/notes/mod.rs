@@ -9,6 +9,9 @@ pub mod links;
 pub mod meta;
 pub mod organize;
 pub mod properties;
+pub mod search;
+#[cfg(test)]
+mod search_tests;
 pub mod session;
 #[cfg(test)]
 mod session_tests;
@@ -80,6 +83,8 @@ pub struct NoteFacts {
     pub images: Vec<images::ImageLink>,
     /// Formulas to show (M3-010); shown in the editor, not kept in the cache.
     pub math: Vec<links::MathSpan>,
+    /// The text of each heading (M4-001, for search).
+    pub headings: Vec<String>,
     pub front: meta::FrontMatter,
 }
 
@@ -92,6 +97,7 @@ impl NoteFacts {
             external: scan.external,
             images: scan.images,
             math: scan.math,
+            headings: scan.headings,
             front: meta::read(text),
         }
     }
@@ -130,17 +136,31 @@ fn read_aliases(conn: &Connection) -> Result<Vec<(String, String)>, DbError> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// The facts of one note, or none when it cannot be read as a note (too large,
-/// not UTF-8, gone meanwhile): it still counts as a note, it just links nowhere.
-pub(super) fn facts_of(root: &ProjectRoot, path: &RelPath) -> NoteFacts {
-    root.read(path, MAX_NOTE_BYTES)
-        .ok()
-        .and_then(|(bytes, _)| text::decode(&bytes).ok())
-        .map_or_else(NoteFacts::default, |note| NoteFacts::of(&note.text))
+/// What the cache keeps of one note: its facts and what search gets.
+pub(super) struct Found {
+    pub(super) facts: NoteFacts,
+    pub(super) document: search::Document,
 }
 
-/// Notes that are new or changed are read and parsed first; then one transaction
-/// writes everything, so the cache is either the old or the new state, never half.
+/// The facts of one note, or none when it cannot be read as a note (too large,
+/// not UTF-8, gone meanwhile): it still counts as a note, it just links nowhere,
+/// and search finds it only by its name.
+pub(super) fn facts_of(root: &ProjectRoot, path: &RelPath) -> Found {
+    let text = root
+        .read(path, MAX_NOTE_BYTES)
+        .ok()
+        .and_then(|(bytes, _)| text::decode(&bytes).ok())
+        .map(|note| note.text);
+    let facts = text
+        .as_deref()
+        .map_or_else(NoteFacts::default, NoteFacts::of);
+    let document = search::Document::of(&path.to_string(), text.as_deref(), &facts);
+    Found { facts, document }
+}
+
+/// One transaction writes everything, so the cache is either the old or the new
+/// state, never half. Each new or changed note is read inside it, one at a time:
+/// with its search text (M4-001), holding them all first could take hundreds of MB.
 fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Changes, DbError> {
     let mut known: HashMap<String, (i64, i64)> = HashMap::new();
     {
@@ -164,12 +184,13 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
             Some(old) if old != stamp => false,
             Some(_) => continue,
         };
-        writes.push((path, stamp, new, facts_of(root, &note.path)));
+        writes.push((path, stamp, new, &note.path));
         changes.parsed += 1;
     }
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    for (path, stamp, new, found) in &writes {
+    for (path, stamp, new, rel) in &writes {
+        let found = facts_of(root, rel);
         if *new {
             tx.execute(
                 "INSERT INTO notes (path, size, modified_ns) VALUES (?1, ?2, ?3)",
@@ -184,10 +205,11 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
             forget_facts(&tx, path)?;
             changes.changed += 1;
         }
-        write_facts(&tx, path, found)?;
+        write_facts(&tx, path, &found)?;
     }
-    // Their links go with them (ON DELETE CASCADE).
+    // Their links go with them (ON DELETE CASCADE); the search row does not.
     for path in known.keys() {
+        search::forget(&tx, path)?;
         tx.execute("DELETE FROM notes WHERE path = ?1", [path])?;
         changes.removed += 1;
     }
@@ -195,16 +217,19 @@ fn update(conn: &mut Connection, walk: &Walk, root: &ProjectRoot) -> Result<Chan
     Ok(changes)
 }
 
-/// Drops a note's stored links, tags, and aliases.
+/// Drops a note's stored links, tags, aliases, and search row.
 fn forget_facts(conn: &Connection, path: &str) -> Result<(), DbError> {
+    search::forget(conn, path)?;
     for table in ["links", "tags", "aliases"] {
         conn.execute(&format!("DELETE FROM {table} WHERE source = ?1"), [path])?;
     }
     Ok(())
 }
 
-/// Stores a note's links, tags, and aliases; its old rows must be gone already.
-fn write_facts(conn: &Connection, path: &str, facts: &NoteFacts) -> Result<(), DbError> {
+/// Stores a note's links, tags, aliases, and search row; its old rows must be gone
+/// already.
+fn write_facts(conn: &Connection, path: &str, found: &Found) -> Result<(), DbError> {
+    let facts = &found.facts;
     write_links(conn, path, &facts.links)?;
     let mut tag = conn.prepare("INSERT INTO tags (source, tag, start_byte) VALUES (?1, ?2, ?3)")?;
     for inline in &facts.tags {
@@ -221,7 +246,7 @@ fn write_facts(conn: &Connection, path: &str, facts: &NoteFacts) -> Result<(), D
     for name in &facts.front.aliases {
         alias.execute(params![path, name])?;
     }
-    Ok(())
+    search::write(conn, path, &found.document)
 }
 
 /// Stores a note's links; its old rows must be gone already.

@@ -79,6 +79,8 @@ pub struct Scan {
     pub images: Vec<ImageLink>,
     /// Formulas to show (M3-010); shown in the editor, not kept in the cache.
     pub math: Vec<MathSpan>,
+    /// The text of each heading, in order (M4-001, for search).
+    pub headings: Vec<String>,
 }
 
 /// A longer formula stays source text: this caps the work per formula (M3-010).
@@ -180,6 +182,9 @@ pub fn scan(text: &str) -> Scan {
     let mut external: Vec<ExternalLink> = Vec::new();
     let mut images: Vec<ImageLink> = Vec::new();
     let mut math: Vec<MathSpan> = Vec::new();
+    let mut headings: Vec<String> = Vec::new();
+    // The text of the heading being read.
+    let mut heading: Option<String> = None;
     // Images inside the one being read; only the outermost shows, the rest is its text.
     let mut image_depth = 0_usize;
     // The text of the outermost image, for as long as it is being read.
@@ -203,6 +208,11 @@ pub fn scan(text: &str) -> Scan {
             && let Event::Text(piece) | Event::Code(piece) = &event
         {
             image_text.push_str(piece);
+        }
+        if let Some(heading) = &mut heading
+            && let Event::Text(piece) | Event::Code(piece) = &event
+        {
+            heading.push_str(piece);
         }
         match event {
             Event::Code(_) => code.push(range),
@@ -228,6 +238,14 @@ pub fn scan(text: &str) -> Scan {
                 code.push(range);
             }
             Event::End(TagEnd::CodeBlock) => in_code_block = false,
+            Event::Start(Tag::Heading { .. }) => heading = Some(String::new()),
+            Event::End(TagEnd::Heading(_)) => {
+                if let Some(done) = heading.take()
+                    && !done.trim().is_empty()
+                {
+                    headings.push(done.trim().to_owned());
+                }
+            }
             // Only text that is exactly what the file holds there: escapes and
             // entities come as their own pieces, so `\#x` is no tag.
             Event::Text(piece) if !in_code_block && text.get(range.clone()) == Some(&*piece) => {
@@ -332,6 +350,7 @@ pub fn scan(text: &str) -> Scan {
         external,
         images,
         math,
+        headings,
     }
 }
 

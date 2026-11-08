@@ -473,10 +473,7 @@ fn a_new_cache_is_created_in_the_cache_folder_with_wal() {
         number(&cache.connection, "application_id"),
         i64::from(CACHE_ID)
     );
-    assert_eq!(
-        tables(&cache.connection),
-        ["aliases", "links", "notes", "tags"]
-    );
+    assert_eq!(tables(&cache.connection), CURRENT_CACHE_TABLES);
 }
 
 #[test]
@@ -609,13 +606,46 @@ fn a_version_1_cache_gains_links_and_forgets_its_notes_for_one_full_read() {
     let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
 
     assert!(!cache.fresh);
-    assert_eq!(number(&cache.connection, "user_version"), 3);
-    assert_eq!(
-        tables(&cache.connection),
-        ["aliases", "links", "notes", "tags"]
-    );
+    assert_eq!(number(&cache.connection, "user_version"), 4);
+    assert_eq!(tables(&cache.connection), CURRENT_CACHE_TABLES);
     assert!(cache_paths(&cache.connection).is_empty());
     assert!(backups(&path).is_empty());
+}
+
+/// The cache's tables now, the search index's own tables included (M4-001).
+const CURRENT_CACHE_TABLES: [&str; 9] = [
+    "aliases",
+    "links",
+    "notes",
+    "search",
+    "search_config",
+    "search_data",
+    "search_docsize",
+    "search_idx",
+    "tags",
+];
+
+#[test]
+fn a_version_3_cache_gains_search_and_reads_every_note_again() {
+    let dir = temp_dir();
+    let path = cache_path(dir.path());
+    fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+    let conn = liurium_database(&path, Kind::Cache, 3);
+    cache_row(&conn);
+    conn.execute("INSERT INTO tags (source, tag) VALUES ('a.md', 'idee')", [])
+        .expect("tag");
+    drop(conn);
+
+    let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
+
+    assert_eq!(number(&cache.connection, "user_version"), 4);
+    assert_eq!(tables(&cache.connection), CURRENT_CACHE_TABLES);
+    assert!(cache_paths(&cache.connection).is_empty());
+    let tags: i64 = cache
+        .connection
+        .query_row("SELECT count(*) FROM tags", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(tags, 0, "tags go with their notes");
 }
 
 #[test]
@@ -634,7 +664,7 @@ fn a_version_2_cache_gains_tags_and_aliases_and_reads_every_note_again() {
 
     let cache = open_cache(dir.path(), CACHE_PROJECT).expect("cache");
 
-    assert_eq!(number(&cache.connection, "user_version"), 3);
+    assert_eq!(number(&cache.connection, "user_version"), 4);
     assert!(cache_paths(&cache.connection).is_empty());
     let links: i64 = cache
         .connection

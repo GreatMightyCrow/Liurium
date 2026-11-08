@@ -22,6 +22,7 @@ use super::links::{
 use super::notes::{NoteEntry, NotesView, SkippedNotes};
 use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, ProjectStatus};
 use super::properties::{NoteProperties, PropertyField, PropertyKindChoice};
+use super::search::{NoteHit, ProjectHit, SearchExcerpt, SearchResults};
 use super::settings::SettingsView;
 use super::{AppInfo, CommandError, DataStatus};
 use crate::domain::notes::properties::{Edit, Value};
@@ -92,6 +93,10 @@ fn typescript_bindings_match_the_rust_types() {
         output::<Value>(&config),
         output::<PropertyKind>(&config),
         output::<Edit>(&config),
+        output::<SearchResults>(&config),
+        output::<NoteHit>(&config),
+        output::<SearchExcerpt>(&config),
+        output::<ProjectHit>(&config),
     ];
     let update = std::env::var_os("UPDATE_BINDINGS").is_some();
 

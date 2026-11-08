@@ -2079,3 +2079,70 @@ fn the_open_command_refuses_what_a_note_could_not_link_to() {
         );
     }
 }
+
+#[test]
+fn search_finds_notes_of_the_open_project_and_every_project_by_name() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden plans", current(Kind::Project));
+    let other = project(dir.path(), "Kitchen", current(Kind::Project));
+    std::fs::write(garden.root.join("Plan.md"), "# Plan\n").expect("note");
+    std::fs::write(garden.root.join("Home.md"), "the garden needs water\n").expect("note");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &other.root);
+    added(&workspace, &garden.root);
+
+    let found = workspace.search("garden").expect("search");
+
+    assert_eq!(
+        to_json(&found),
+        json!({
+            "notes": [{
+                "path": "Home.md",
+                "excerpt": { "offset": 4, "line": "the garden needs water", "from": 4, "to": 10 }
+            }],
+            "projects": [{ "id": garden.id, "name": "Garden plans", "open": true }],
+            "shortWords": false
+        })
+    );
+    let kitchen = workspace.search("kitch").expect("search");
+    assert_eq!(kitchen.projects[0].name, "Kitchen");
+    assert!(!kitchen.projects[0].open);
+    assert!(kitchen.notes.is_empty());
+    assert!(workspace.search("pl").expect("search").short_words);
+    assert_eq!(workspace.search("   ").expect("search").notes, []);
+}
+
+#[test]
+fn search_finds_a_note_saved_in_liurium_at_once() {
+    let dir = temp_dir();
+    let garden = project(dir.path(), "Garden", current(Kind::Project));
+    std::fs::write(garden.root.join("Home.md"), "nothing\n").expect("note");
+    let workspace = workspace(&dir.path().join("app"));
+    added(&workspace, &garden.root);
+    assert!(
+        workspace
+            .search("tomatoes")
+            .expect("search")
+            .notes
+            .is_empty()
+    );
+
+    workspace.open_note("Home.md", false).expect("open");
+    workspace
+        .update_note("Home.md", "plant tomatoes\n", true, 0)
+        .expect("save");
+
+    let found = workspace.search("tomatoes").expect("search");
+    assert_eq!(found.notes[0].path, "Home.md");
+}
+
+#[test]
+fn without_an_open_project_search_finds_only_projects() {
+    let dir = temp_dir();
+    let workspace = workspace(&dir.path().join("app"));
+
+    let found = workspace.search("anything").expect("search");
+
+    assert!(found.notes.is_empty());
+    assert!(found.projects.is_empty());
+}

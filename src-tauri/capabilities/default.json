@@ -45,6 +45,7 @@
     "allow-reconcile-note",
     "allow-wait-close-question",
     "allow-answer-close-question",
-    "allow-open-external-link"
+    "allow-open-external-link",
+    "allow-search-notes"
   ]
 }

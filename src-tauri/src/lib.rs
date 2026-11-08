@@ -61,7 +61,8 @@ pub fn run() {
             commands::editor::reconcile_note,
             commands::closing::wait_close_question,
             commands::closing::answer_close_question,
-            commands::links::open_external_link
+            commands::links::open_external_link,
+            commands::search::search_notes
         ])
         // Reachable from the page without a permission, so it is reviewed like a command:
         // only images the walk listed, in the open project (M3-013).

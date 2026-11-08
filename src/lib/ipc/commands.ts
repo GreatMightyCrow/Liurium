@@ -11,6 +11,7 @@ import type { NoteProperties } from "./bindings/NoteProperties";
 import type { Edit as PropertyEdit } from "./bindings/PropertyEdit";
 import type { PropertyField } from "./bindings/PropertyField";
 import type { PropertyKind } from "./bindings/PropertyKind";
+import type { SearchResults } from "./bindings/SearchResults";
 import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
 import type { Value as PropertyValue } from "./bindings/PropertyValue";
 import type { TagNotes } from "./bindings/TagNotes";
@@ -266,6 +267,12 @@ export function noteLinks(path: string, text: string): Promise<NoteMarks> {
 /** The notes that link to this one, with the line around each link. */
 export function backlinksOf(path: string): Promise<BacklinkSource[]> {
   return call("backlinks", { path });
+}
+
+/** The open project's notes that hold every word, best first, and every project
+ *  whose name does (M4-001). The query is only ever text in Rust. */
+export function searchNotes(query: string): Promise<SearchResults> {
+  return call("search_notes", { query });
 }
 
 /** The note's text after one property edit. Rust only changes the text; it saves

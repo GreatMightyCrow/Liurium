@@ -21,7 +21,7 @@ const ALLOWED_CSP_SOURCES: [&str; 7] = [
 ];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 42] = [
+const REVIEWED_PERMISSIONS: [&str; 43] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -87,6 +87,9 @@ const REVIEWED_PERMISSIONS: [&str; 42] = [
     "allow-answer-close-question",
     // External links (M3-012): the address is checked in Rust; only http, https, mailto.
     "allow-open-external-link",
+    // Search (M4-001): the query is only text, never SQL or FTS5 syntax; reads the open
+    // project's cache and notes, and the registry's project names.
+    "allow-search-notes",
 ];
 
 fn manifest_path(relative: &str) -> PathBuf {

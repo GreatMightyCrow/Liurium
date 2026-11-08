@@ -90,13 +90,13 @@ pub fn backlinks(
     Ok(found.into_values().collect())
 }
 
-fn read_text(root: &ProjectRoot, path: &RelPath) -> Option<String> {
+pub(super) fn read_text(root: &ProjectRoot, path: &RelPath) -> Option<String> {
     let (bytes, _) = root.read(path, MAX_NOTE_BYTES).ok()?;
     text::decode(&bytes).ok().map(|note| note.text)
 }
 
 /// The line around a link, with the link's place in it.
-fn snippet(text: &str, link: std::ops::Range<usize>) -> Backlink {
+pub(super) fn snippet(text: &str, link: std::ops::Range<usize>) -> Backlink {
     let line_start = text[..link.start].rfind('\n').map_or(0, |at| at + 1);
     let line_end = text[link.end..]
         .find(['\r', '\n'])
@@ -159,6 +159,7 @@ pub fn refresh_notes(
                 write_facts(&tx, path, found)?;
             }
             None => {
+                forget_facts(&tx, path)?;
                 tx.execute("DELETE FROM notes WHERE path = ?1", [path])?;
             }
         }

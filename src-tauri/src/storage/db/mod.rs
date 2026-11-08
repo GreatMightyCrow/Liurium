@@ -58,6 +58,7 @@ static CACHE_SCHEMA: Schema = Schema {
         include_str!("migrations/cache/0001_notes.sql"),
         include_str!("migrations/cache/0002_links.sql"),
         include_str!("migrations/cache/0003_tags_and_aliases.sql"),
+        include_str!("migrations/cache/0004_search.sql"),
     ],
 };
 

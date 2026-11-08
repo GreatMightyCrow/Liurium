@@ -178,6 +178,17 @@ pub fn list(app: &Connection) -> Result<Vec<Entry>, DbError> {
     Ok(entries)
 }
 
+/// Every registered project's id and name, the most recently opened first (M4-001,
+/// for search). Only the registry is read; no folder is looked at.
+pub fn names(app: &Connection) -> Result<Vec<(String, String)>, DbError> {
+    let mut statement = app.prepare(
+        "SELECT id, name FROM projects
+         ORDER BY last_opened_at IS NULL, last_opened_at DESC, name COLLATE NOCASE, id",
+    )?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// Sets the display name in `project.db`, where it travels with the folder (ADR-0016),
 /// and in the registry's cache.
 pub fn rename(app: &Connection, project: &mut Project, name: &str) -> Result<(), ProjectError> {
