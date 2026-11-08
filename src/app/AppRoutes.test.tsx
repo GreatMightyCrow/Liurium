@@ -4,12 +4,14 @@ import { Router } from "wouter";
 import { navigate, useHashLocation } from "wouter/use-hash-location";
 import { AppRoutes } from "./AppRoutes";
 
-// The Tasks page breaks while rendering; every other page shows its title.
+// The Tasks page breaks while rendering; the Dashboard shows its title.
+vi.mock("./TasksPage", () => ({
+  TasksPage: function BrokenPage(): never {
+    throw new Error("broken tasks page");
+  },
+}));
 vi.mock("./PlaceholderPage", () => ({
   PlaceholderPage: function FakePage({ title }: { title: string }) {
-    if (title === "Tasks") {
-      throw new Error("broken tasks page");
-    }
     return <h1>{title}</h1>;
   },
 }));

@@ -1,0 +1,83 @@
+@layer components {
+  /* The columns are limited too: a wide board scrolls inside itself, not the page. */
+  .page {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    height: 100%;
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-4) 0;
+  }
+
+  .notice {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .trashButton {
+    margin-inline-start: auto;
+  }
+
+  .problem {
+    margin: 0;
+    padding: var(--space-2) var(--space-4) 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+  }
+
+  /* Board and panel side by side. Too narrow for both, the panel covers the board
+     (TaskPanel.module.css), so opening a task always shows it. */
+  .work {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .boardArea {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+  }
+
+  .mark {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  .trashList {
+    display: grid;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .trashRow {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .trashTitle {
+    overflow-wrap: anywhere;
+  }
+
+  .trashActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+}

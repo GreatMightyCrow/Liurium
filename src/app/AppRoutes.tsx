@@ -7,6 +7,7 @@ import { PlaceholderPage } from "./PlaceholderPage";
 import { ProjectsPage } from "./ProjectsPage";
 import { SearchRoute } from "./SearchRoute";
 import { SettingsPage } from "./SettingsPage";
+import { TasksPage } from "./TasksPage";
 import { useFocusPageHeading } from "./useFocusPageHeading";
 
 // Areas with a real page; the others show their placeholder.
@@ -14,6 +15,7 @@ const pages: Partial<Record<string, ComponentType>> = {
   "/projects": ProjectsPage,
   "/notes": NotesPage,
   "/search": SearchRoute,
+  "/tasks": TasksPage,
   "/settings": SettingsPage,
 };
 

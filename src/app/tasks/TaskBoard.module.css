@@ -1,0 +1,214 @@
+@layer components {
+  /* Columns side by side; a wide board scrolls sideways, each column by itself. */
+  .board {
+    position: relative;
+    display: flex;
+    gap: var(--space-3);
+    align-items: stretch;
+    min-width: 0;
+    height: 100%;
+    padding: var(--space-4);
+    overflow-x: auto;
+  }
+
+  .column,
+  .addColumn {
+    flex: 0 0 var(--size-task-column);
+    min-width: 0;
+  }
+
+  .column {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    max-height: 100%;
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .columnHeader {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    min-height: var(--size-control-sm);
+    padding-inline-start: var(--space-1);
+  }
+
+  .columnName {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    overflow-wrap: anywhere;
+  }
+
+  .count {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  .columnMenu {
+    margin-inline-start: auto;
+  }
+
+  .cards {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-height: var(--size-control-md);
+    margin: 0;
+    padding: var(--space-1);
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  /* A flat sheet on the column. The whole of it opens the task and can be dragged. */
+  .card {
+    display: grid;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+    font: inherit;
+    text-align: start;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .card:hover {
+    border-color: var(--color-border-control);
+  }
+
+  .card:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .card[aria-pressed="true"] {
+    border-color: var(--color-accent-text);
+  }
+
+  .card[data-dragged] {
+    opacity: var(--opacity-disabled);
+  }
+
+  .title {
+    overflow-wrap: anywhere;
+  }
+
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    align-items: center;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  .priority[data-priority="high"] {
+    color: var(--color-accent-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .due[data-overdue] {
+    color: var(--color-danger);
+  }
+
+  .tag {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+
+  .notes {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+  }
+
+  .mark {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  /* Where a dragged card would land. */
+  .dropLine {
+    height: var(--border-width-mark);
+    border-radius: var(--radius-capsule);
+    background: var(--color-accent-text);
+  }
+
+  /* Follows the pointer; it must not stand between the pointer and the columns. */
+  .ghost {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: var(--layer-popover);
+    width: var(--size-task-column);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-accent-text);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-popover);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
+
+  .add {
+    justify-self: start;
+  }
+
+  .addLine {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .addField {
+    width: 100%;
+    min-height: var(--size-control-sm);
+    padding-inline: var(--space-2);
+    border: var(--border-width) solid var(--color-border-control);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font: inherit;
+  }
+
+  .addField::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .addField:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .addError {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-xs);
+  }
+
+  .hidden {
+    position: absolute;
+    width: var(--border-width);
+    height: var(--border-width);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (forced-colors: active) {
+    .card[aria-pressed="true"] {
+      border-color: Highlight;
+    }
+
+    .dropLine {
+      background: Highlight;
+      forced-color-adjust: none;
+    }
+  }
+}
