@@ -95,6 +95,21 @@ impl ProjectRoot {
         Ok(is_inside(&self.path, &fs::canonicalize(path)?))
     }
 
+    /// Whether an existing folder is, or lies in, `.liurium` or `.git` of this project,
+    /// for a place picked in a dialog (M4-009).
+    pub fn protects(&self, folder: &Path) -> Result<bool, FsError> {
+        let real = fs::canonicalize(folder)?;
+        Ok(is_inside(&self.path, &real)
+            && real
+                .components()
+                .skip(self.path.components().count())
+                .any(|part| {
+                    PROTECTED
+                        .iter()
+                        .any(|name| part.as_os_str().eq_ignore_ascii_case(name))
+                }))
+    }
+
     /// Reads a whole file, refusing files larger than `max_len` bytes.
     pub fn read(&self, rel: &RelPath, max_len: u64) -> Result<(Vec<u8>, Stamp), FsError> {
         read_whole(&self.resolve(rel)?, max_len)
@@ -397,6 +412,32 @@ pub fn create_file(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
         let _ = fs::remove_file(path);
         FsError::from(error)
     })
+}
+
+/// Writes a file at a place the user picked in the save dialog, which has asked before
+/// a file is replaced (M4-009). Atomic, as a write in a project. A folder or link at the
+/// place is refused, and so is a read-only file, which `fs::rename` would replace.
+pub fn write_chosen(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
+    match fs::symlink_metadata(path) {
+        Ok(found) if !found.is_file() => return Err(FsError::WrongKind),
+        Ok(found) if found.permissions().readonly() => return Err(FsError::ReadOnly),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let folder = path.parent().ok_or(FsError::WrongKind)?;
+    let (temp, file) = create_temp(folder).map_err(|error| match error {
+        FsError::Io(error) => not_writable(error),
+        other => other,
+    })?;
+    let result = fill(file, bytes)
+        .map_err(FsError::from)
+        .and_then(|()| fs::rename(&temp, path).map_err(not_writable));
+    if result.is_err() {
+        // Best effort: a leftover is removed when a project opens there.
+        let _ = fs::remove_file(&temp);
+    }
+    result
 }
 
 /// Creating something in a folder the user may not write to says so, instead of a

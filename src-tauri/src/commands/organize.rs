@@ -14,7 +14,7 @@ use crate::storage::fs::{Expect, ProjectRoot, RelPath};
 
 impl Workspace {
     /// The open project's id and folder, refusing a write-protected project.
-    fn writable_project(&self) -> Result<(String, ProjectRoot), CommandError> {
+    pub(super) fn writable_project(&self) -> Result<(String, ProjectRoot), CommandError> {
         let (id, root, read_only) = self.open_project_root()?.ok_or(CommandError::NoProject)?;
         if read_only {
             return Err(CommandError::ReadOnly);
@@ -23,7 +23,7 @@ impl Workspace {
     }
 
     /// Walks the project again so the tree shows the change.
-    fn walk_again(&self, id: String, root: &ProjectRoot) {
+    pub(super) fn walk_again(&self, id: String, root: &ProjectRoot) {
         if let Ok(dir) = self.app_dir() {
             self.note_index().start(dir.to_path_buf(), id, root.clone());
         }

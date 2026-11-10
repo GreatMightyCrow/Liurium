@@ -3,6 +3,9 @@
 //! where each project was last seen. Liurium writes only `.liurium` into the folder.
 
 mod error;
+pub mod task_export;
+#[cfg(test)]
+mod task_export_tests;
 pub mod tasks;
 #[cfg(test)]
 mod tasks_tests;

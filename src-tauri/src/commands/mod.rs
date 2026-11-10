@@ -18,6 +18,9 @@ pub mod projects;
 pub mod properties;
 pub mod search;
 pub mod settings;
+pub mod task_export;
+#[cfg(test)]
+mod task_export_tests;
 pub mod tasks;
 #[cfg(test)]
 mod tasks_tests;

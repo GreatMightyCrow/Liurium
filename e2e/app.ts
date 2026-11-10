@@ -65,6 +65,8 @@ function tempFolder(prefix: string): string {
 interface LaunchOptions {
   /** The folder "Add project folder" takes instead of showing the dialog. */
   pick?: string;
+  /** The file the save dialog answers with, instead of showing itself (M4-009). */
+  saveAs?: string;
   /** A folder the app treats as OneDrive's (M2-010); real sync folders are ignored. */
   oneDrive?: string;
   /** No watcher, as on a drive without change reports (M3-008). */
@@ -100,6 +102,9 @@ async function start(
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${String(PORT)}`,
       LIURIUM_E2E_DATA_DIR: dataDir,
       ...(options.pick === undefined ? {} : { LIURIUM_E2E_PICK: options.pick }),
+      ...(options.saveAs === undefined
+        ? {}
+        : { LIURIUM_E2E_SAVE: options.saveAs }),
       ...(options.oneDrive === undefined
         ? {}
         : { LIURIUM_E2E_ONEDRIVE: options.oneDrive }),

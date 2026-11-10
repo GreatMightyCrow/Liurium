@@ -1,0 +1,13 @@
+@layer components {
+  .place {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .problem {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+  }
+}

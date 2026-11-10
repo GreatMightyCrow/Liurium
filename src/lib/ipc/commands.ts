@@ -15,6 +15,7 @@ import type { Board } from "./bindings/Board";
 import type { SearchResults } from "./bindings/SearchResults";
 import type { Task } from "./bindings/Task";
 import type { TaskDetail } from "./bindings/TaskDetail";
+import type { TaskExport } from "./bindings/TaskExport";
 import type { TaskFields } from "./bindings/TaskFields";
 import type { PropertyKindChoice } from "./bindings/PropertyKindChoice";
 import type { Value as PropertyValue } from "./bindings/PropertyValue";
@@ -76,6 +77,7 @@ export type { BoardColumn } from "./bindings/BoardColumn";
 export type { SearchResults } from "./bindings/SearchResults";
 export type { Task } from "./bindings/Task";
 export type { TaskDetail } from "./bindings/TaskDetail";
+export type { TaskExport } from "./bindings/TaskExport";
 export type { TaskFields } from "./bindings/TaskFields";
 export type { Priority as TaskPriority } from "./bindings/TaskPriority";
 export type { LinkCandidate } from "./bindings/LinkCandidate";
@@ -307,6 +309,16 @@ export function taskDetail(task: string): Promise<TaskDetail> {
 /** The ids of the tasks on the board whose description holds `text`, in any case. */
 export function tasksWithDescription(text: string): Promise<string[]> {
   return call("tasks_with_description", { text });
+}
+
+/** Writes the board as a Markdown file in the project; `replace` is the owner's word. */
+export function exportTasks(replace: boolean): Promise<TaskExport> {
+  return call("export_tasks", { replace });
+}
+
+/** The same at a place picked in the Windows save dialog, which Rust opens. */
+export function exportTasksElsewhere(): Promise<TaskExport> {
+  return call("export_tasks_elsewhere");
 }
 
 /** A new task at the bottom of `column`. */

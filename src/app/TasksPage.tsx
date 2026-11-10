@@ -1,4 +1,4 @@
-import { ListChecks, RotateCcw, Trash2, X } from "lucide-react";
+import { FileDown, ListChecks, RotateCcw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
@@ -30,6 +30,7 @@ import { EmptyState, ErrorState, LoadingState } from "../ui/StateView";
 import { TextField } from "../ui/TextField";
 import { commandErrorMessage } from "./commandErrorMessage";
 import { noteHref } from "./NotesPage";
+import { ExportDialog } from "./tasks/ExportDialog";
 import { movedTask, type Target, today } from "./tasks/board";
 import {
   countTasks,
@@ -108,6 +109,8 @@ export function TasksPage() {
   const [deleting, setDeleting] = useState<Task | null>(null);
   const [addedHidden, setAddedHidden] = useState(false);
   const filterField = useRef<HTMLInputElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const exportButton = useRef<HTMLButtonElement>(null);
   const [, navigate] = useLocation();
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const search = useDescriptionSearch(
@@ -172,6 +175,11 @@ export function TasksPage() {
         return error;
       }),
     [run],
+  );
+
+  const afterChanges = useCallback(
+    <T,>(work: () => Promise<T>): Promise<T> => queue.current.then(work),
+    [],
   );
 
   const save = useCallback(
@@ -279,7 +287,17 @@ export function TasksPage() {
           </p>
         )}
         <Button
-          className={styles.trashButton}
+          ref={exportButton}
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setExporting(true);
+          }}
+        >
+          <FileDown className={styles.mark} strokeWidth={1.5} aria-hidden />
+          Export…
+        </Button>
+        <Button
           variant="ghost"
           size="sm"
           aria-pressed={panel?.kind === "trash"}
@@ -434,6 +452,16 @@ export function TasksPage() {
           </section>
         )}
       </div>
+      {exporting && (
+        <ExportDialog
+          readOnly={readOnly}
+          afterChanges={afterChanges}
+          finalFocus={exportButton}
+          onClose={() => {
+            setExporting(false);
+          }}
+        />
+      )}
       {renaming !== null && (
         <RenameColumn
           column={renaming}

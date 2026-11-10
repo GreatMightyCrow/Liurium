@@ -21,7 +21,7 @@ const ALLOWED_CSP_SOURCES: [&str; 7] = [
 ];
 
 /// Permissions with a row in the security model's permission table.
-const REVIEWED_PERMISSIONS: [&str; 57] = [
+const REVIEWED_PERMISSIONS: [&str; 59] = [
     // The window buttons of the custom frame styles (M1-009, ADR-0013).
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -96,6 +96,8 @@ const REVIEWED_PERMISSIONS: [&str; 57] = [
     "allow-trashed-tasks",
     "allow-task-detail",
     "allow-tasks-with-description",
+    "allow-export-tasks",
+    "allow-export-tasks-elsewhere",
     "allow-create-task",
     "allow-update-task",
     "allow-move-task",

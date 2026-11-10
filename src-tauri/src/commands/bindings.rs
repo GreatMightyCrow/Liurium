@@ -24,6 +24,7 @@ use super::projects::{AddOutcome, CurrentProject, ProjectEntry, ProjectInfo, Pro
 use super::properties::{NoteProperties, PropertyField, PropertyKindChoice};
 use super::search::{NoteHit, ProjectHit, SearchExcerpt, SearchResults};
 use super::settings::SettingsView;
+use super::task_export::TaskExport;
 use super::{AppInfo, CommandError, DataStatus};
 use crate::domain::notes::properties::{Edit, Value};
 use crate::domain::projects::{
@@ -104,6 +105,7 @@ fn typescript_bindings_match_the_rust_types() {
         output::<BoardColumn>(&config),
         output::<Task>(&config),
         output::<TaskDetail>(&config),
+        output::<TaskExport>(&config),
         output::<TaskFields>(&config),
         output::<Priority>(&config),
     ];

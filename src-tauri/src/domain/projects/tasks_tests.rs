@@ -149,6 +149,28 @@ fn text_too_long_for_a_filter_is_refused() {
 }
 
 #[test]
+fn the_export_reads_only_descriptions_on_the_board_and_within_its_limit() {
+    let dir = temp_dir();
+    let app = app(dir.path());
+    let project = fresh(dir.path(), &app);
+    project
+        .create_task("todo", described("A", "abcd"))
+        .expect("created");
+    project
+        .create_task("todo", described("B", "efgh"))
+        .expect("created");
+    project.trash_task(&id_of(&project, "B")).expect("trashed");
+
+    let found = project.live_descriptions(4).expect("fits");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[&id_of(&project, "A")], "abcd");
+    assert!(matches!(
+        project.live_descriptions(3),
+        Err(TaskError::Limit)
+    ));
+}
+
+#[test]
 fn a_description_that_is_not_utf8_does_not_stop_the_filter() {
     let dir = temp_dir();
     let app = app(dir.path());

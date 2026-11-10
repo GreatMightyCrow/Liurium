@@ -646,6 +646,32 @@ impl Project {
         Ok(found)
     }
 
+    /// The descriptions of the tasks on the board by id, at most `max` bytes in all.
+    pub(super) fn live_descriptions(
+        &self,
+        max: usize,
+    ) -> Result<HashMap<String, String>, TaskError> {
+        let mut found = HashMap::new();
+        if !has_tasks(&self.connection)? {
+            return Ok(found);
+        }
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT id, substr(description, 1, {MAX_DESCRIPTION_BYTES}) FROM tasks
+             WHERE trashed_ms IS NULL AND length(description) > 0 LIMIT {MAX_TASKS}"
+        ))?;
+        let mut rows = statement.query([])?;
+        let mut total = 0_usize;
+        while let Some(row) = rows.next()? {
+            let description = text(row, 1)?;
+            total = total.saturating_add(description.len());
+            if total > max {
+                return Err(TaskError::Limit);
+            }
+            found.insert(text(row, 0)?, description);
+        }
+        Ok(found)
+    }
+
     /// A new task at the bottom of its column.
     pub fn create_task(&self, column: &str, fields: TaskFields) -> Result<Board, TaskError> {
         let input = checked(fields, &self.root, &[])?;

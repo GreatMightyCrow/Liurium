@@ -10,6 +10,8 @@ use crate::domain::sync::{SyncRoot, SyncTool};
 const DATA_DIR: &str = "LIURIUM_E2E_DATA_DIR";
 /// Folder that "Add project folder" uses instead of showing the dialog.
 const PICK: &str = "LIURIUM_E2E_PICK";
+/// File that the save dialog answers with, instead of showing itself (M4-009).
+const SAVE: &str = "LIURIUM_E2E_SAVE";
 /// Folder treated as OneDrive's; the test build ignores the real sync folders.
 const ONEDRIVE: &str = "LIURIUM_E2E_ONEDRIVE";
 /// Leaves only the check at window focus, as on a drive without change reports.
@@ -32,6 +34,10 @@ pub fn data_dir() -> Option<PathBuf> {
 
 pub fn picked_folder() -> Option<PathBuf> {
     env::var_os(PICK).map(PathBuf::from)
+}
+
+pub fn picked_file() -> Option<PathBuf> {
+    env::var_os(SAVE).map(PathBuf::from)
 }
 
 pub fn sync_roots() -> Vec<SyncRoot> {

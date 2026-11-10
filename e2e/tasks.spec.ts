@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./app";
@@ -28,6 +28,52 @@ async function addTasks(page: Page, name: string, ...tasks: string[]) {
   }
   await field.press("Escape");
 }
+
+test("the board is exported to Markdown and a different file is replaced only on request", async ({
+  app,
+}) => {
+  const folder = app.folder("Export-");
+  const copy = join(app.folder("ExportOut-"), "Copy.md");
+  const inProject = join(folder, "Tasks export.md");
+
+  const page = await app.launch({ pick: folder, saveAs: copy });
+  await nav(page, "Projects");
+  await page.getByRole("button", { name: "Add project folder" }).click();
+  await expect(page.getByText("Open now")).toBeVisible();
+  await nav(page, "Tasks");
+  await expect(page.getByRole("heading", { name: "To do" })).toBeVisible();
+  await addTasks(page, "To do", "Roof");
+
+  // By its name: a notification has the role of a dialog too.
+  const dialog = page.getByRole("dialog", { name: /^(Export tasks|Replace)/ });
+  const open = () => page.getByRole("button", { name: "Export…" }).click();
+  const toast = page.getByText("Tasks exported");
+
+  await open();
+  await dialog.getByRole("button", { name: "Save in project" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(toast).toBeVisible();
+  expect(readFileSync(inProject, "utf8")).toContain("### Roof");
+
+  // Changed by hand: left alone until the owner says so.
+  writeFileSync(inProject, "my own words");
+  await open();
+  await dialog.getByRole("button", { name: "Save in project" }).click();
+  await expect(dialog.getByRole("button", { name: "Replace" })).toBeVisible();
+  expect(readFileSync(inProject, "utf8")).toBe("my own words");
+
+  await dialog.getByRole("button", { name: "Replace" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(readFileSync(inProject, "utf8")).toContain("### Roof");
+  expect(readdirSync(join(folder, ".liurium", "trash"))).toHaveLength(1);
+
+  // The place comes from Rust; the Windows dialog stands in by a variable here.
+  expect(existsSync(copy)).toBe(false);
+  await open();
+  await dialog.getByRole("button", { name: "Other place…" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(readFileSync(copy, "utf8")).toContain("### Roof");
+});
 
 test("filters narrow the board, a move keeps the hidden tasks' order, and nothing lasts", async ({
   app,
