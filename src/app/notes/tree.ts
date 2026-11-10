@@ -40,6 +40,15 @@ export function isInside(path: string, folder: string): boolean {
   return a === b || a.startsWith(`${b}/`);
 }
 
+/** Whether a drag of `path` onto `folder` would move it: not where it already is,
+ *  and a folder never into itself or below itself. Rust checks this again. */
+export function canMoveInto(path: string, folder: string): boolean {
+  return (
+    parentOf(path).toLowerCase() !== folder.toLowerCase() &&
+    !isInside(folder, path)
+  );
+}
+
 const byName = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
   a.name.localeCompare(b.name, "en");

@@ -419,6 +419,36 @@ function layOut() {
   };
 }
 
+test("near the edge of the board, a drag scrolls it sideways", async () => {
+  open();
+  await ready();
+  const pointAt = layOut();
+  const scrollBy = vi.fn();
+  Element.prototype.scrollBy = scrollBy;
+  const board = document.querySelector<HTMLElement>("[data-board]");
+  if (board === null) {
+    throw new Error("no board");
+  }
+  board.getBoundingClientRect = () =>
+    ({ left: 0, right: 600, top: 0, bottom: 400 }) as DOMRect;
+  pointAt(null);
+
+  fireEvent.pointerDown(card("Task 1"), {
+    button: 0,
+    clientX: 300,
+    clientY: 110,
+  });
+  fireEvent.pointerMove(window, { clientX: 590, clientY: 110 });
+  await waitFor(() => {
+    expect(scrollBy).toHaveBeenCalledWith({ left: 12 });
+  });
+  fireEvent.pointerMove(window, { clientX: 10, clientY: 110 });
+  await waitFor(() => {
+    expect(scrollBy).toHaveBeenCalledWith({ left: -12 });
+  });
+  fireEvent.keyDown(window, { key: "Escape" });
+});
+
 test("dragging a card to another column drops it where the line shows", async () => {
   open();
   await ready();

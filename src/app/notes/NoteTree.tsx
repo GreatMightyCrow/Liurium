@@ -9,14 +9,15 @@ import {
   FolderPlus,
 } from "lucide-react";
 import {
-  type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "wouter";
 import {
   createFolder,
@@ -45,6 +46,7 @@ import {
   type NoteNode,
   parentOf,
 } from "./tree";
+import { useEntryDrag } from "./useEntryDrag";
 
 /** What changed, so the page can reload the tree and follow the open note. */
 export interface TreeChange {
@@ -66,8 +68,6 @@ interface NoteTreeProps {
   onChanged: (change: TreeChange) => void;
 }
 
-const DRAG_TYPE = "application/x-liurium-entry";
-
 /** The open note's last text reaches Rust and is saved before anything moves, so a
  *  rename right after typing keeps what was typed (found by the M3-004 E2E test). */
 function saveOpenNote(): Promise<void> {
@@ -78,7 +78,7 @@ type Target = { kind: "folder"; path: string } | { kind: "note"; path: string };
 
 // The notes tree (M3-004): folders that hold notes plus empty ones; a bar with
 // New note and New folder; a "…" menu on every row and the same menu on a right
-// click; drag and drop onto folders. Nested lists with disclosure buttons, not
+// click; dragging onto folders with the pointer (M4-010). Nested lists with disclosure buttons, not
 // role=tree, because every row also has its own menu button; arrow keys still
 // move between rows, F2 renames, Delete asks to move to the trash.
 export function NoteTree({
@@ -112,7 +112,6 @@ export function NoteTree({
     kind: "folder",
     path: "",
   });
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [rowMenu, setRowMenu] = useState<{
     target: Target;
     anchor: HTMLElement;
@@ -336,37 +335,22 @@ export function NoteTree({
     }
   };
 
-  const dragOver = (folder: string) => (event: DragEvent<HTMLElement>) => {
-    if (!event.dataTransfer.types.includes(DRAG_TYPE)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = "move";
-    setDropTarget(folder);
-  };
-
-  const drop = (folder: string) => (event: DragEvent<HTMLElement>) => {
-    const path = event.dataTransfer.getData(DRAG_TYPE);
-    event.preventDefault();
-    event.stopPropagation();
-    setDropTarget(null);
-    if (path === "" || parentOf(path).toLowerCase() === folder.toLowerCase()) {
-      return;
-    }
-    if (isInside(folder, path)) {
-      return;
-    }
+  const { drag, startDrag } = useEntryDrag((path, folder) => {
     move(path, folder).catch(() => {
       // The "Move to…" dialog explains failures; a failed drop changes nothing.
       onChanged({});
     });
-  };
+  });
 
-  const dragStart = (path: string) => (event: DragEvent<HTMLElement>) => {
-    event.dataTransfer.setData(DRAG_TYPE, path);
-    event.dataTransfer.effectAllowed = "move";
-  };
+  const press =
+    (path: string, name: string) => (event: ReactPointerEvent<HTMLElement>) => {
+      startDrag(
+        event,
+        event.currentTarget.closest<HTMLElement>("[data-drop-root]"),
+        path,
+        name,
+      );
+    };
 
   const renderFolder = (folder: FolderNode): ReactNode => (
     <ul className={styles.group} role="list">
@@ -381,20 +365,15 @@ export function NoteTree({
           >
             <div
               className={styles.row}
-              data-drop={dropTarget === child.path ? "" : undefined}
-              onDragOver={dragOver(child.path)}
-              onDragLeave={() => {
-                setDropTarget(null);
-              }}
-              onDrop={drop(child.path)}
+              data-drop={drag?.folder === child.path ? "" : undefined}
             >
               <button
                 type="button"
                 className={styles.entry}
                 aria-expanded={open}
                 data-row
-                draggable
-                onDragStart={dragStart(child.path)}
+                data-dragged={drag?.path === child.path ? "" : undefined}
+                onPointerDown={press(child.path, child.name)}
                 onClick={() => {
                   toggle(child.path);
                   setCurrent(child.path);
@@ -430,9 +409,8 @@ export function NoteTree({
           note={note}
           href={noteHref(note.path)}
           isOpen={openPath?.toLowerCase() === note.path.toLowerCase()}
-          onDragStart={dragStart(note.path)}
-          onDragOver={dragOver(parentOf(note.path))}
-          onDrop={drop(parentOf(note.path))}
+          dragged={drag?.path === note.path}
+          onPointerDown={press(note.path, note.name)}
           onChoose={() => {
             setCurrent(parentOf(note.path));
           }}
@@ -499,16 +477,12 @@ export function NoteTree({
             <nav
               className={styles.list}
               aria-label="Notes in this project"
-              data-drop={dropTarget === "" ? "" : undefined}
+              data-drop={drag?.folder === "" ? "" : undefined}
+              data-drop-root
               onKeyDown={onKeyDown}
               onContextMenuCapture={(event: MouseEvent) => {
                 setMenuTarget(targetOf(event.target));
               }}
-              onDragOver={dragOver("")}
-              onDragLeave={() => {
-                setDropTarget(null);
-              }}
-              onDrop={drop("")}
             />
           }
         >
@@ -558,6 +532,19 @@ export function NoteTree({
                 });
             }}
           />
+        )}
+      {drag !== null &&
+        createPortal(
+          <div
+            className={styles.ghost}
+            style={{
+              transform: `translate(${String(drag.x)}px, ${String(drag.y)}px)`,
+            }}
+            aria-hidden="true"
+          >
+            {drag.name}
+          </div>,
+          document.body,
         )}
       {asking?.kind === "move" && (
         <MoveDialog
@@ -620,9 +607,8 @@ interface NoteRowProps {
   note: NoteNode;
   href: string;
   isOpen: boolean;
-  onDragStart: (event: DragEvent<HTMLElement>) => void;
-  onDragOver: (event: DragEvent<HTMLElement>) => void;
-  onDrop: (event: DragEvent<HTMLElement>) => void;
+  dragged: boolean;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onChoose: () => void;
   menuOpen: boolean;
   onMenu: (anchor: HTMLElement) => void;
@@ -632,23 +618,24 @@ function NoteRow({
   note,
   href,
   isOpen,
-  onDragStart,
-  onDragOver,
-  onDrop,
+  dragged,
+  onPointerDown,
   onChoose,
   menuOpen,
   onMenu,
 }: NoteRowProps) {
   return (
     <li data-path={note.path} data-kind="note" className={styles.item}>
-      <div className={styles.row} onDragOver={onDragOver} onDrop={onDrop}>
+      <div className={styles.row}>
+        {/* Not the browser's own drag of a link: the pointer moves it instead. */}
         <Link
           href={href}
           className={styles.entry}
           aria-current={isOpen ? "page" : undefined}
           data-row
-          draggable
-          onDragStart={onDragStart}
+          data-dragged={dragged ? "" : undefined}
+          draggable={false}
+          onPointerDown={onPointerDown}
           onClick={onChoose}
         >
           <FileText className={styles.icon} strokeWidth={1.5} aria-hidden />

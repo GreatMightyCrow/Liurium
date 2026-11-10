@@ -71,6 +71,32 @@
     text-align: start;
     text-decoration: none;
     cursor: default;
+    user-select: none;
+  }
+
+  /* The entry being dragged stays in place in the quieter text colour (still
+     readable, unlike a lowered opacity); its name follows the pointer. */
+  .entry[data-dragged] {
+    color: var(--color-text-secondary);
+  }
+
+  /* Below and right of the pointer, so the folder under it stays readable. */
+  .ghost {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    margin-block-start: var(--space-4);
+    margin-inline-start: var(--space-3);
+    z-index: var(--layer-popover);
+    max-width: var(--size-notes-list);
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-width) solid var(--color-accent-text);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-popover);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+    pointer-events: none;
   }
 
   .entry:focus-visible {
