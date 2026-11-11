@@ -82,6 +82,8 @@
     --size-notes-list: 280px;
     --size-task-column: 272px;
     --size-task-panel: 360px;
+    /* Dashboard (M4-005): the narrowest a widget's grid cell gets */
+    --size-widget: 320px;
     --size-task-text: 160px;
     --size-note-measure: 80ch;
     /* The name column of the properties box (M3-015) */

@@ -45,3 +45,12 @@ test("a page that fails to render leaves the other pages working", () => {
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.getByRole("heading", { name: "Dashboard" })).toBeDefined();
 });
+
+test("the start page is the dashboard with its widgets, not a placeholder", () => {
+  render(
+    <Router hook={useHashLocation}>
+      <AppRoutes />
+    </Router>,
+  );
+  expect(screen.getByRole("region", { name: "Recent notes" })).toBeDefined();
+});

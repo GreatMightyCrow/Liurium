@@ -1,0 +1,121 @@
+@layer components {
+  /* A fixed grid (owner decision Q2): as many columns as fit, each at least one
+     widget wide; at high zoom or in a narrow window one column. */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, var(--size-widget)), 1fr)
+    );
+    gap: var(--space-4);
+    align-items: start;
+    max-width: var(--size-page-max);
+    padding: var(--space-5);
+  }
+
+  /* A widget is a quiet surface in the page, like a card; no shadow. */
+  .widget {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-4);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  /* A wide widget takes the whole row, so it never forces a second column. */
+  .widget[data-size="wide"] {
+    grid-column: 1 / -1;
+  }
+
+  .title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  /* Loading, empty, and error text: quiet text with its icon beside the first
+     line, also when the text wraps. */
+  .note {
+    display: flex;
+    gap: var(--space-2);
+    align-items: start;
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .note .icon {
+    margin-block-start: calc((1lh - var(--size-icon-sm)) / 2);
+  }
+
+  .empty,
+  .problem {
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
+  }
+
+  .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .danger {
+    color: var(--color-danger);
+  }
+
+  .spinner {
+    animation: spin var(--duration-spin) linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+
+  .list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* One note: icon and name on the first line, folder and time below. */
+  .entry {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    margin-inline: calc(var(--space-2) * -1);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .entry:hover {
+    background: var(--color-surface-elevated);
+  }
+
+  .entry:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-accent-text);
+    outline-offset: calc(var(--focus-ring-width) * -1);
+  }
+
+  .name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .meta {
+    grid-column: 2;
+    min-width: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+}

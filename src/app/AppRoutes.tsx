@@ -1,6 +1,7 @@
 import { type ComponentType, lazy, Suspense } from "react";
 import { Redirect, Route, Switch, useLocation } from "wouter";
 import { areas } from "./areas";
+import { DashboardPage } from "./DashboardPage";
 import { NotesPage } from "./NotesPage";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { PlaceholderPage } from "./PlaceholderPage";
@@ -12,6 +13,7 @@ import { useFocusPageHeading } from "./useFocusPageHeading";
 
 // Areas with a real page; the others show their placeholder.
 const pages: Partial<Record<string, ComponentType>> = {
+  "/": DashboardPage,
   "/projects": ProjectsPage,
   "/notes": NotesPage,
   "/search": SearchRoute,
